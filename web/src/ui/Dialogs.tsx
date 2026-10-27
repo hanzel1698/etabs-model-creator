@@ -275,6 +275,24 @@ function SectionsDialog() {
 function StoriesDialog() {
   const model = useApp((s) => s.model);
   const [base, setBase] = useState(model.baseElevation);
+  // kept as strings so the fields can be blank until the user fills them
+  const [fnd, setFnd] = useState({
+    foundingDepth: model.foundation ? String(model.foundation.foundingDepth) : '',
+    footingThickness: String(model.foundation?.footingThickness ?? 600),
+    plinthHeight: model.foundation ? String(model.foundation.plinthHeight) : '',
+  });
+  const fndNums = () => {
+    const n = { foundingDepth: parseFloat(fnd.foundingDepth), footingThickness: parseFloat(fnd.footingThickness), plinthHeight: parseFloat(fnd.plinthHeight) };
+    return [n.foundingDepth, n.footingThickness, n.plinthHeight].every(isFinite) ? n : null;
+  };
+  const setFoundation = (p: Partial<typeof fnd>) => {
+    const next = { ...fnd, ...p };
+    setFnd(next);
+    const fd = parseFloat(next.foundingDepth),
+      ft = parseFloat(next.footingThickness),
+      ph = parseFloat(next.plinthHeight);
+    if ([fd, ft, ph].every(isFinite)) setBase(fd - ft + ph);
+  };
   const [rows, setRows] = useState<(Story & { orig: string })[]>(model.stories.map((s) => ({ ...s, orig: s.name })));
   const [addN, setAddN] = useState(1);
   const [addH, setAddH] = useState(3000);
@@ -289,6 +307,7 @@ function StoriesDialog() {
       return {
         ...m,
         baseElevation: base,
+        foundation: fndNums() ?? m.foundation,
         stories: rows.map(({ orig, ...s }) => ({ ...s, name: s.name.trim(), similarTo: s.similarTo ? rename.get(s.similarTo) ?? '' : '' })),
         columns: fix(m.columns),
         beams: fix(m.beams),
@@ -324,9 +343,29 @@ function StoriesDialog() {
           ))}
         </tbody>
       </table>
-      <div className="row">
-        <span>Base elev.</span>
-        <input type="number" value={base} onChange={(e) => setBase(+e.target.value)} />
+      <div className="section">
+        <h4>Base elevation</h4>
+        <div className="row small">
+          <span style={{ width: 110 }}>Founding depth</span>
+          <input type="number" placeholder="e.g. 1500" value={fnd.foundingDepth} onChange={(e) => setFoundation({ foundingDepth: e.target.value })} />
+          <span className="muted" style={{ width: 'auto' }}>mm</span>
+        </div>
+        <div className="row small">
+          <span style={{ width: 110 }}>Footing thickness</span>
+          <input type="number" value={fnd.footingThickness} onChange={(e) => setFoundation({ footingThickness: e.target.value })} />
+          <span className="muted" style={{ width: 'auto' }}>mm</span>
+        </div>
+        <div className="row small">
+          <span style={{ width: 110 }}>Plinth height</span>
+          <input type="number" placeholder="e.g. 500" value={fnd.plinthHeight} onChange={(e) => setFoundation({ plinthHeight: e.target.value })} />
+          <span className="muted" style={{ width: 'auto' }}>mm</span>
+        </div>
+        <div className="row small">
+          <span style={{ width: 110 }}>Base elev.</span>
+          <input type="number" value={base} onChange={(e) => setBase(+e.target.value)} />
+          <span className="muted" style={{ width: 'auto' }}>mm</span>
+        </div>
+        <div className="small muted">Base elev. = founding depth − footing thickness + plinth height. You can still type a base elevation directly.</div>
       </div>
       <div className="row">
         <span>Add</span>

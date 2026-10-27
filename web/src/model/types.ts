@@ -80,6 +80,8 @@ export interface Model {
   slabSections: SlabSection[];
   materials: Material[];
   pushedIds: string[]; // ids that exist in ETABS from previous pushes (for delete sync)
+  /** inputs the base elevation was computed from (base = foundingDepth - footingThickness + plinthHeight) */
+  foundation?: { foundingDepth: number; footingThickness: number; plinthHeight: number };
 }
 
 export type ElementKind = 'column' | 'beam' | 'slab' | 'grid';
