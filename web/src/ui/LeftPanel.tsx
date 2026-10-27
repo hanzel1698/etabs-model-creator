@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useApp } from '../model/store';
 import { storyElevations } from '../model/types';
 import { openDialog } from './dialogState';
+import { SectionOptions } from './sectionGroups';
 import { autoBeamsOnGrids } from '../model/ops';
 import { fitAll } from '../plan/PlanView';
 import { fmt } from '../model/geom';
@@ -59,9 +60,7 @@ export function LeftPanel() {
         <div className="row">
           <span>Column</span>
           <select value={act.column} onChange={(e) => st.setActive('column', e.target.value)}>
-            {model.frameSections.map((s) => (
-              <option key={s.name}>{s.name}</option>
-            ))}
+            <SectionOptions sections={model.frameSections} prefer="Columns" />
           </select>
         </div>
         <div className="row">
@@ -72,9 +71,7 @@ export function LeftPanel() {
         <div className="row">
           <span>Beam</span>
           <select value={act.beam} onChange={(e) => st.setActive('beam', e.target.value)}>
-            {model.frameSections.map((s) => (
-              <option key={s.name}>{s.name}</option>
-            ))}
+            <SectionOptions sections={model.frameSections} prefer="Beams" />
           </select>
         </div>
         <div className="row">

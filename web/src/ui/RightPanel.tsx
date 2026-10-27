@@ -1,6 +1,7 @@
 import { useApp } from '../model/store';
 import { deleteIds, patchIds } from '../model/ops';
 import { openDialog } from './dialogState';
+import { SectionOptions } from './sectionGroups';
 import { useUnderlay, saveUnderlayMeta, removeUnderlay } from '../underlay/store';
 import { setTool } from '../plan/tools';
 import { fitAll } from '../plan/PlanView';
@@ -51,9 +52,7 @@ function Properties() {
           <span>Section</span>
           <select value={common(frames, (x) => x.section)} onChange={(e) => st.commit((m) => patchIds(m, frames.map((x) => x.id), { section: e.target.value }))}>
             <option value="">(mixed)</option>
-            {model.frameSections.map((x) => (
-              <option key={x.name}>{x.name}</option>
-            ))}
+            <SectionOptions sections={model.frameSections} prefer={cols.length && !beams.length ? 'Columns' : beams.length && !cols.length ? 'Beams' : undefined} />
           </select>
         </div>
       )}

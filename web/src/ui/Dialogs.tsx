@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useDialog, closeDialog, type Dialog } from './dialogState';
+import { sectionGroup } from './sectionGroups';
 import { useApp, toast } from '../model/store';
 import { generateGrids, moveIds, oppositeLabelStart, replicate } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
@@ -208,6 +209,13 @@ function SectionsDialog() {
     closeDialog();
   };
   const upF = (i: number, p: Partial<FrameSection>) => setF(f.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  /** New section named by its group prefix and size, e.g. C400x400, B300x500, C500 (circle). */
+  const addF = (prefix: 'C' | 'B', shape: FrameSection['shape'], t3: number, t2: number) => {
+    const base = shape === 'Circle' ? `${prefix}${t3}` : `${prefix}${t2}x${t3}`;
+    let name = base;
+    for (let k = 2; f.some((x) => x.name === name); k++) name = `${base}-${k}`;
+    setF([...f, { name, shape, t3, t2, material: mats[0] ?? '4000Psi', fromEtabs: false }]);
+  };
   const upS = (i: number, p: Partial<SlabSection>) => setSl(sl.map((x, j) => (j === i ? { ...x, ...p } : x)));
   return (
     <Modal wide title="Sections" footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={save}>Save</button></>}>
@@ -217,7 +225,16 @@ function SectionsDialog() {
           <tr><th>Frame section</th><th>Shape</th><th>t3 depth</th><th>t2 width</th><th>Material</th><th></th></tr>
         </thead>
         <tbody>
-          {f.map((s, i) => (
+          {(['Columns', 'Beams', 'Other'] as const).flatMap((grp) => {
+            const rows = f.map((s, i) => ({ s, i })).filter(({ s }) => sectionGroup(s.name) === grp);
+            if (grp === 'Other' && !rows.length) return [];
+            return [
+              <tr key={'h-' + grp} className="group-row">
+                <td colSpan={6}>
+                  {grp} <span className="muted">({rows.length}{grp === 'Columns' ? ', names starting with C' : grp === 'Beams' ? ', names starting with B' : ''})</span>
+                </td>
+              </tr>,
+              ...rows.map(({ s, i }) => (
             <tr key={i}>
               <td><input type="text" value={s.name} disabled={s.fromEtabs} onChange={(e) => upF(i, { name: e.target.value })} /></td>
               <td>
@@ -235,12 +252,15 @@ function SectionsDialog() {
               </td>
               <td>{s.fromEtabs ? <span className="muted small">ETABS</span> : <button className="danger" onClick={() => setF(f.filter((_, j) => j !== i))}>✕</button>}</td>
             </tr>
-          ))}
+              )),
+            ];
+          })}
         </tbody>
       </table>
       <div className="chips">
-        <button onClick={() => setF([...f, { name: `C${f.length + 1}`, shape: 'Rectangle', t3: 500, t2: 300, material: mats[0] ?? '4000Psi', fromEtabs: false }])}>+ Rectangle</button>
-        <button onClick={() => setF([...f, { name: `CIR${f.length + 1}`, shape: 'Circle', t3: 500, t2: 500, material: mats[0] ?? '4000Psi', fromEtabs: false }])}>+ Circle</button>
+        <button onClick={() => addF('C', 'Rectangle', 400, 400)}>+ Column</button>
+        <button onClick={() => addF('C', 'Circle', 500, 500)}>+ Circular column</button>
+        <button onClick={() => addF('B', 'Rectangle', 500, 300)}>+ Beam</button>
       </div>
       <table className="grid">
         <thead>
