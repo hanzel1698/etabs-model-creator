@@ -34,8 +34,8 @@ export function generateGrids(s: GridGenSpec): Grid[] {
   const xl = labelSeq(s.xLabelStart, xs.length);
   const yl = labelSeq(s.yLabelStart, ys.length);
   return [
-    ...xs.map<Grid>((x, i) => ({ id: uid(), label: xl[i], dir: 'X', x1: x, y1: minY, x2: x, y2: maxY, bubble: 'end' })),
-    ...ys.map<Grid>((y, i) => ({ id: uid(), label: yl[i], dir: 'Y', x1: minX, y1: y, x2: maxX, y2: y, bubble: 'start' })),
+    ...xs.map<Grid>((x, i) => ({ id: uid(), label: xl[i], dir: 'X', x1: x, y1: minY, x2: x, y2: maxY, bubble: 'both' })),
+    ...ys.map<Grid>((y, i) => ({ id: uid(), label: yl[i], dir: 'Y', x1: minX, y1: y, x2: maxX, y2: y, bubble: 'both' })),
   ];
 }
 
@@ -44,7 +44,7 @@ export function makeGrid(a: Pt, b: Pt, label: string): Grid {
   let dir: Grid['dir'] = 'G';
   if (Math.abs(a.x - b.x) < TOL) dir = 'X';
   else if (Math.abs(a.y - b.y) < TOL) dir = 'Y';
-  return { id: uid(), label, dir, x1: a.x, y1: a.y, x2: b.x, y2: b.y, bubble: 'end' };
+  return { id: uid(), label, dir, x1: a.x, y1: a.y, x2: b.x, y2: b.y, bubble: 'both' };
 }
 
 export function gridIntersections(grids: Grid[]): Pt[] {
@@ -352,6 +352,50 @@ export function gridSegs(m: Model): [Pt, Pt][] {
     { x: g.x1, y: g.y1 },
     { x: g.x2, y: g.y2 },
   ]);
+}
+
+// ---------- grid dimensions ----------
+
+export interface DimLine {
+  a: Pt; // start of the dimension line
+  b: Pt;
+  value: number; // c/c distance, mm
+  ticks: Pt[]; // tick positions along the line
+  vertical: boolean; // dimension measured along Y (text runs vertically)
+}
+
+/**
+ * Centre-to-centre dimension chains for orthogonal grids: X grids are dimensioned along a line
+ * above them, Y grids along a line to their left, placed beyond the bubbles. A second, outer
+ * line gives the overall distance when there are three or more grids.
+ */
+export function gridDimensions(grids: Grid[], bubbleD: number): DimLine[] {
+  const out: DimLine[] = [];
+  const uniq = (v: number[]) => [...new Set(v.map((x) => Math.round(x * 1000) / 1000))].sort((p, q) => p - q);
+  const xg = grids.filter((g) => g.dir === 'X'),
+    yg = grids.filter((g) => g.dir === 'Y');
+  const off1 = bubbleD * 1.6,
+    off2 = bubbleD * 2.4;
+
+  const chain = (pos: number[], at: (v: number, off: number) => Pt, vertical: boolean) => {
+    if (pos.length < 2) return;
+    for (let i = 0; i + 1 < pos.length; i++)
+      out.push({ a: at(pos[i], off1), b: at(pos[i + 1], off1), value: pos[i + 1] - pos[i], ticks: [at(pos[i], off1), at(pos[i + 1], off1)], vertical });
+    if (pos.length > 2) {
+      const a = at(pos[0], off2),
+        b = at(pos[pos.length - 1], off2);
+      out.push({ a, b, value: pos[pos.length - 1] - pos[0], ticks: [a, b], vertical });
+    }
+  };
+  if (xg.length) {
+    const top = Math.max(...xg.flatMap((g) => [g.y1, g.y2]));
+    chain(uniq(xg.map((g) => g.x1)), (x, off) => ({ x, y: top + off }), false);
+  }
+  if (yg.length) {
+    const left = Math.min(...yg.flatMap((g) => [g.x1, g.x2]));
+    chain(uniq(yg.map((g) => g.y1)), (y, off) => ({ x: left - off, y }), true);
+  }
+  return out;
 }
 
 // ---------- select by properties ----------

@@ -1,7 +1,8 @@
 import { memo, useEffect, useMemo } from 'react';
 import { useApp, sectionColor } from '../model/store';
 import type { Beam, Column, FrameSection, Grid, Model, Slab } from '../model/types';
-import { angleDeg, polyArea } from '../model/geom';
+import { angleDeg, fmt, polyArea } from '../model/geom';
+import { gridDimensions } from '../model/ops';
 import { columnOutline } from './snap';
 import { readableAngle, textTransform } from './viewport';
 import { useUnderlay, regionFor, sheetFor, ensurePageRendered } from '../underlay/store';
@@ -53,6 +54,33 @@ export const UnderlayLayer = memo(function UnderlayLayer({ story, viewRot }: { s
 });
 
 // ---------------- grids ----------------
+
+/** Grid c/c dimension chains (sizes scale with the bubble so they zoom with the plan). */
+export const GridDimLayer = memo(function GridDimLayer({ grids, viewRot, bubble }: { grids: Grid[]; viewRot: number; bubble: number }) {
+  const dims = useMemo(() => gridDimensions(grids, bubble), [grids, bubble]);
+  const h = bubble * 0.32,
+    t = bubble * 0.15;
+  return (
+    <g className="grid-dims nosel">
+      {dims.map((d, i) => {
+        const angle = d.vertical ? 90 : 0;
+        const mx = (d.a.x + d.b.x) / 2,
+          my = (d.a.y + d.b.y) / 2;
+        return (
+          <g key={i}>
+            <line x1={d.a.x} y1={d.a.y} x2={d.b.x} y2={d.b.y} stroke="var(--dim)" strokeWidth={1} style={NS} />
+            {d.ticks.map((p, j) => (
+              <line key={j} x1={p.x - t} y1={p.y - t} x2={p.x + t} y2={p.y + t} stroke="var(--dim)" strokeWidth={1.5} style={NS} />
+            ))}
+            <text transform={textTransform(mx, my, viewRot, readableAngle(angle, viewRot))} dy={-h * 0.35} fontSize={h} textAnchor="middle" fill="var(--dim)">
+              {fmt(d.value)}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+});
 
 export const GridLayer = memo(function GridLayer({ grids, sel, viewRot, showLabels, bubble }: { grids: Grid[]; sel: Set<string>; viewRot: number; showLabels: boolean; bubble: number }) {
   const r = bubble / 2;

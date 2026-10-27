@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { useApp, usePreview } from '../model/store';
 import type { Pt } from '../model/types';
 import { viewport } from './viewport';
-import { UnderlayLayer, GridLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer } from './layers';
+import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer } from './layers';
 import { onMove, onClick, onCancel, finishPolygon, hitTest, boxSelect, fillIntersections, doSnap } from './tools';
 import { columnOutline } from './snap';
 import { useUnderlay } from '../underlay/store';
@@ -28,7 +28,9 @@ export function fitAll(w?: number, h?: number) {
     }
     return viewport.fit(-2000, -2000, 30000, 20000, W, H);
   }
-  viewport.fit(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), W, H);
+  // leave room for grid bubbles and the dimension chains outside the grid lines
+  const pad = m.grids.length ? useApp.getState().gridBubble * 3 : 0;
+  viewport.fit(Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad, W, H);
 }
 
 const useVp = () => useSyncExternalStore((f) => viewport.subscribe(f), () => viewport.version);
@@ -212,6 +214,7 @@ export function PlanView() {
           {show.underlay && <UnderlayLayer story={story} viewRot={viewRot} />}
           {show.slabs && <SlabLayer slabs={slabs} sel={sel} />}
           <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} bubble={bubble} />
+          {show.gridDims && <GridDimLayer grids={model.grids} viewRot={viewRot} bubble={bubble} />}
           {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy={false} />}
           {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy={false} />}
           <BeamLayer beams={beams} sel={sel} colorBy={colorBy} />

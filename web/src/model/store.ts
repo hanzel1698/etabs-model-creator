@@ -25,6 +25,7 @@ export interface ColAlign {
 export interface ShowFlags {
   sectionLabels: boolean;
   gridLabels: boolean;
+  gridDims: boolean;
   ghostBelow: boolean;
   underlay: boolean;
   slabs: boolean;
@@ -135,7 +136,7 @@ export const useApp = create<AppState>((set, get) => ({
   setColumnAngle: (a) => set({ columnAngle: a }),
   ortho: false,
   toggleOrtho: () => set((s) => ({ ortho: !s.ortho })),
-  show: { sectionLabels: true, gridLabels: true, ghostBelow: true, underlay: true, slabs: true },
+  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: true, underlay: true, slabs: true },
   toggleShow: (k) => set((s) => ({ show: { ...s.show, [k]: !s.show[k] } })),
 
   selection: [],

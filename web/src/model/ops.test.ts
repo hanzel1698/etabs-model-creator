@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, matchElements, nextGridLabel, oppositeLabelStart, patchIds, replicate } from './ops';
+import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, nextGridLabel, oppositeLabelStart, patchIds, replicate } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
 import { emptyModel } from './types';
 import { toPayload } from '../etabs/mapping';
@@ -138,5 +138,19 @@ describe('select by properties', () => {
     const ids = matchElements(m, { ...anyFilter(), sections: ['C400x400'], stories: ['Story2'] });
     const m2 = patchIds(m, ids, { section: 'C600x600' });
     expect(m2.columns.filter((c) => c.section === 'C600x600').length).toBe(3);
+  });
+});
+
+describe('grid dimensions', () => {
+  it('chains c/c distances with an overall dimension', () => {
+    const grids = generateGrids({ xSpacing: [6000, 4500], ySpacing: [5000], x0: 0, y0: 0, xLabelStart: 'A', yLabelStart: '1', extend: 1000 });
+    expect(grids.every((g) => g.bubble === 'both')).toBe(true);
+    const d = gridDimensions(grids, 600);
+    const xs = d.filter((x) => !x.vertical).map((x) => x.value);
+    const ys = d.filter((x) => x.vertical).map((x) => x.value);
+    expect(xs).toEqual([6000, 4500, 10500]);
+    expect(ys).toEqual([5000]); // only two Y grids: no overall line
+    const top = d.find((x) => !x.vertical)!;
+    expect(top.a.y).toBeGreaterThan(6000); // above the grid ends (5000 + 1000 overhang)
   });
 });
