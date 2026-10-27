@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useDialog, closeDialog, type Dialog } from './dialogState';
 import { sectionGroup } from './sectionGroups';
+import { SelectByDialog } from './SelectByDialog';
 import { useApp, toast } from '../model/store';
 import { generateGrids, moveIds, oppositeLabelStart, replicate } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
@@ -11,7 +12,7 @@ import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports } f
 import { toPayload, applyImport } from '../etabs/mapping';
 import { fitAll } from '../plan/PlanView';
 
-function Modal({ title, children, footer, wide }: { title: string; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+export function Modal({ title, children, footer, wide }: { title: string; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   return (
     <div className="modal-bg" onPointerDown={(e) => e.target === e.currentTarget && closeDialog()}>
       <div className={'modal' + (wide ? ' wide' : '')} onKeyDown={(e) => e.stopPropagation()}>
@@ -36,6 +37,8 @@ export function Dialogs() {
       return <GridsDialog />;
     case 'replicate':
       return <ReplicateDialog />;
+    case 'selectBy':
+      return <SelectByDialog />;
     case 'move':
       return <MoveDialog />;
     case 'sections':
@@ -51,7 +54,7 @@ export function Dialogs() {
   }
 }
 
-function StoryChecks({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+export function StoryChecks({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const stories = useApp((s) => s.model.stories);
   const [range, setRange] = useState('');
   return (

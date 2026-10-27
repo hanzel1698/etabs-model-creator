@@ -6,6 +6,7 @@ export type Dialog =
   | { kind: 'grids' }
   | { kind: 'replicate' }
   | { kind: 'move' }
+  | { kind: 'selectBy' }
   | { kind: 'sections' }
   | { kind: 'stories' }
   | { kind: 'underlay' }

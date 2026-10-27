@@ -354,4 +354,54 @@ export function gridSegs(m: Model): [Pt, Pt][] {
   ]);
 }
 
+// ---------- select by properties ----------
+
+export interface ElementFilter {
+  kinds: { column: boolean; beam: boolean; slab: boolean };
+  stories: string[] | null; // null = all stories
+  sections: string[] | null; // null = any section
+  shape: 'any' | 'Rectangle' | 'Circle' | 'Other'; // frame sections only
+  material: string; // '' = any
+  t3: [number | null, number | null]; // depth range (frame) / thickness range (slab), mm
+  t2: [number | null, number | null]; // width range, frame only
+}
+
+export const anyFilter = (): ElementFilter => ({
+  kinds: { column: true, beam: true, slab: true },
+  stories: null,
+  sections: null,
+  shape: 'any',
+  material: '',
+  t3: [null, null],
+  t2: [null, null],
+});
+
+const inRange = (v: number | undefined, [lo, hi]: [number | null, number | null]) =>
+  (lo === null || (v !== undefined && v >= lo - 1e-6)) && (hi === null || (v !== undefined && v <= hi + 1e-6));
+
+/** Ids of columns/beams/slabs whose story and section properties match the filter. */
+export function matchElements(m: Model, f: ElementFilter): string[] {
+  const fs = new Map(m.frameSections.map((s) => [s.name, s]));
+  const ss = new Map(m.slabSections.map((s) => [s.name, s]));
+  const story = (s: string) => !f.stories || f.stories.includes(s);
+  const sect = (s: string) => !f.sections || f.sections.includes(s);
+  const frameOk = (name: string) => {
+    const s = fs.get(name);
+    if (f.shape !== 'any' && s?.shape !== f.shape) return false;
+    if (f.material && s?.material !== f.material) return false;
+    return inRange(s?.t3, f.t3) && inRange(s?.t2, f.t2);
+  };
+  const slabOk = (name: string) => {
+    const s = ss.get(name);
+    if (f.shape !== 'any' || f.t2[0] !== null || f.t2[1] !== null) return false; // frame-only criteria exclude slabs
+    if (f.material && s?.material !== f.material) return false;
+    return inRange(s?.thickness, f.t3);
+  };
+  const ids: string[] = [];
+  if (f.kinds.column) for (const c of m.columns) if (story(c.story) && sect(c.section) && frameOk(c.section)) ids.push(c.id);
+  if (f.kinds.beam) for (const b of m.beams) if (story(b.story) && sect(b.section) && frameOk(b.section)) ids.push(b.id);
+  if (f.kinds.slab) for (const s of m.slabs) if (story(s.story) && sect(s.section) && slabOk(s.section)) ids.push(s.id);
+  return ids;
+}
+
 export { lineIntersect };

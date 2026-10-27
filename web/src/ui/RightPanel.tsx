@@ -36,8 +36,26 @@ function Properties() {
         <div className="muted small" style={{ marginTop: 8 }}>
           {model.columns.length} columns · {model.beams.length} beams · {model.slabs.length} slabs · {model.grids.length} grids
         </div>
+        <div className="chips" style={{ marginTop: 8 }}>
+          <button onClick={() => openDialog({ kind: 'selectBy' })} title="Select by section, story, size, shape or material; batch reassign">
+            Select by…
+          </button>
+        </div>
       </div>
     );
+
+  /** Same element kind and section as the current selection, on the active story (Shift: all stories). */
+  const selectSimilar = (allStories: boolean) => {
+    const story = useApp.getState().activeStory;
+    const keys = new Set([...cols.map((c) => 'c|' + c.section), ...beams.map((b) => 'b|' + b.section), ...slabs.map((x) => 's|' + x.section)]);
+    const on = (x: { story: string }) => allStories || x.story === story;
+    const ids = [
+      ...model.columns.filter((c) => on(c) && keys.has('c|' + c.section)),
+      ...model.beams.filter((b) => on(b) && keys.has('b|' + b.section)),
+      ...model.slabs.filter((x) => on(x) && keys.has('s|' + x.section)),
+    ].map((x) => x.id);
+    st.setSelection(ids);
+  };
 
   return (
     <div className="section">
@@ -102,6 +120,12 @@ function Properties() {
         </>
       )}
       <div className="chips" style={{ marginTop: 6 }}>
+        {cols.length + beams.length + slabs.length > 0 && (
+          <button onClick={(e) => selectSimilar(e.shiftKey)} title="Select every element of the same kind and section on this story (Shift+click: all stories)">
+            Select similar
+          </button>
+        )}
+        <button onClick={() => openDialog({ kind: 'selectBy' })}>Select by…</button>
         <button onClick={() => openDialog({ kind: 'replicate' })} title="E">Replicate…</button>
         <button onClick={() => openDialog({ kind: 'move' })}>Move…</button>
         <button

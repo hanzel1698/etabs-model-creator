@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, autoBeamsOnGrids, findBay, generateGrids, nextGridLabel, oppositeLabelStart, replicate } from './ops';
+import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, matchElements, nextGridLabel, oppositeLabelStart, patchIds, replicate } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
 import { emptyModel } from './types';
 import { toPayload } from '../etabs/mapping';
@@ -115,5 +115,28 @@ describe('grid labels', () => {
     expect(grids.map((x) => x.label)).toEqual(['1', '2', '3', 'A', 'B', 'C']);
     expect(oppositeLabelStart('1')).toBe('A');
     expect(oppositeLabelStart('C')).toBe('1');
+  });
+});
+
+describe('select by properties', () => {
+  let m = emptyModel();
+  m = { ...m, frameSections: [...m.frameSections, { name: 'C600x600', shape: 'Rectangle', t3: 600, t2: 600, material: 'M30', fromEtabs: false }] };
+  m = addColumns(m, [{ x: 0, y: 0 }, { x: 6000, y: 0 }], ['Story1', 'Story2'], 'C400x400', 0);
+  m = addColumns(m, [{ x: 0, y: 5000 }], ['Story1'], 'C600x600', 0);
+  m = addBeams(m, [[{ x: 0, y: 0 }, { x: 6000, y: 0 }]], ['Story1', 'Story2'], 'B300x500');
+  it('filters by kind, story and section', () => {
+    expect(matchElements(m, { ...anyFilter(), kinds: { column: true, beam: false, slab: false } }).length).toBe(5);
+    expect(matchElements(m, { ...anyFilter(), stories: ['Story1'], sections: ['C400x400'] }).length).toBe(2);
+    expect(matchElements(m, { ...anyFilter(), kinds: { column: false, beam: true, slab: false }, stories: ['Story2'] }).length).toBe(1);
+  });
+  it('filters by section properties', () => {
+    expect(matchElements(m, { ...anyFilter(), t3: [550, null] }).length).toBe(1); // only C600x600
+    expect(matchElements(m, { ...anyFilter(), material: 'M30' }).length).toBe(1);
+    expect(matchElements(m, { ...anyFilter(), t2: [null, 350] }).length).toBe(2); // the two B300x500 beams
+  });
+  it('batch reassigns matched elements', () => {
+    const ids = matchElements(m, { ...anyFilter(), sections: ['C400x400'], stories: ['Story2'] });
+    const m2 = patchIds(m, ids, { section: 'C600x600' });
+    expect(m2.columns.filter((c) => c.section === 'C600x600').length).toBe(3);
   });
 });
