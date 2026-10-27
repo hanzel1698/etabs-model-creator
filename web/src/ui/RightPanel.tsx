@@ -104,20 +104,27 @@ function Properties() {
       )}
       {beams.length === 1 && <div className="small muted">Length {fmt(dist({ x: beams[0].x1, y: beams[0].y1 }, { x: beams[0].x2, y: beams[0].y2 }))} mm</div>}
       {grids.length === 1 && (
-        <>
-          <div className="row">
-            <span>Label</span>
-            <input type="text" value={grids[0].label} onChange={(e) => st.commit((m) => ({ ...m, grids: m.grids.map((g) => (g.id === grids[0].id ? { ...g, label: e.target.value } : g)) }))} />
-          </div>
-          <div className="row">
-            <span>Bubble</span>
-            <select value={grids[0].bubble} onChange={(e) => st.commit((m) => ({ ...m, grids: m.grids.map((g) => (g.id === grids[0].id ? { ...g, bubble: e.target.value as any } : g)) }))}>
-              <option value="start">Start</option>
-              <option value="end">End</option>
-              <option value="both">Both</option>
-            </select>
-          </div>
-        </>
+        <div className="row">
+          <span>Label</span>
+          <input type="text" value={grids[0].label} onChange={(e) => st.commit((m) => ({ ...m, grids: m.grids.map((g) => (g.id === grids[0].id ? { ...g, label: e.target.value } : g)) }))} />
+        </div>
+      )}
+      {grids.length > 0 && (
+        <div className="row">
+          <span>Bubble</span>
+          <select
+            value={common(grids, (g) => g.bubble)}
+            onChange={(e) => {
+              const ids = new Set(grids.map((g) => g.id));
+              st.commit((m) => ({ ...m, grids: m.grids.map((g) => (ids.has(g.id) ? { ...g, bubble: e.target.value as any } : g)) }));
+            }}
+          >
+            <option value="" disabled>(mixed)</option>
+            <option value="start">Start</option>
+            <option value="end">End</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
       )}
       <div className="chips" style={{ marginTop: 6 }}>
         {cols.length + beams.length + slabs.length > 0 && (

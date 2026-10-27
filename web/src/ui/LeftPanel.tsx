@@ -96,6 +96,13 @@ export function LeftPanel() {
           >
             Beams on grids
           </button>
+          <button
+            title="Show bubbles at both ends of every grid line"
+            disabled={!model.grids.some((g) => g.bubble !== 'both')}
+            onClick={() => st.commit((m) => ({ ...m, grids: m.grids.map((g) => (g.bubble === 'both' ? g : { ...g, bubble: 'both' })) }))}
+          >
+            All grid bubbles → both
+          </button>
         </div>
       </div>
 
