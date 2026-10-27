@@ -31,11 +31,16 @@ export class Viewport {
     return { x: u * c + v * s, y: -u * s + v * c };
   }
 
-  /** SVG matrix() string for the world group. */
-  matrix() {
+  /** World → screen as [a, b, c, d, e, f] (SVG / canvas setTransform order). */
+  m(): [number, number, number, number, number, number] {
     const [c, s] = this.cs;
     const k = this.k;
-    return `matrix(${k * c} ${-k * s} ${-k * s} ${-k * c} ${this.tx} ${this.ty})`;
+    return [k * c, -k * s, -k * s, -k * c, this.tx, this.ty];
+  }
+
+  /** SVG matrix() string for the world group. */
+  matrix() {
+    return `matrix(${this.m().join(' ')})`;
   }
 
   zoomAt(screen: Pt, factor: number) {

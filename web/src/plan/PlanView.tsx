@@ -6,6 +6,7 @@ import { UnderlayLayer, GridLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer
 import { onMove, onClick, onCancel, finishPolygon, hitTest, boxSelect, fillIntersections, doSnap } from './tools';
 import { columnOutline } from './snap';
 import { useUnderlay } from '../underlay/store';
+import { UnderlayCanvas } from './UnderlayCanvas';
 
 export function fitAll(w?: number, h?: number) {
   const el = document.getElementById('plan-host');
@@ -22,7 +23,7 @@ export function fitAll(w?: number, h?: number) {
     if (u.kind === 'dxf' && u.dxf) {
       const story = useApp.getState().activeStory;
       const reg = u.setupMode ? null : u.regions.find((r) => r.stories.includes(story));
-      const b = reg ? { minX: reg.rect.minX - reg.ref.x, minY: reg.rect.minY - reg.ref.y, maxX: reg.rect.maxX - reg.ref.x, maxY: reg.rect.maxY - reg.ref.y } : u.dxf.bbox;
+      const b = reg ? { minX: reg.rect.minX - reg.ref.x, minY: reg.rect.minY - reg.ref.y, maxX: reg.rect.maxX - reg.ref.x, maxY: reg.rect.maxY - reg.ref.y } : u.dxf.fitBox;
       return viewport.fit(b.minX, b.minY, b.maxX, b.maxY, W, H);
     }
     return viewport.fit(-2000, -2000, 30000, 20000, W, H);
@@ -204,6 +205,7 @@ export function PlanView() {
 
   return (
     <div id="plan-host" ref={hostRef} className="plan-host" style={{ cursor }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onContextMenu={ctx} onDoubleClick={dblClick} onPointerLeave={() => usePreview.getState().set({ cursor: null, snap: null })}>
+      <UnderlayCanvas w={size.w} h={size.h} />
       <svg width={size.w} height={size.h} className="plan-svg">
         <g ref={worldRef}>
           {show.underlay && <UnderlayLayer story={story} viewRot={viewRot} />}

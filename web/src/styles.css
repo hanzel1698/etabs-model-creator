@@ -231,6 +231,11 @@ label {
   user-select: none;
   background: radial-gradient(circle at 50% 40%, #1a1e25, var(--bg));
 }
+.underlay-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .plan-svg {
   display: block;
   position: absolute;

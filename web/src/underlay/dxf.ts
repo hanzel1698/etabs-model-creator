@@ -22,6 +22,8 @@ export interface DxfData {
   segs: [Pt, Pt][]; // for snapping/measuring
   points: Pt[]; // endpoints, centres
   bbox: { minX: number; minY: number; maxX: number; maxY: number };
+  /** extents ignoring the outer 1% of vertices (stray objects far from the drawing) - used for fitting */
+  fitBox: { minX: number; minY: number; maxX: number; maxY: number };
   insUnits: number;
 }
 
@@ -192,7 +194,21 @@ export function parseDxf(text: string, scale: number): DxfData {
 
   const layers: DxfLayer[] = [...byLayer.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, ds]) => ({ name, d: ds.join(''), visible: true }));
   if (!isFinite(minX)) (minX = 0), (minY = 0), (maxX = 1000), (maxY = 1000);
-  return { layers, texts, segs, points, bbox: { minX, minY, maxX, maxY }, insUnits };
+  return { layers, texts, segs, points, bbox: { minX, minY, maxX, maxY }, fitBox: robustBox(points) ?? { minX, minY, maxX, maxY }, insUnits };
+}
+
+function robustBox(pts: Pt[]) {
+  if (pts.length < 20) return null;
+  const xs = pts.map((p) => p.x).sort((a, b) => a - b),
+    ys = pts.map((p) => p.y).sort((a, b) => a - b);
+  const q = (a: number[], f: number) => a[Math.floor(f * (a.length - 1))];
+  return { minX: q(xs, 0.01), minY: q(ys, 0.01), maxX: q(xs, 0.99), maxY: q(ys, 0.99) };
+}
+
+/** $INSUNITS from the header without a full parse. */
+export function readInsUnits(text: string): number {
+  const m = text.slice(0, 200000).match(/\$INSUNITS\s*\r?\n\s*70\s*\r?\n\s*(\d+)/);
+  return m ? +m[1] : 0;
 }
 
 export { I };

@@ -19,32 +19,13 @@ export const UnderlayLayer = memo(function UnderlayLayer({ story, viewRot }: { s
   }, [sheet?.page, u.pdfBytes]);
 
   if (u.kind === 'dxf' && u.dxf) {
-    const reg = u.setupMode ? null : regionFor(story);
-    if (!u.setupMode && u.regions.length && !reg) return null;
-    const off = reg ? reg.ref : { x: 0, y: 0 };
-    const clipId = reg ? `clip-${reg.id}` : undefined;
+    // The DXF linework itself is drawn on a canvas (UnderlayCanvas): large architectural DXFs have
+    // ~100k segments, which freezes the browser as SVG. Only the light region overlays stay in SVG.
+    if (!u.setupMode) return null;
     return (
-      <g opacity={u.opacity} className="underlay">
-        {reg && (
-          <defs>
-            <clipPath id={clipId}>
-              <rect x={reg.rect.minX} y={reg.rect.minY} width={reg.rect.maxX - reg.rect.minX} height={reg.rect.maxY - reg.rect.minY} />
-            </clipPath>
-          </defs>
-        )}
-        <g transform={`translate(${-off.x} ${-off.y})`}>
-          <g clipPath={clipId ? `url(#${clipId})` : undefined}>
-            {u.dxf.layers.map((l) => (l.visible ? <path key={l.name} d={l.d} fill="none" stroke="var(--underlay)" strokeWidth={1} style={NS} /> : null))}
-            {u.showText &&
-              u.dxf.texts.map((t, i) =>
-                u.dxf!.layers.find((l) => l.name === t.layer)?.visible === false ? null : (
-                  <text key={i} transform={`${textTransform(t.x, t.y, 0, t.rot)}`} fontSize={t.h} fill="var(--underlay)" className="nosel">
-                    {t.text}
-                  </text>
-                ),
-              )}
-          </g>
-          {u.setupMode &&
+      <g className="underlay">
+        <g>
+          {
             u.regions.map((r) => (
               <g key={r.id}>
                 <rect x={r.rect.minX} y={r.rect.minY} width={r.rect.maxX - r.rect.minX} height={r.rect.maxY - r.rect.minY} fill="rgba(80,160,255,.06)" stroke="#4aa3ff" strokeDasharray="6 4" style={NS} />

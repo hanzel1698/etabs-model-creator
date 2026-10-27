@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import RBush from 'rbush';
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 import type { Pt } from '../model/types';
-import { parseDxf, unitScaleFromInsunits, type DxfData } from './dxf';
+import { parseDxf, readInsUnits, unitScaleFromInsunits, type DxfData } from './dxf';
+import { toast } from '../model/store';
 import { pdfPageCount, renderPdfPage, type RenderedPage } from './pdf';
 
 export interface Region {
@@ -90,9 +91,19 @@ export async function saveUnderlayMeta() {
 
 export async function loadDxfFile(file: File) {
   const text = await file.text();
-  const probe = parseDxf(text, 1);
-  const scale = unitScaleFromInsunits(probe.insUnits);
-  const dxf = scale === 1 ? probe : parseDxf(text, scale);
+  const units = readInsUnits(text);
+  let scale = unitScaleFromInsunits(units);
+  let dxf = parseDxf(text, scale);
+  // Many architectural DXFs are drawn in mm but carry a wrong $INSUNITS (often inches).
+  // If the bulk of the drawing (fitBox) is over 500 m after scaling but a plausible 3–500 m when read as mm,
+  // the header is wrong, so fall back to mm.
+  const fb = dxf.fitBox;
+  const size = Math.max(fb.maxX - fb.minX, fb.maxY - fb.minY);
+  if (scale > 1 && size > 5e5 && size / scale >= 3e3 && size / scale <= 5e5) {
+    scale = 1;
+    dxf = parseDxf(text, 1);
+    toast(`The DXF says its units are ${units === 1 ? 'inches' : 'code ' + units}, but that makes the plan ${(size / 1000).toFixed(0)} m across, so mm is used. Change it in Underlay → Setup if needed.`);
+  }
   clearPdf();
   useUnderlay.getState().set({ ...defaultMeta, kind: 'dxf', fileName: file.name, dxfScale: scale, dxf, dxfText: text, setupMode: true });
   await idbSet('underlayFile', text);
