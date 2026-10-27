@@ -77,7 +77,7 @@ export function LeftPanel() {
         <div className="row">
           <span>Slab</span>
           <select value={act.slab} onChange={(e) => st.setActive('slab', e.target.value)}>
-            {model.slabSections.map((s) => (
+            {[...model.slabSections].sort((a, b) => a.thickness - b.thickness).map((s) => (
               <option key={s.name}>{s.name}</option>
             ))}
           </select>

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useDialog, closeDialog, type Dialog } from './dialogState';
-import { sectionGroup } from './sectionGroups';
+import { bySize, sectionGroup } from './sectionGroups';
 import { SelectByDialog } from './SelectByDialog';
 import { useApp, toast } from '../model/store';
 import { generateGrids, moveIds, oppositeLabelStart, replicate } from '../model/ops';
@@ -202,13 +202,13 @@ function MoveDialog() {
 
 function SectionsDialog() {
   const model = useApp((s) => s.model);
-  const [f, setF] = useState<FrameSection[]>(model.frameSections);
+  const [f, setF] = useState<FrameSection[]>(() => [...model.frameSections].sort(bySize));
   const [sl, setSl] = useState<SlabSection[]>(model.slabSections);
   const mats = model.materials.map((m) => m.name);
   const save = () => {
     const names = new Set(f.map((x) => x.name));
     if (names.size !== f.length) return toast('Frame section names must be unique.');
-    useApp.getState().commit((m) => ({ ...m, frameSections: f, slabSections: sl }));
+    useApp.getState().commit((m) => ({ ...m, frameSections: [...f].sort(bySize), slabSections: [...sl].sort((a, b) => a.thickness - b.thickness) }));
     closeDialog();
   };
   const upF = (i: number, p: Partial<FrameSection>) => setF(f.map((x, j) => (j === i ? { ...x, ...p } : x)));

@@ -85,7 +85,7 @@ function Properties() {
           <span>Slab</span>
           <select value={common(slabs, (x) => x.section)} onChange={(e) => st.commit((m) => patchIds(m, slabs.map((x) => x.id), { section: e.target.value }))}>
             <option value="">(mixed)</option>
-            {model.slabSections.map((x) => (
+            {[...model.slabSections].sort((a, b) => a.thickness - b.thickness).map((x) => (
               <option key={x.name}>{x.name}</option>
             ))}
           </select>

@@ -14,9 +14,12 @@ export function groupSections<T extends { name: string }>(list: T[]): Record<Sec
   return out;
 }
 
-/** <option>s for a frame-section <select>, in optgroups, with the preferred group first. */
+/** Smaller sections first: by width t2, then depth t3, then name (so B230x450 < B230x600 < B300x450). */
+export const bySize = (a: FrameSection, b: FrameSection) => a.t2 - b.t2 || a.t3 - b.t3 || a.name.localeCompare(b.name, undefined, { numeric: true });
+
+/** <option>s for a frame-section <select>, in optgroups (sorted by size), with the preferred group first. */
 export function SectionOptions({ sections, prefer }: { sections: FrameSection[]; prefer?: SectionGroup }) {
-  const g = groupSections(sections);
+  const g = groupSections([...sections].sort(bySize));
   const order: SectionGroup[] = prefer === 'Beams' ? ['Beams', 'Columns', 'Other'] : ['Columns', 'Beams', 'Other'];
   return (
     <>

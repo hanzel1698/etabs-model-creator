@@ -163,7 +163,7 @@ export function SelectByDialog() {
           <span style={{ width: 130 }}>Slabs →</span>
           <select value={newSlab} onChange={(e) => setNewSlab(e.target.value)} disabled={!nSlabs}>
             <option value="">(keep)</option>
-            {model.slabSections.map((s) => (
+            {[...model.slabSections].sort((a, b) => a.thickness - b.thickness).map((s) => (
               <option key={s.name}>{s.name}</option>
             ))}
           </select>
