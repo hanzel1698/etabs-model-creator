@@ -49,6 +49,7 @@ The hosted Pages build works the same way: it calls the bridge on `127.0.0.1:876
   - changed geometry means the object is deleted and re-added;
   - an element deleted in the app is deleted in ETABS.
 - Objects you drew directly in ETABS are never touched.
+- Supports: the push option (Fixed / Pinned / None) restrains the bottom joint of every column at the base elevation on each push; None leaves joint restraints untouched.
 - Sections created in the app are created in ETABS (rectangular, circular and slab). Sections imported from ETABS are left as they are.
 - ETABS only allows story replacement (`SetStories_2`) on a model with no objects. Otherwise, import the stories from ETABS first.
 

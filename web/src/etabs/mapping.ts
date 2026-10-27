@@ -1,13 +1,13 @@
 import type { Model } from '../model/types';
 import { storyElevations } from '../model/types';
-import type { ImportResult, PushPayload } from './bridgeClient';
+import type { ImportResult, PushPayload, Supports } from './bridgeClient';
 import { uid } from '../model/types';
 
 /**
  * App model → ETABS push payload (all lengths mm, ETABS units set to kN-mm-C by the bridge).
  * A column on story S spans from the elevation of the story below S up to S.
  */
-export function toPayload(m: Model, opts: { updateStories: boolean; pushGrids: boolean }): PushPayload {
+export function toPayload(m: Model, opts: { updateStories: boolean; pushGrids: boolean; supports?: Supports }): PushPayload {
   const el = storyElevations(m);
   const frames: PushPayload['frames'] = [];
   for (const c of m.columns) {
@@ -37,6 +37,7 @@ export function toPayload(m: Model, opts: { updateStories: boolean; pushGrids: b
     frames,
     areas,
     deleteGuids: m.pushedIds.filter((g) => !live.has(g)),
+    supports: opts.supports ?? 'none',
   };
 }
 

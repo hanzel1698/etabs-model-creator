@@ -431,3 +431,13 @@ table.grid select {
   border-radius: 4px;
   padding: 4px 6px;
 }
+.status .counts {
+  display: flex;
+  gap: 10px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.status .counts b {
+  font-weight: 600;
+  color: var(--text);
+}

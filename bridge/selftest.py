@@ -43,7 +43,17 @@ def payload(beam_section="B300x500", move_beam=False, drop=None):
                               {"name": "B300x500", "shape": "Rectangle", "t3": 500, "t2": 300, "material": "4000Psi", "fromEtabs": False},
                               {"name": "B300x600", "shape": "Rectangle", "t3": 600, "t2": 300, "material": "4000Psi", "fromEtabs": False}],
             "slabSections": [{"name": "S150", "thickness": 150, "material": "4000Psi", "fromEtabs": False}],
-            "frames": frames, "areas": areas, "deleteGuids": []}
+            "frames": frames, "areas": areas, "deleteGuids": [], "supports": "fixed"}
+
+
+def base_restraints(m):
+    """Distinct restraint tuples of all joints at z = 0."""
+    names = B.lst(m.PointObj.GetNameList(0, [])[1])
+    out = set()
+    for n in names:
+        if abs(m.PointObj.GetCoordCartesian(n, 0.0, 0.0, 0.0, "Global")[2]) < 1:
+            out.add(tuple(bool(v) for v in m.PointObj.GetRestraint(n, [])[0]))
+    return out
 
 
 def main():
@@ -66,6 +76,9 @@ def main():
         print("push 1:", {k: v for k, v in r.items() if k not in ("log", "pushedGuids")})
         print("\n".join(r["log"]))
         assert r["failed"] == 0 and r["added"] == 18, r
+        assert r["restrained"] == 4, r
+        print("restraints after push 1:", base_restraints(m))
+        assert base_restraints(m) == {(True,) * 6}, "base joints should be fixed"
 
         imp = B.do_import()
         print("import:", len(imp["stories"]), "stories", [s["name"] for s in imp["stories"]], len(imp["grids"]), "grids",
@@ -81,8 +94,11 @@ def main():
         # edit: beam section change + one beam moved + one column removed
         p2 = payload("B300x600", move_beam=True, drop="col-Story2-6000-5000")
         p2["deleteGuids"] = ["col-Story2-6000-5000"]
+        p2["supports"] = "pinned"
         r = B.do_push(p2)
         print("push 3 (edits):", {k: v for k, v in r.items() if k not in ("log", "pushedGuids")})
+        print("restraints after push 3:", base_restraints(m))
+        assert base_restraints(m) == {(True, True, True, False, False, False)}, "base joints should be pinned"
         v = B.do_verify(p2)
         print("verify 3:", v["log"][0])
         assert v["ok"], v

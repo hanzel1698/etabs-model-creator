@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, memo, Suspense, useEffect, useRef } from 'react';
 import { useApp, usePreview, type ToolName } from './model/store';
 import { PlanView, fitAll } from './plan/PlanView';
 import { setTool, onCancel, onInput, finishPolygon, resetTool } from './plan/tools';
@@ -161,6 +161,24 @@ function MeasureBox() {
   return <div className="measure-box">{m.text}</div>;
 }
 
+/** Element counts on the active story, with model totals. Kept apart from the status bar so it only re-renders on model changes. */
+const Counts = memo(function Counts({ story }: { story: string }) {
+  const m = useApp((s) => s.model);
+  const n = (arr: { story: string }[]) => [arr.filter((x) => x.story === story).length, arr.length];
+  const [c, ct] = n(m.columns),
+    [b, bt] = n(m.beams),
+    [s, st] = n(m.slabs);
+  return (
+    <span className="counts" title={`Totals in the model: ${ct} columns, ${bt} beams, ${st} slabs`}>
+      <b>{story}</b>
+      <span>Columns {c}</span>
+      <span>Beams {b}</span>
+      <span>Slabs {s}</span>
+      <span className="muted">· all stories {ct} / {bt} / {st}</span>
+    </span>
+  );
+});
+
 function StatusBar({ ortho }: { ortho: boolean }) {
   const hint = usePreview((s) => s.hint);
   const input = usePreview((s) => s.input);
@@ -186,7 +204,7 @@ function StatusBar({ ortho }: { ortho: boolean }) {
       </div>
       <span className="hint">{hint}</span>
       <button className={ortho ? 'on' : ''} onClick={() => useApp.getState().toggleOrtho()} title="F8">Ortho</button>
-      <span className="muted">{story}</span>
+      <Counts story={story} />
       <span className="coords">{cursor ? `X ${fmt(cursor.x)}  Y ${fmt(cursor.y)} mm` : ''}</span>
     </div>
   );

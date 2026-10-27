@@ -61,9 +61,14 @@ export interface PushPayload {
   frames: { guid: string; kind: 'column' | 'beam'; x1: number; y1: number; z1: number; x2: number; y2: number; z2: number; section: string; angle: number; story: string }[];
   areas: { guid: string; pts: { x: number; y: number; z: number }[]; section: string; story: string }[];
   deleteGuids: string[];
+  /** restraint for the bottom joints of columns at the base elevation; 'none' leaves joints untouched */
+  supports: Supports;
 }
 
+export type Supports = 'fixed' | 'pinned' | 'none';
+
 export interface PushResult {
+  restrained?: number;
   added: number;
   updated: number;
   unchanged: number;

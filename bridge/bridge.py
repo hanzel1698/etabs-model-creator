@@ -442,6 +442,30 @@ def add_area(m, a):
     return name
 
 
+# U1 U2 U3 R1 R2 R3
+SUPPORTS = {"fixed": [True] * 6, "pinned": [True, True, True, False, False, False]}
+
+
+def set_supports(m, col_names, kind, base_z, log):
+    """Restrain the bottom joint of each base column; returns how many joints were set."""
+    value = SUPPORTS[kind]
+    done = set()
+    for name in col_names:
+        try:
+            i, j = ok(m.FrameObj.GetPoints(name, "", ""), "GetPoints")[:2]
+            zi = ok(m.PointObj.GetCoordCartesian(i, 0.0, 0.0, 0.0, "Global"), "GetCoord")[2]
+            zj = ok(m.PointObj.GetCoordCartesian(j, 0.0, 0.0, 0.0, "Global"), "GetCoord")[2]
+            pt = i if abs(zi - base_z) <= abs(zj - base_z) else j
+            if pt in done:
+                continue
+            ok(m.PointObj.SetRestraint(pt, list(value), 0), "SetRestraint")
+            done.add(pt)
+        except Exception as e:
+            log.append(f"ERROR support at column {name}: {e}")
+    log.append(f"Supports: {len(done)} base joints set to {kind}")
+    return len(done)
+
+
 def do_push(p):
     p = normalize(p)
     m = sm()
@@ -482,6 +506,7 @@ def do_push(p):
                 log.append(f"ERROR delete {g}: {e}")
 
         trace("frames")
+        base_cols = []  # names of columns that start at the base elevation (for supports)
         for f in p["frames"]:
             try:
                 name = fmap.get(f["guid"])
@@ -500,12 +525,14 @@ def do_push(p):
                         res["updated" if changed else "unchanged"] += 1
                     else:
                         ok(m.FrameObj.Delete(name, 0), "FrameObj.Delete")
-                        add_frame(m, f)
+                        name = add_frame(m, f)
                         res["updated"] += 1
                 else:
-                    add_frame(m, f)
+                    name = add_frame(m, f)
                     res["added"] += 1
                 pushed.append(f["appId"])
+                if f["kind"] == "column" and abs(min(f["z1"], f["z2"]) - p["baseElevation"]) <= TOL:
+                    base_cols.append(name)
             except Exception as e:
                 res["failed"] += 1
                 log.append(f"ERROR {f['kind']} {f['story']} {f['section']} ({f['x1']:.0f},{f['y1']:.0f})-({f['x2']:.0f},{f['y2']:.0f}): {e}")
@@ -532,6 +559,9 @@ def do_push(p):
             except Exception as e:
                 res["failed"] += 1
                 log.append(f"ERROR slab {a['story']} {a['section']}: {e}")
+
+        if p.get("supports", "none") in SUPPORTS:
+            res["restrained"] = set_supports(m, base_cols, p["supports"], p["baseElevation"], log)
 
         try:
             m.View.RefreshView(0, False)

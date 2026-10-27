@@ -6,7 +6,7 @@ import { parseSpacing, fmt } from '../model/geom';
 import { uid, storyElevations, type FrameSection, type Model, type SlabSection, type Story } from '../model/types';
 import { useUnderlay, saveUnderlayMeta, rescaleDxf } from '../underlay/store';
 import { setTool } from '../plan/tools';
-import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus } from '../etabs/bridgeClient';
+import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports } from '../etabs/bridgeClient';
 import { toPayload, applyImport } from '../etabs/mapping';
 import { fitAll } from '../plan/PlanView';
 
@@ -504,7 +504,7 @@ function EtabsDialog() {
   const [log, setLog] = useState<string[]>([]);
   const [url, setUrl] = useState(bridgeUrl());
   const [imp, setImp] = useState({ sections: true, stories: true, grids: true });
-  const [push, setPush] = useState({ updateStories: false, pushGrids: true });
+  const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; supports: Supports }>({ updateStories: false, pushGrids: true, supports: 'fixed' });
   const model = useApp((s) => s.model);
 
   const add = (...l: string[]) => setLog((x) => [...x, ...l]);
@@ -549,7 +549,7 @@ function EtabsDialog() {
       add(`→ Pushing ${p.frames.length} frames, ${p.areas.length} slabs, ${p.deleteGuids.length} deletions…`);
       const r = await bridge.push(p);
       useApp.getState().commit((m) => ({ ...m, pushedIds: r.pushedGuids }));
-      add(`✔ added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}, deleted ${r.deleted}, failed ${r.failed}`, ...r.log);
+      add(`✔ added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}, deleted ${r.deleted}, failed ${r.failed}` + (r.restrained !== undefined ? `, ${r.restrained} base joints ${p.supports}` : ''), ...r.log);
     });
 
   const doVerify = () =>
@@ -600,6 +600,14 @@ function EtabsDialog() {
         <div className="chips">
           <label className="small"><input type="checkbox" checked={push.updateStories} onChange={() => setPush({ ...push, updateStories: !push.updateStories })} /> Replace ETABS stories</label>
           <label className="small"><input type="checkbox" checked={push.pushGrids} onChange={() => setPush({ ...push, pushGrids: !push.pushGrids })} /> Replace grids</label>
+          <label className="small" title="Restraint assigned to the bottom joint of every column at the base elevation">
+            Supports
+            <select value={push.supports} onChange={(e) => setPush({ ...push, supports: e.target.value as Supports })}>
+              <option value="fixed">Fixed</option>
+              <option value="pinned">Pinned</option>
+              <option value="none">None (leave as is)</option>
+            </select>
+          </label>
           <button className="primary" onClick={doPush} disabled={!!busy || missingSec.length > 0}>Push</button>
           <button onClick={doVerify} disabled={!!busy}>Verify</button>
         </div>
