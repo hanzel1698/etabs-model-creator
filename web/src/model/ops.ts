@@ -1,0 +1,304 @@
+import type { Beam, Column, Grid, Model, Pt, Slab } from './types';
+import { uid } from './types';
+import { alphaLabel, dist, lineIntersect, polyArea, pointInPoly, segIntersect, sub, cross } from './geom';
+
+const TOL = 1; // mm, coincidence tolerance
+
+// ---------- grids ----------
+
+export interface GridGenSpec {
+  xSpacing: number[];
+  ySpacing: number[];
+  x0: number;
+  y0: number;
+  xLabelStart: string; // 'A' or '1'
+  yLabelStart: string;
+  extend: number;
+}
+
+function labelSeq(start: string, n: number): string[] {
+  if (/^\d+$/.test(start)) return Array.from({ length: n }, (_, i) => String(+start + i));
+  const base = start.toUpperCase().charCodeAt(0) - 65;
+  return Array.from({ length: n }, (_, i) => alphaLabel(base + i));
+}
+
+export function generateGrids(s: GridGenSpec): Grid[] {
+  const xs = [s.x0];
+  s.xSpacing.forEach((d) => xs.push(xs[xs.length - 1] + d));
+  const ys = [s.y0];
+  s.ySpacing.forEach((d) => ys.push(ys[ys.length - 1] + d));
+  const minX = xs[0] - s.extend,
+    maxX = xs[xs.length - 1] + s.extend;
+  const minY = ys[0] - s.extend,
+    maxY = ys[ys.length - 1] + s.extend;
+  const xl = labelSeq(s.xLabelStart, xs.length);
+  const yl = labelSeq(s.yLabelStart, ys.length);
+  return [
+    ...xs.map<Grid>((x, i) => ({ id: uid(), label: xl[i], dir: 'X', x1: x, y1: minY, x2: x, y2: maxY, bubble: 'end' })),
+    ...ys.map<Grid>((y, i) => ({ id: uid(), label: yl[i], dir: 'Y', x1: minX, y1: y, x2: maxX, y2: y, bubble: 'start' })),
+  ];
+}
+
+/** Classify a 2-point grid as X / Y / general. */
+export function makeGrid(a: Pt, b: Pt, label: string): Grid {
+  let dir: Grid['dir'] = 'G';
+  if (Math.abs(a.x - b.x) < TOL) dir = 'X';
+  else if (Math.abs(a.y - b.y) < TOL) dir = 'Y';
+  return { id: uid(), label, dir, x1: a.x, y1: a.y, x2: b.x, y2: b.y, bubble: 'end' };
+}
+
+export function gridIntersections(grids: Grid[]): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i < grids.length; i++)
+    for (let j = i + 1; j < grids.length; j++) {
+      const g = grids[i],
+        h = grids[j];
+      const r = segIntersect({ x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 }, { x: h.x1, y: h.y1 }, { x: h.x2, y: h.y2 });
+      if (r) out.push(r.p);
+    }
+  return out;
+}
+
+export function nextGridLabel(grids: Grid[], dir: Grid['dir']): string {
+  const same = grids.filter((g) => g.dir === dir).map((g) => g.label);
+  if (dir === 'Y') {
+    const nums = same.map(Number).filter((n) => !isNaN(n));
+    return String((nums.length ? Math.max(...nums) : 0) + 1);
+  }
+  for (let i = 0; i < 2000; i++) {
+    const l = dir === 'G' ? 'G' + (i + 1) : alphaLabel(i);
+    if (!same.includes(l)) return l;
+  }
+  return 'G';
+}
+
+// ---------- elements ----------
+
+export function addColumns(m: Model, pts: Pt[], stories: string[], section: string, angle: number): Model {
+  const cols = [...m.columns];
+  for (const story of stories)
+    for (const p of pts) {
+      if (cols.some((c) => c.story === story && Math.abs(c.x - p.x) < TOL && Math.abs(c.y - p.y) < TOL)) continue;
+      cols.push({ id: uid(), story, x: p.x, y: p.y, section, angle });
+    }
+  return cols.length === m.columns.length ? m : { ...m, columns: cols };
+}
+
+const sameBeam = (b: Beam, a: Pt, c: Pt) =>
+  (dist({ x: b.x1, y: b.y1 }, a) < TOL && dist({ x: b.x2, y: b.y2 }, c) < TOL) ||
+  (dist({ x: b.x1, y: b.y1 }, c) < TOL && dist({ x: b.x2, y: b.y2 }, a) < TOL);
+
+export function addBeams(m: Model, segs: [Pt, Pt][], stories: string[], section: string): Model {
+  const beams = [...m.beams];
+  for (const story of stories)
+    for (const [a, b] of segs) {
+      if (dist(a, b) < TOL) continue;
+      if (beams.some((x) => x.story === story && sameBeam(x, a, b))) continue;
+      beams.push({ id: uid(), story, x1: a.x, y1: a.y, x2: b.x, y2: b.y, section });
+    }
+  return beams.length === m.beams.length ? m : { ...m, beams };
+}
+
+export function addSlab(m: Model, pts: Pt[], story: string, section: string): Model {
+  if (pts.length < 3 || Math.abs(polyArea(pts)) < 1) return m;
+  const ccw = polyArea(pts) < 0 ? [...pts].reverse() : pts;
+  return { ...m, slabs: [...m.slabs, { id: uid(), story, pts: ccw, section }] };
+}
+
+/** Beams along grid lines between consecutive columns on the given story. */
+export function autoBeamsOnGrids(m: Model, story: string, section: string): Model {
+  const cols = m.columns.filter((c) => c.story === story);
+  const segs: [Pt, Pt][] = [];
+  for (const g of m.grids) {
+    const a = { x: g.x1, y: g.y1 },
+      b = { x: g.x2, y: g.y2 };
+    const d = sub(b, a);
+    const L = Math.hypot(d.x, d.y);
+    const on = cols
+      .filter((c) => Math.abs(cross(d, sub(c, a))) / L < TOL * 5)
+      .map((c) => ({ p: { x: c.x, y: c.y }, t: ((c.x - a.x) * d.x + (c.y - a.y) * d.y) / L }))
+      .sort((p, q) => p.t - q.t);
+    for (let i = 0; i + 1 < on.length; i++) segs.push([on[i].p, on[i + 1].p]);
+  }
+  return addBeams(m, segs, [story], section);
+}
+
+export function deleteIds(m: Model, ids: string[]): Model {
+  const s = new Set(ids);
+  return {
+    ...m,
+    grids: m.grids.filter((x) => !s.has(x.id)),
+    columns: m.columns.filter((x) => !s.has(x.id)),
+    beams: m.beams.filter((x) => !s.has(x.id)),
+    slabs: m.slabs.filter((x) => !s.has(x.id)),
+  };
+}
+
+const mvCol = (c: Column, dx: number, dy: number): Column => ({ ...c, x: c.x + dx, y: c.y + dy });
+const mvBeam = (b: Beam, dx: number, dy: number): Beam => ({ ...b, x1: b.x1 + dx, y1: b.y1 + dy, x2: b.x2 + dx, y2: b.y2 + dy });
+const mvSlab = (s: Slab, dx: number, dy: number): Slab => ({ ...s, pts: s.pts.map((p) => ({ x: p.x + dx, y: p.y + dy })) });
+const mvGrid = (g: Grid, dx: number, dy: number): Grid => ({ ...g, x1: g.x1 + dx, y1: g.y1 + dy, x2: g.x2 + dx, y2: g.y2 + dy });
+
+export function moveIds(m: Model, ids: string[], dx: number, dy: number): Model {
+  const s = new Set(ids);
+  return {
+    ...m,
+    grids: m.grids.map((x) => (s.has(x.id) ? mvGrid(x, dx, dy) : x)),
+    columns: m.columns.map((x) => (s.has(x.id) ? mvCol(x, dx, dy) : x)),
+    beams: m.beams.map((x) => (s.has(x.id) ? mvBeam(x, dx, dy) : x)),
+    slabs: m.slabs.map((x) => (s.has(x.id) ? mvSlab(x, dx, dy) : x)),
+  };
+}
+
+/** Replicate linearly n times by (dx,dy), optionally also onto other stories. Duplicates are skipped. */
+export function replicate(m: Model, ids: string[], opts: { dx: number; dy: number; n: number; stories: string[] | null }): { model: Model; created: string[] } {
+  const s = new Set(ids);
+  const created: string[] = [];
+  let out = m;
+  const cols = m.columns.filter((x) => s.has(x.id));
+  const beams = m.beams.filter((x) => s.has(x.id));
+  const slabs = m.slabs.filter((x) => s.has(x.id));
+  const steps = opts.stories ? [0] : Array.from({ length: Math.max(1, opts.n) }, (_, i) => i + 1);
+  const targets = (orig: string) => (opts.stories ? opts.stories.filter((st) => st !== orig || opts.dx || opts.dy) : [orig]);
+  for (const k of steps) {
+    const dx = opts.stories ? opts.dx : opts.dx * k,
+      dy = opts.stories ? opts.dy : opts.dy * k;
+    for (const c of cols)
+      for (const st of targets(c.story)) {
+        const before = out.columns.length;
+        out = addColumns(out, [{ x: c.x + dx, y: c.y + dy }], [st], c.section, c.angle);
+        if (out.columns.length > before) created.push(out.columns[out.columns.length - 1].id);
+      }
+    for (const b of beams)
+      for (const st of targets(b.story)) {
+        const before = out.beams.length;
+        out = addBeams(out, [[{ x: b.x1 + dx, y: b.y1 + dy }, { x: b.x2 + dx, y: b.y2 + dy }]], [st], b.section);
+        if (out.beams.length > before) created.push(out.beams[out.beams.length - 1].id);
+      }
+    for (const sl of slabs)
+      for (const st of targets(sl.story)) {
+        const pts = sl.pts.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+        const dup = out.slabs.some((o) => o.story === st && o.pts.length === pts.length && o.pts.every((p, i) => dist(p, pts[i]) < TOL));
+        if (dup) continue;
+        out = { ...out, slabs: [...out.slabs, { id: uid(), story: st, pts, section: sl.section }] };
+        created.push(out.slabs[out.slabs.length - 1].id);
+      }
+  }
+  return { model: out, created };
+}
+
+export function patchIds(m: Model, ids: string[], patch: { section?: string; story?: string; angle?: number }): Model {
+  const s = new Set(ids);
+  const p = (o: any) => {
+    if (!s.has(o.id)) return o;
+    const n = { ...o };
+    if (patch.story !== undefined) n.story = patch.story;
+    if (patch.section !== undefined) n.section = patch.section;
+    if (patch.angle !== undefined && 'angle' in o) n.angle = patch.angle;
+    return n;
+  };
+  return { ...m, columns: m.columns.map(p), beams: m.beams.map(p), slabs: m.slabs.map(p) };
+}
+
+// ---------- bay detection for slabs ----------
+
+/**
+ * Find the smallest closed region bounded by the given segments that contains `p`.
+ * Segments are split at every intersection and faces are traced on the resulting planar graph.
+ */
+export function findBay(segs: [Pt, Pt][], p: Pt): Pt[] | null {
+  if (segs.length < 3) return null;
+  // split segments at intersections
+  const cuts: number[][] = segs.map(() => [0, 1]);
+  for (let i = 0; i < segs.length; i++)
+    for (let j = i + 1; j < segs.length; j++) {
+      const r = segIntersect(segs[i][0], segs[i][1], segs[j][0], segs[j][1], 1e-4);
+      if (r) {
+        cuts[i].push(Math.min(1, Math.max(0, r.t)));
+        cuts[j].push(Math.min(1, Math.max(0, r.u)));
+      }
+    }
+  const key = (q: Pt) => `${Math.round(q.x)}|${Math.round(q.y)}`;
+  const verts = new Map<string, Pt>();
+  const adj = new Map<string, Set<string>>();
+  const link = (a: Pt, b: Pt) => {
+    const ka = key(a),
+      kb = key(b);
+    if (ka === kb) return;
+    if (!verts.has(ka)) verts.set(ka, a);
+    if (!verts.has(kb)) verts.set(kb, b);
+    if (!adj.has(ka)) adj.set(ka, new Set());
+    if (!adj.has(kb)) adj.set(kb, new Set());
+    adj.get(ka)!.add(kb);
+    adj.get(kb)!.add(ka);
+  };
+  segs.forEach(([a, b], i) => {
+    const ts = [...new Set(cuts[i].map((t) => +t.toFixed(9)))].sort((x, y) => x - y);
+    for (let k = 0; k + 1 < ts.length; k++) {
+      const pa = { x: a.x + (b.x - a.x) * ts[k], y: a.y + (b.y - a.y) * ts[k] };
+      const pb = { x: a.x + (b.x - a.x) * ts[k + 1], y: a.y + (b.y - a.y) * ts[k + 1] };
+      link(pa, pb);
+    }
+  });
+  // sorted outgoing edges (CCW)
+  const sorted = new Map<string, string[]>();
+  for (const [k, ns] of adj) {
+    const v = verts.get(k)!;
+    sorted.set(
+      k,
+      [...ns].sort((a, b) => {
+        const pa = verts.get(a)!,
+          pb = verts.get(b)!;
+        return Math.atan2(pa.y - v.y, pa.x - v.x) - Math.atan2(pb.y - v.y, pb.x - v.x);
+      }),
+    );
+  }
+  const used = new Set<string>();
+  let best: Pt[] | null = null,
+    bestA = Infinity;
+  for (const [u, ns] of adj)
+    for (const v of ns) {
+      if (used.has(u + '>' + v)) continue;
+      const face: string[] = [];
+      let a = u,
+        b = v,
+        guard = 0;
+      while (!used.has(a + '>' + b) && guard++ < 10000) {
+        used.add(a + '>' + b);
+        face.push(a);
+        const list = sorted.get(b)!;
+        const i = list.indexOf(a);
+        const c = list[(i - 1 + list.length) % list.length];
+        a = b;
+        b = c;
+      }
+      const pts = face.map((k) => verts.get(k)!);
+      const A = polyArea(pts);
+      if (A > 1 && A < bestA && pointInPoly(p, pts)) {
+        best = pts;
+        bestA = A;
+      }
+    }
+  return best ? simplify(best) : null;
+}
+
+/** Drop collinear vertices. */
+function simplify(pts: Pt[]): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[(i - 1 + pts.length) % pts.length],
+      b = pts[i],
+      c = pts[(i + 1) % pts.length];
+    if (Math.abs(cross(sub(b, a), sub(c, b))) > 1e-3 * dist(a, b) * dist(b, c)) out.push(b);
+  }
+  return out;
+}
+
+export function gridSegs(m: Model): [Pt, Pt][] {
+  return m.grids.map((g) => [
+    { x: g.x1, y: g.y1 },
+    { x: g.x2, y: g.y2 },
+  ]);
+}
+
+export { lineIntersect };

@@ -1,0 +1,193 @@
+import { lazy, Suspense, useEffect, useRef } from 'react';
+import { useApp, usePreview, type ToolName } from './model/store';
+import { PlanView, fitAll } from './plan/PlanView';
+import { setTool, onCancel, onInput, finishPolygon, resetTool } from './plan/tools';
+import { LeftPanel } from './ui/LeftPanel';
+import { RightPanel } from './ui/RightPanel';
+import { Dialogs } from './ui/Dialogs';
+import { openDialog } from './ui/dialogState';
+import { deleteIds } from './model/ops';
+import { restoreModel, startAutosave, downloadProject, openProject } from './model/persist';
+import { loadDxfFile, loadPdfFile, restoreUnderlay } from './underlay/store';
+import { emptyModel } from './model/types';
+import { fmt } from './model/geom';
+
+const View3D = lazy(() => import('./view3d/View3D'));
+
+const TOOLS: { t: ToolName; label: string; key: string }[] = [
+  { t: 'select', label: 'Select', key: 'V' },
+  { t: 'grid', label: 'Grid', key: 'G' },
+  { t: 'column', label: 'Column', key: 'C' },
+  { t: 'beam', label: 'Beam', key: 'B' },
+  { t: 'beamOffset', label: 'Offset beam', key: 'O' },
+  { t: 'slab', label: 'Slab (bay)', key: 'S' },
+  { t: 'slabDraw', label: 'Draw slab', key: 'P' },
+];
+const MEASURE: { t: ToolName; label: string; key: string }[] = [
+  { t: 'measure', label: 'Distance', key: 'M' },
+  { t: 'angle', label: 'Angle', key: 'A' },
+  { t: 'area', label: 'Area', key: 'R' },
+];
+
+export function App() {
+  const tool = useApp((s) => s.tool);
+  const panel = useApp((s) => s.panel);
+  const toast = useApp((s) => s.toast);
+  const ortho = useApp((s) => s.ortho);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const ulRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    (async () => {
+      await restoreModel();
+      await restoreUnderlay();
+      startAutosave();
+      requestAnimationFrame(() => fitAll());
+    })();
+  }, []);
+
+  useEffect(() => {
+    const kd = (e: KeyboardEvent) => {
+      const inInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement;
+      const st = useApp.getState();
+      if (e.ctrlKey && e.key.toLowerCase() === 'z' && !inInput) return e.preventDefault(), st.undo();
+      if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z')) && !inInput) return e.preventDefault(), st.redo();
+      if (e.ctrlKey && e.key.toLowerCase() === 's') return e.preventDefault(), downloadProject();
+      if (e.key === 'F8') return e.preventDefault(), st.toggleOrtho();
+      if (e.key === 'Escape') {
+        (document.activeElement as HTMLElement)?.blur?.();
+        usePreview.getState().set({ input: '' });
+        return onCancel();
+      }
+      if (inInput) return;
+      if (e.key === 'Delete' && st.selection.length) {
+        st.commit((m) => deleteIds(m, st.selection));
+        st.setSelection([]);
+        return;
+      }
+      if (e.key === 'Enter') {
+        if (st.tool === 'slabDraw' || st.tool === 'area') finishPolygon();
+        return;
+      }
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      // typing a number/@ starts the command line
+      if (/^[\d@.\-]$/.test(e.key) && st.tool !== 'select') {
+        e.preventDefault();
+        usePreview.getState().set({ input: e.key });
+        document.getElementById('cmd')?.focus();
+        return;
+      }
+      const k = e.key.toUpperCase();
+      const hit = [...TOOLS, ...MEASURE].find((x) => x.key === k);
+      if (hit) return setTool(hit.t);
+      if (k === 'F') return fitAll();
+      if (k === 'E' && st.selection.length) return openDialog({ kind: 'replicate' });
+    };
+    window.addEventListener('keydown', kd);
+    return () => window.removeEventListener('keydown', kd);
+  }, []);
+
+  const loadUnderlay = async (f: File) => {
+    try {
+      if (/\.dxf$/i.test(f.name)) await loadDxfFile(f);
+      else if (/\.pdf$/i.test(f.name)) await loadPdfFile(f, useApp.getState().model.stories.map((s) => s.name));
+      else throw new Error('Choose a .dxf or .pdf file');
+      useApp.getState().setToast(/\.dxf$/i.test(f.name) ? 'DXF loaded. Use “Define story region” to box each story plan.' : 'PDF loaded. Assign pages to stories, then calibrate each page.');
+      openDialog({ kind: 'underlay' });
+      requestAnimationFrame(() => fitAll());
+    } catch (e: any) {
+      useApp.getState().setToast('Underlay error: ' + e.message);
+    }
+  };
+
+  return (
+    <div className="app">
+      <div className="topbar">
+        <span className="brand">ETABS Model Creator</span>
+        <button title="New model" onClick={() => confirm('Start a new model? Unsaved work is lost.') && (useApp.getState().setModel(emptyModel()), resetTool())}>New</button>
+        <button onClick={() => fileRef.current?.click()}>Open</button>
+        <button onClick={downloadProject} title="Ctrl+S">Save</button>
+        <button onClick={() => ulRef.current?.click()} title="Load a DXF (all stories in model space) or a PDF (one page per story)">Underlay…</button>
+        <span className="sep" />
+        {TOOLS.map((x) => (
+          <button key={x.t} className={'tool ' + (tool === x.t ? 'on' : '')} onClick={() => setTool(x.t)} title={`${x.label} (${x.key})`}>
+            {x.label} <kbd>{x.key}</kbd>
+          </button>
+        ))}
+        <span className="sep" />
+        {MEASURE.map((x) => (
+          <button key={x.t} className={'tool ' + (tool === x.t ? 'on' : '')} onClick={() => setTool(x.t)} title={`${x.label} (${x.key})`}>
+            {x.label}
+          </button>
+        ))}
+        <span className="sep" />
+        <button onClick={() => useApp.getState().undo()} title="Ctrl+Z">Undo</button>
+        <button onClick={() => useApp.getState().redo()} title="Ctrl+Y">Redo</button>
+        <span className="sep" />
+        <button className={panel === 'plan' ? 'on' : ''} onClick={() => useApp.getState().setPanel('plan')}>Plan</button>
+        <button className={panel === 'split' ? 'on' : ''} onClick={() => useApp.getState().setPanel('split')}>Split</button>
+        <button className={panel === '3d' ? 'on' : ''} onClick={() => useApp.getState().setPanel('3d')}>3D</button>
+        <span className="sep" />
+        <button className="primary" onClick={() => openDialog({ kind: 'etabs' })}>ETABS…</button>
+        <input ref={fileRef} type="file" accept=".json" hidden onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) openProject(f).then(() => fitAll()).catch((er) => useApp.getState().setToast(er.message));
+          }} />
+        <input ref={ulRef} type="file" accept=".dxf,.pdf" hidden onChange={(e) => (e.target.files?.[0] && loadUnderlay(e.target.files[0]), (e.target.value = ''))} />
+      </div>
+
+      <LeftPanel />
+      <div className="main">
+        {panel !== '3d' && <PlanView />}
+        {panel !== 'plan' && (
+          <Suspense fallback={<div className="view3d muted" style={{ padding: 20 }}>Loading 3D…</div>}>
+            <View3D />
+          </Suspense>
+        )}
+        {toast && <div className="toast">{toast}</div>}
+        <MeasureBox />
+      </div>
+      <RightPanel />
+      <StatusBar ortho={ortho} />
+      <Dialogs />
+    </div>
+  );
+}
+
+function MeasureBox() {
+  const m = usePreview((s) => s.measure);
+  if (!m?.text) return null;
+  return <div className="measure-box">{m.text}</div>;
+}
+
+function StatusBar({ ortho }: { ortho: boolean }) {
+  const hint = usePreview((s) => s.hint);
+  const input = usePreview((s) => s.input);
+  const cursor = usePreview((s) => s.snap?.p ?? s.cursor);
+  const story = useApp((s) => s.activeStory);
+  return (
+    <div className="status">
+      <div className="cmd">
+        <span className="muted">Input</span>
+        <input
+          id="cmd"
+          type="text"
+          value={input}
+          placeholder="dx,dy  @d<a  length"
+          onChange={(e) => usePreview.getState().set({ input: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              onInput(input);
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+        />
+      </div>
+      <span className="hint">{hint}</span>
+      <button className={ortho ? 'on' : ''} onClick={() => useApp.getState().toggleOrtho()} title="F8">Ortho</button>
+      <span className="muted">{story}</span>
+      <span className="coords">{cursor ? `X ${fmt(cursor.x)}  Y ${fmt(cursor.y)} mm` : ''}</span>
+    </div>
+  );
+}
