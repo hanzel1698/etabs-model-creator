@@ -1,5 +1,5 @@
 import type { Model, Pt, Grid, FrameSection } from '../model/types';
-import { dist, mid, projectOnSeg, projectOnLine, rot, sub, add } from '../model/geom';
+import { dist, distToSeg, mid, projectOnSeg, projectOnLine, rot, segIntersect, sub, add } from '../model/geom';
 import { gridIntersections } from '../model/ops';
 import { underlayGeom } from '../underlay/store';
 
@@ -71,6 +71,25 @@ export function snapPoint(m: Model, w: Pt, tol: number, o: SnapOpts): Snap {
     tryPt(s.b, 'end');
   }
   if (ug && ug.pts.length < 20000) for (const p of ug.pts) if (Math.abs(p.x - w.x) < tol && Math.abs(p.y - w.y) < tol) tryPt(p, 'end');
+
+  // crossings of any two lines passing near the cursor (beams, grids, column faces, slab edges, underlay)
+  const close: [Pt, Pt][] = [];
+  const consider = (a: Pt, b: Pt) => {
+    if (close.length < 80 && distToSeg(w, a, b) < tol) close.push([a, b]);
+  };
+  for (const b of beams) consider({ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 });
+  for (const g of m.grids) consider({ x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 });
+  for (const c of cols) {
+    const ol = columnOutline(c, secs.get(c.section));
+    for (let i = 0; i < 4; i++) consider(ol[i], ol[(i + 1) % 4]);
+  }
+  for (const s of m.slabs) if (s.story === o.story) s.pts.forEach((p, i) => consider(p, s.pts[(i + 1) % s.pts.length]));
+  for (const s of near) consider(s.a, s.b);
+  for (let i = 0; i < close.length; i++)
+    for (let j = i + 1; j < close.length; j++) {
+      const x = segIntersect(close[i][0], close[i][1], close[j][0], close[j][1], 1e-6);
+      if (x) tryPt(x.p, 'intersection', tol * 0.15);
+    }
   if (best) return best;
 
   // --- line snaps ---
