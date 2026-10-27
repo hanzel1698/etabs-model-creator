@@ -44,6 +44,7 @@ export function PlanView() {
   const viewRot = useApp((s) => s.viewRotation);
   const tool = useApp((s) => s.tool);
   const ts = useApp((s) => s.textScale);
+  const bubble = useApp((s) => s.gridBubble);
   const colorBy = useApp((s) => s.colorBySection);
 
   // keep the world transform in sync without re-rendering React
@@ -210,7 +211,7 @@ export function PlanView() {
         <g ref={worldRef}>
           {show.underlay && <UnderlayLayer story={story} viewRot={viewRot} />}
           {show.slabs && <SlabLayer slabs={slabs} sel={sel} />}
-          <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} ts={ts} />
+          <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} bubble={bubble} />
           {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy={false} />}
           {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy={false} />}
           <BeamLayer beams={beams} sel={sel} colorBy={colorBy} />

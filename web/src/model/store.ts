@@ -58,6 +58,9 @@ interface AppState {
   alsoStories: string[];
   setAlsoStories: (s: string[]) => void;
   textScale: number;
+  /** grid bubble diameter in mm (model units, so it zooms with the plan) */
+  gridBubble: number;
+  setGridBubble: (v: number) => void;
   setTextScale: (v: number) => void;
   colorBySection: boolean;
   toggleColorBySection: () => void;
@@ -69,6 +72,15 @@ interface AppState {
 }
 
 const HISTORY = 200;
+
+function readNum(key: string, fallback: number) {
+  try {
+    const v = parseFloat(localStorage.getItem(key) ?? '');
+    return isFinite(v) && v > 0 ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export const useApp = create<AppState>((set, get) => ({
   model: emptyModel(),
@@ -125,6 +137,14 @@ export const useApp = create<AppState>((set, get) => ({
   alsoStories: [],
   setAlsoStories: (s) => set({ alsoStories: s }),
   textScale: 1,
+  gridBubble: readNum('gridBubble', 600),
+  setGridBubble: (v) => {
+    const d = Math.min(5000, Math.max(50, v || 600));
+    try {
+      localStorage.setItem('gridBubble', String(d));
+    } catch {}
+    set({ gridBubble: d });
+  },
   setTextScale: (v) => set({ textScale: v }),
   colorBySection: true,
   toggleColorBySection: () => set((s) => ({ colorBySection: !s.colorBySection })),

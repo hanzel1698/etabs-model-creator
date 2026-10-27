@@ -54,8 +54,8 @@ export const UnderlayLayer = memo(function UnderlayLayer({ story, viewRot }: { s
 
 // ---------------- grids ----------------
 
-export const GridLayer = memo(function GridLayer({ grids, sel, viewRot, showLabels, ts }: { grids: Grid[]; sel: Set<string>; viewRot: number; showLabels: boolean; ts: number }) {
-  const r = 450 * ts;
+export const GridLayer = memo(function GridLayer({ grids, sel, viewRot, showLabels, bubble }: { grids: Grid[]; sel: Set<string>; viewRot: number; showLabels: boolean; bubble: number }) {
+  const r = bubble / 2;
   return (
     <g className="grids">
       {grids.map((g) => {

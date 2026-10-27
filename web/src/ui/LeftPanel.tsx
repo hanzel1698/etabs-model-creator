@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useApp } from '../model/store';
 import { storyElevations } from '../model/types';
 import { openDialog } from './dialogState';
@@ -107,6 +108,30 @@ export function LeftPanel() {
   );
 }
 
+/** Grid bubble diameter in mm: slider for quick changes, number box for an exact size (applied on Enter/blur). */
+function BubbleSize() {
+  const d = useApp((s) => s.gridBubble);
+  const set = useApp((s) => s.setGridBubble);
+  const [draft, setDraft] = useState(String(d));
+  useEffect(() => setDraft(String(d)), [d]);
+  return (
+    <div className="row" title="Grid bubble diameter (mm). The label text scales with it.">
+      <span>Grid Ø</span>
+      <input type="range" min={100} max={3000} step={50} value={d} style={{ minWidth: 0, width: 0 }} onChange={(e) => set(+e.target.value)} />
+      <input
+        type="number"
+        style={{ width: 62, flex: 'none' }}
+        min={50}
+        step={50}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => set(+draft)}
+        onKeyDown={(e) => e.key === 'Enter' && set(+draft)}
+      />
+    </div>
+  );
+}
+
 function ViewControls() {
   const show = useApp((s) => s.show);
   const rot = useApp((s) => s.viewRotation);
@@ -134,6 +159,8 @@ function ViewControls() {
         <span>Text size</span>
         <input type="range" min={0.4} max={3} step={0.1} value={ts} onChange={(e) => st.setTextScale(+e.target.value)} />
       </div>
+      <BubbleSize />
+
       <div className="row">
         <span>Rotate°</span>
         <input type="number" value={rot} step={15} onChange={(e) => st.setViewRotation(+e.target.value || 0)} />
