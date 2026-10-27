@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, autoBeamsOnGrids, findBay, generateGrids, replicate } from './ops';
+import { addBeams, addColumns, autoBeamsOnGrids, findBay, generateGrids, nextGridLabel, oppositeLabelStart, replicate } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
 import { emptyModel } from './types';
 import { toPayload } from '../etabs/mapping';
@@ -84,5 +84,36 @@ describe('replicate + payload', () => {
   it('lists deletions of previously pushed elements', () => {
     const m = { ...emptyModel(), pushedIds: ['gone'] };
     expect(toPayload(m, { updateStories: false, pushGrids: false }).deleteGuids).toEqual(['gone']);
+  });
+});
+
+describe('grid labels', () => {
+  const g = (dir: 'X' | 'Y' | 'G', label: string) => ({ id: label + dir, label, dir, x1: 0, y1: 0, x2: 1, y2: 1, bubble: 'end' as const });
+  it('defaults X to letters and Y to numbers', () => {
+    expect(nextGridLabel([], 'X')).toBe('A');
+    expect(nextGridLabel([], 'Y')).toBe('1');
+    expect(nextGridLabel([], 'G')).toBe('G1');
+  });
+  it('continues whatever scheme the direction uses', () => {
+    expect(nextGridLabel([g('X', '1')], 'X')).toBe('2');
+    expect(nextGridLabel([g('X', 'A'), g('X', 'B')], 'X')).toBe('C');
+    expect(nextGridLabel([g('X', 'Z')], 'X')).toBe('AA');
+    expect(nextGridLabel([g('Y', 'a')], 'Y')).toBe('b');
+  });
+  it('ignores prime/quote suffixes and continues from the highest base', () => {
+    expect(nextGridLabel([g('X', '1'), g('X', "1'"), g('X', '1"')], 'X')).toBe('2');
+    expect(nextGridLabel([g('X', '1'), g('X', '2'), g('X', "1'")], 'X')).toBe('3');
+    expect(nextGridLabel([g('X', 'A'), g('X', "B'")], 'X')).toBe('C');
+  });
+  it('uses the opposite scheme of the other direction', () => {
+    expect(nextGridLabel([g('X', '1'), g('X', '2')], 'Y')).toBe('A');
+    expect(nextGridLabel([g('Y', 'A')], 'X')).toBe('1');
+    expect(nextGridLabel([g('X', 'A')], 'Y')).toBe('1');
+  });
+  it('generates sequences from any start', () => {
+    const grids = generateGrids({ xSpacing: [1, 1], ySpacing: [1, 1], x0: 0, y0: 0, xLabelStart: '1', yLabelStart: 'A', extend: 0 });
+    expect(grids.map((x) => x.label)).toEqual(['1', '2', '3', 'A', 'B', 'C']);
+    expect(oppositeLabelStart('1')).toBe('A');
+    expect(oppositeLabelStart('C')).toBe('1');
   });
 });

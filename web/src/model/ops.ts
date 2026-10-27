@@ -16,10 +16,10 @@ export interface GridGenSpec {
   extend: number;
 }
 
+/** n consecutive labels from `start` ("A", "1", "AA", "G1", "a"...). */
 function labelSeq(start: string, n: number): string[] {
-  if (/^\d+$/.test(start)) return Array.from({ length: n }, (_, i) => String(+start + i));
-  const base = start.toUpperCase().charCodeAt(0) - 65;
-  return Array.from({ length: n }, (_, i) => alphaLabel(base + i));
+  const p = parseGridLabel(start) ?? { prefix: '', kind: 'alpha' as const, value: 1, lower: false };
+  return Array.from({ length: n }, (_, i) => formatLabel({ ...p, value: p.value + i }));
 }
 
 export function generateGrids(s: GridGenSpec): Grid[] {
@@ -59,17 +59,70 @@ export function gridIntersections(grids: Grid[]): Pt[] {
   return out;
 }
 
+/**
+ * A grid label split into prefix + core + suffix, e.g. "1'" → core 1 + suffix "'",
+ * "AA" → core 27 (alpha), "G3" → prefix "G" + core 3. Suffixes (primes, quotes) mark
+ * intermediate grids and are ignored when continuing the sequence.
+ */
+export interface LabelParts {
+  prefix: string;
+  kind: 'num' | 'alpha';
+  value: number;
+  lower: boolean;
+}
+
+export function parseGridLabel(label: string): LabelParts | null {
+  const m = label.trim().match(/^(.*?)(\d+|[A-Za-z]+)([^A-Za-z0-9]*)$/);
+  if (!m) return null;
+  const [, prefix, core] = m;
+  if (/^\d+$/.test(core)) return { prefix, kind: 'num', value: parseInt(core, 10), lower: false };
+  let v = 0;
+  for (const ch of core.toUpperCase()) v = v * 26 + (ch.charCodeAt(0) - 64);
+  return { prefix, kind: 'alpha', value: v, lower: core === core.toLowerCase() };
+}
+
+const formatLabel = (p: LabelParts) => {
+  const core = p.kind === 'num' ? String(p.value) : alphaLabel(p.value - 1);
+  return p.prefix + (p.lower ? core.toLowerCase() : core);
+};
+
+/**
+ * Next label for a new grid in `dir`:
+ * - continues the scheme of the most recently added grid in that direction ("1" → "2",
+ *   "C" → "D", "1'" → "2", "G3" → "G4"), counting from the highest label of that scheme;
+ * - with no grids in that direction yet, uses the opposite scheme of the other direction
+ *   (letters there → numbers here, and vice versa); defaults are X = "A", Y = "1".
+ */
 export function nextGridLabel(grids: Grid[], dir: Grid['dir']): string {
-  const same = grids.filter((g) => g.dir === dir).map((g) => g.label);
-  if (dir === 'Y') {
-    const nums = same.map(Number).filter((n) => !isNaN(n));
-    return String((nums.length ? Math.max(...nums) : 0) + 1);
+  const same = grids.filter((g) => g.dir === dir);
+  const used = new Set(same.map((g) => g.label));
+  let scheme: LabelParts | null = null;
+  for (let i = same.length - 1; i >= 0 && !scheme; i--) scheme = parseGridLabel(same[i].label);
+
+  if (!scheme) {
+    if (dir === 'G') scheme = { prefix: 'G', kind: 'num', value: 0, lower: false };
+    else {
+      const other = grids.filter((g) => g.dir === (dir === 'X' ? 'Y' : 'X'));
+      let o: LabelParts | null = null;
+      for (let i = other.length - 1; i >= 0 && !o; i--) o = parseGridLabel(other[i].label);
+      const kind = o ? (o.kind === 'alpha' ? 'num' : 'alpha') : dir === 'X' ? 'alpha' : 'num';
+      scheme = { prefix: '', kind, value: 0, lower: false };
+    }
+  } else {
+    // continue from the highest label that follows the same scheme
+    for (const g of same) {
+      const p = parseGridLabel(g.label);
+      if (p && p.kind === scheme.kind && p.prefix === scheme.prefix && p.value > scheme.value) scheme = { ...scheme, value: p.value };
+    }
   }
-  for (let i = 0; i < 2000; i++) {
-    const l = dir === 'G' ? 'G' + (i + 1) : alphaLabel(i);
-    if (!same.includes(l)) return l;
-  }
-  return 'G';
+  let next = { ...scheme, value: scheme.value + 1 };
+  while (used.has(formatLabel(next))) next = { ...next, value: next.value + 1 };
+  return formatLabel(next);
+}
+
+/** Opposite labelling scheme for the other direction: letters ↔ numbers. */
+export function oppositeLabelStart(label: string): string {
+  return parseGridLabel(label)?.kind === 'num' ? 'A' : '1';
 }
 
 // ---------- elements ----------

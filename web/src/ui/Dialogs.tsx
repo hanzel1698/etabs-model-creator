@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useDialog, closeDialog, type Dialog } from './dialogState';
 import { useApp, toast } from '../model/store';
-import { generateGrids, moveIds, replicate } from '../model/ops';
+import { generateGrids, moveIds, oppositeLabelStart, replicate } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
 import { uid, storyElevations, type FrameSection, type Model, type SlabSection, type Story } from '../model/types';
 import { useUnderlay, saveUnderlayMeta, rescaleDxf } from '../underlay/store';
@@ -114,6 +114,7 @@ function GridsDialog() {
   const [ys, setYs] = useState('3@5000');
   const [xl, setXl] = useState('A');
   const [yl, setYl] = useState('1');
+  const [ylTouched, setYlTouched] = useState(false);
   const [ext, setExt] = useState(1500);
   const [replace, setReplace] = useState(true);
   const gen = () => {
@@ -126,9 +127,9 @@ function GridsDialog() {
     <Modal title="Generate grids" footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={gen}>Create</button></>}>
       <div className="small muted">Spacings in mm, separated by commas. Use n@s for repeats, e.g. “3@6000, 4500”. Grid lines start at the origin.</div>
       <div className="row"><span>X spacing</span><input type="text" value={xs} onChange={(e) => setXs(e.target.value)} /></div>
-      <div className="row"><span>X labels</span><input type="text" value={xl} onChange={(e) => setXl(e.target.value)} /></div>
+      <div className="row"><span>X labels</span><input type="text" value={xl} onChange={(e) => (setXl(e.target.value), !ylTouched && e.target.value.trim() && setYl(oppositeLabelStart(e.target.value)))} /></div>
       <div className="row"><span>Y spacing</span><input type="text" value={ys} onChange={(e) => setYs(e.target.value)} /></div>
-      <div className="row"><span>Y labels</span><input type="text" value={yl} onChange={(e) => setYl(e.target.value)} /></div>
+      <div className="row"><span>Y labels</span><input type="text" value={yl} onChange={(e) => (setYl(e.target.value), setYlTouched(true))} /></div>
       <div className="row"><span>Overhang</span><input type="number" value={ext} onChange={(e) => setExt(+e.target.value)} /></div>
       <label className="small"><input type="checkbox" checked={replace} onChange={() => setReplace(!replace)} /> Replace existing grids</label>
       <div className="small muted">X: {parseSpacing(xs).length + 1} lines, total {fmt(parseSpacing(xs).reduce((a, b) => a + b, 0))} · Y: {parseSpacing(ys).length + 1} lines, total {fmt(parseSpacing(ys).reduce((a, b) => a + b, 0))}</div>
