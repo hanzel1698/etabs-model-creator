@@ -159,6 +159,9 @@ function UnderlayPanel() {
             {story}: {reg ? 'region assigned' : u.regions.length ? 'no region assigned' : 'whole drawing (no regions)'}
           </div>
           <div className="chips">
+            <button onClick={() => setTool('calibrate')} title="Click two ends of a known line, then type its real length in mm">
+              Calibrate scale
+            </button>
             <button onClick={() => setTool('region')}>Define story region</button>
           </div>
         </>

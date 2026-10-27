@@ -4,7 +4,7 @@ import { addBeams, addColumns, addSlab, findBay, gridSegs, makeGrid, nextGridLab
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
 import { viewport } from './viewport';
-import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor } from '../underlay/store';
+import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf } from '../underlay/store';
 import { openDialog } from '../ui/dialogState';
 
 const SNAP_PX = 12;
@@ -23,7 +23,7 @@ const hints: Record<ToolName, string> = {
   angle: 'Click 3 points: start, vertex, end.',
   area: 'Click polygon corners; Enter closes and shows the area.',
   region: 'DXF setup: click two corners around one story plan.',
-  calibrate: 'PDF: click two points of a known distance.',
+  calibrate: 'Calibrate: click the two ends of a line whose real length you know.',
 };
 
 // tool-local state
@@ -46,7 +46,7 @@ export function setTool(t: ToolName) {
   if (t === 'region' || t === 'calibrate') {
     const u = useUnderlay.getState();
     if (t === 'region' && u.kind !== 'dxf') return toast('Load a DXF underlay first.');
-    if (t === 'calibrate' && u.kind !== 'pdf') return toast('Load a PDF underlay first.');
+    if (t === 'calibrate' && u.kind === 'none') return toast('Load a DXF or PDF underlay first.');
     if (t === 'region') u.set({ setupMode: true });
   }
   resetTool();
@@ -173,18 +173,22 @@ export function onClick(pt: Pt) {
     }
     case 'calibrate': {
       const st = A().activeStory;
+      const isDxf = useUnderlay.getState().kind === 'dxf';
       const sh = sheetFor(st);
-      if (!sh) return toast(`No PDF page assigned to ${st}.`);
+      if (!isDxf && !sh) return toast(`No PDF page assigned to ${st}.`);
       if (calibStage === 'dist') {
+        if (calibPts.length === 2) calibPts = []; // a third click starts a new reference line
         calibPts.push(pt);
-        p.set({ rubber: [...calibPts] });
+        p.set({ rubber: calibPts.length === 2 ? [] : [...calibPts], measure: calibPts.length === 2 ? { pts: [...calibPts], text: '' } : null });
         if (calibPts.length === 2) {
           const cur = dist(calibPts[0], calibPts[1]);
-          p.set({ hint: `Measured ${fmt(cur)} mm. Type the real distance (mm) and press Enter.` });
+          p.set({ hint: `Reference line is ${fmt(cur)} units now. Type its real length in mm and press Enter.` });
+          document.getElementById('cmd')?.focus();
         }
         return;
       }
-      // ref stage: world → PDF point
+      // ref stage (PDF only): world → PDF point
+      if (!sh) return;
       const u = useUnderlay.getState();
       const pdfPt = { x: pt.x / sh.s + sh.ref.x, y: pt.y / sh.s + sh.ref.y };
       u.set({ sheets: u.sheets.map((x) => (x.story === st ? { ...x, ref: pdfPt } : x)) });
@@ -285,6 +289,19 @@ export function onInput(text: string) {
     const st = A().activeStory;
     const u = useUnderlay.getState();
     const cur = dist(calibPts[0], calibPts[1]);
+    if (u.kind === 'dxf') {
+      const f = real / cur;
+      rescaleDxf(u.dxfScale * f);
+      // the drawing grew by f around the origin; shrink the zoom by f so the screen picture stays put
+      viewport.k /= f;
+      viewport.changed();
+      const m = A().model;
+      const drawn = m.grids.length + m.columns.length + m.beams.length + m.slabs.length;
+      toast(`DXF scale set: 1 drawing unit = ${fmt(u.dxfScale * f, 4)} mm.` + (drawn ? ' Elements already drawn were not rescaled.' : ''));
+      calibPts = [];
+      setTool('select');
+      return;
+    }
     u.set({ sheets: u.sheets.map((x) => (x.story === st ? { ...x, s: (x.s * real) / cur } : x)) });
     saveUnderlayMeta();
     calibPts = [];

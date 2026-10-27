@@ -368,7 +368,11 @@ function UnderlayDialog() {
             <option value={1000}>m (×1000)</option>
             <option value={25.4}>inch (×25.4)</option>
             <option value={304.8}>feet (×304.8)</option>
+            {![1, 10, 1000, 25.4, 304.8].includes(u.dxfScale) && <option value={u.dxfScale}>calibrated (×{fmt(u.dxfScale, 4)})</option>}
           </select>
+          <button onClick={() => (closeDialog(), setTool('calibrate'))} title="Click two ends of a known line, then type its real length in mm">
+            Calibrate…
+          </button>
         </div>
         <div className="small muted">Drawing size: {fmt((u.dxf.bbox.maxX - u.dxf.bbox.minX) / 1000, 1)} m × {fmt((u.dxf.bbox.maxY - u.dxf.bbox.minY) / 1000, 1)} m · {u.dxf.segs.length} segments. Check the measured sizes look right.</div>
         <div className="small">
