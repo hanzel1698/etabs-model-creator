@@ -320,14 +320,22 @@ function StoriesDialog() {
   };
   const el = storyElevations({ ...model, baseElevation: base, stories: rows });
   const display = rows.map((r, i) => ({ r, i })).reverse();
+  /** Insert a new story at `index` (rows are bottom → top), with the given height. Stories above move up. */
+  const insertAt = (index: number, height: number) => {
+    let n = rows.length + 1;
+    while (rows.some((x) => x.name === `Story${n}`)) n++;
+    const master = rows.find((x) => x.isMaster)?.orig ?? '';
+    const row = { name: `Story${n}`, orig: `__new${uid()}`, height, isMaster: false, similarTo: master };
+    setRows([...rows.slice(0, index), row, ...rows.slice(index)]);
+  };
   return (
     <Modal wide title="Stories" footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={save}>Save</button></>}>
-      <div className="small muted">Top story first. Deleting a story deletes its elements. Renames carry through to elements.</div>
+      <div className="small muted">Top story first. “+ above / + below” inserts a story of the same height next to that one; the stories above it move up. Deleting a story deletes its elements. Renames carry through to elements.</div>
       <table className="grid">
-        <thead><tr><th>Name</th><th>Height</th><th>Elevation</th><th>Master</th><th>Similar to</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Height</th><th>Elevation</th><th>Master</th><th>Similar to</th><th>Insert</th><th></th></tr></thead>
         <tbody>
           {display.map(({ r, i }) => (
-            <tr key={i}>
+            <tr key={r.orig}>
               <td><input type="text" value={r.name} onChange={(e) => up(i, { name: e.target.value })} /></td>
               <td><input type="number" value={r.height} onChange={(e) => up(i, { height: +e.target.value })} /></td>
               <td className="muted">{fmt(el[r.name]?.top ?? 0)}</td>
@@ -337,6 +345,10 @@ function StoriesDialog() {
                   <option value="">None</option>
                   {rows.filter((x) => x.isMaster && x !== r).map((x) => <option key={x.orig} value={x.orig}>{x.name}</option>)}
                 </select>
+              </td>
+              <td style={{ whiteSpace: 'nowrap' }}>
+                <button title={`Insert a story above ${r.name}`} onClick={() => insertAt(i + 1, r.height)}>+ above</button>{' '}
+                <button title={`Insert a story below ${r.name}`} onClick={() => insertAt(i, r.height)}>+ below</button>
               </td>
               <td><button className="danger" disabled={rows.length < 2} onClick={() => setRows(rows.filter((_, j) => j !== i))}>✕</button></td>
             </tr>
