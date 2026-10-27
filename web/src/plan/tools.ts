@@ -52,7 +52,26 @@ export function setTool(t: ToolName) {
   resetTool();
 }
 
+/**
+ * Column position after applying "align to point": on a vertical line (same X) or horizontal line
+ * (same Y) through the reference point, with the column centre, or its left/bottom or right/top
+ * face, on that line. The other coordinate comes from the cursor.
+ */
+export function alignedColumnPoint(pt: Pt): Pt {
+  const { colAlign: al, model, active, columnAngle } = A();
+  if (al.mode === 'off' || !al.ref) return pt;
+  const sec = model.frameSections.find((s) => s.name === active.column);
+  const r = (columnAngle * Math.PI) / 180;
+  const d = sec?.t3 || 400,
+    w = sec?.shape === 'Circle' ? d : sec?.t2 || 400;
+  const hx = sec?.shape === 'Circle' ? d / 2 : Math.abs(Math.cos(r)) * (d / 2) + Math.abs(Math.sin(r)) * (w / 2);
+  const hy = sec?.shape === 'Circle' ? d / 2 : Math.abs(Math.sin(r)) * (d / 2) + Math.abs(Math.cos(r)) * (w / 2);
+  const shift = (h: number) => (al.anchor === 'min' ? h : al.anchor === 'max' ? -h : 0);
+  return al.mode === 'x' ? { x: al.ref.x + shift(hx), y: pt.y } : { x: pt.x, y: al.ref.y + shift(hy) };
+}
+
 const snapKindsFor = (t: ToolName): SnapKind[] | undefined => {
+  if (t === 'column' && A().colAlign.picking) return undefined;
   if (t === 'column') return ['intersection', 'column', 'end', 'mid', 'near'];
   return undefined;
 };
@@ -85,6 +104,11 @@ export function onMove(screen: Pt) {
   const last = p.rubber[p.rubber.length - 1];
   if (last && (t === 'beam' || t === 'grid' || t === 'slabDraw' || t === 'area' || t === 'measure' || t === 'angle' || t === 'calibrate')) upd.hint = liveText(last, s.p);
   if (t === 'region' && !regionRect && p.rubber.length === 1) upd.box = { a: p.rubber[0], b: s.p };
+  if (t === 'column' && !A().colAlign.picking && A().colAlign.mode !== 'off' && A().colAlign.ref) {
+    const q = alignedColumnPoint(s.p);
+    upd.cursor = q;
+    upd.snap = { p: q, kind: 'align' };
+  }
   if (t === 'beamOffset' && offsetSrc) {
     const w = viewport.toWorld(screen); // unsnapped: the side/distance follow the mouse
     upd.cursor = w;
@@ -117,9 +141,17 @@ export function onClick(pt: Pt) {
       });
       return p.set({ rubber: [] });
     }
-    case 'column':
-      commit((m) => addColumns(m, [pt], drawStories(), A().active.column, A().columnAngle));
+    case 'column': {
+      const al = A().colAlign;
+      if (al.picking) {
+        A().setColAlign({ ref: pt, picking: false, mode: al.mode === 'off' ? 'x' : al.mode });
+        P().set({ hint: 'Reference point set. Columns now line up with it — move along the guide line and click.' });
+        return;
+      }
+      const q = alignedColumnPoint(pt);
+      commit((m) => addColumns(m, [q], drawStories(), A().active.column, A().columnAngle));
       return;
+    }
     case 'beam': {
       if (!p.rubber.length) return p.set({ rubber: [pt] });
       const a = p.rubber[p.rubber.length - 1];

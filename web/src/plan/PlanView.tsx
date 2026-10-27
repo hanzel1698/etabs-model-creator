@@ -234,6 +234,7 @@ function Overlay() {
   const model = useApp((s) => s.model);
   const active = useApp((s) => s.active);
   const angle = useApp((s) => s.columnAngle);
+  const colAlign = useApp((s) => s.colAlign);
   const S = (p: Pt) => viewport.toScreen(p);
   const items: JSX.Element[] = [];
 
@@ -266,6 +267,16 @@ function Overlay() {
     const ol = columnOutline({ x: cur.x, y: cur.y, angle, section: active.column }, sec).map(S);
     items.push(<polygon key="cpv" points={ol.map((p) => `${p.x},${p.y}`).join(' ')} fill="rgba(255,200,80,.25)" stroke="#ffc850" />);
   }
+  if (tool === 'column' && colAlign.ref && colAlign.mode !== 'off') {
+    const r = S(colAlign.ref);
+    // guide line through the reference point, drawn across the whole view (world X or Y direction)
+    const dir = colAlign.mode === 'x' ? { x: 0, y: 1 } : { x: 1, y: 0 };
+    const far = 4000 / viewport.k; // ~4000 px each way: past the screen edge, small enough for SVG to draw
+    const a = S({ x: colAlign.ref.x - dir.x * far, y: colAlign.ref.y - dir.y * far }),
+      b = S({ x: colAlign.ref.x + dir.x * far, y: colAlign.ref.y + dir.y * far });
+    items.push(<line key="algl" x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#ff9f43" strokeDasharray="10 5" strokeWidth={1} />);
+    items.push(<circle key="algr" cx={r.x} cy={r.y} r={6} fill="none" stroke="#ff9f43" strokeWidth={2} />);
+  }
   if (pv.track && tool !== 'select') {
     const t = S(pv.track);
     items.push(<path key="trk" d={`M${t.x - 4} ${t.y}h8M${t.x} ${t.y - 4}v8`} stroke="#9ad" />);
@@ -280,7 +291,7 @@ function Overlay() {
     else if (k === 'mid') mark = <path d={`M${p.x} ${p.y - 7}L${p.x + 7} ${p.y + 6}L${p.x - 7} ${p.y + 6}Z`} fill="none" stroke={c} strokeWidth={2} />;
     else if (k === 'perp') mark = <path d={`M${p.x - 7} ${p.y + 7}H${p.x + 7}M${p.x - 7} ${p.y + 7}V${p.y - 7}M${p.x - 7} ${p.y}H${p.x}V${p.y + 7}`} fill="none" stroke={c} strokeWidth={2} />;
     else if (k === 'near' || k === 'face') mark = <path d={`M${p.x - 6} ${p.y - 6}L${p.x + 6} ${p.y + 6}L${p.x - 6} ${p.y + 6}L${p.x + 6} ${p.y - 6}Z`} fill="none" stroke={c} strokeWidth={1.5} />;
-    else if (k === 'ortho') mark = <circle cx={p.x} cy={p.y} r={3} fill={c} />;
+    else if (k === 'ortho' || k === 'align') mark = <circle cx={p.x} cy={p.y} r={3} fill={c} />;
     else mark = <rect x={p.x - 6} y={p.y - 6} width={12} height={12} fill="none" stroke={c} strokeWidth={2} />;
     items.push(<g key="snap">{mark}<text x={p.x + 10} y={p.y - 10} fill={c} fontSize={11}>{k}</text></g>);
   }

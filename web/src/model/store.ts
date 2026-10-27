@@ -15,6 +15,13 @@ export type ToolName =
   | 'region'
   | 'calibrate';
 
+export interface ColAlign {
+  mode: 'off' | 'x' | 'y'; // x: vertical line (column X fixed), y: horizontal line (column Y fixed)
+  anchor: 'center' | 'min' | 'max'; // which part of the column sits on the line: centre, left/bottom face, right/top face
+  ref: Pt | null;
+  picking: boolean; // next click in the column tool sets `ref`
+}
+
 export interface ShowFlags {
   sectionLabels: boolean;
   gridLabels: boolean;
@@ -40,6 +47,9 @@ interface AppState {
   active: { column: string; beam: string; slab: string };
   setActive: (k: 'column' | 'beam' | 'slab', name: string) => void;
   columnAngle: number;
+  /** place columns on a vertical (same X) or horizontal (same Y) line through a picked point */
+  colAlign: ColAlign;
+  setColAlign: (p: Partial<ColAlign>) => void;
   setColumnAngle: (a: number) => void;
   ortho: boolean;
   toggleOrtho: () => void;
@@ -120,6 +130,8 @@ export const useApp = create<AppState>((set, get) => ({
   active: { column: 'C400x400', beam: 'B300x500', slab: 'S150' },
   setActive: (k, name) => set((s) => ({ active: { ...s.active, [k]: name } })),
   columnAngle: 0,
+  colAlign: { mode: 'off', anchor: 'center', ref: null, picking: false },
+  setColAlign: (p) => set((s) => ({ colAlign: { ...s.colAlign, ...p } })),
   setColumnAngle: (a) => set({ columnAngle: a }),
   ortho: false,
   toggleOrtho: () => set((s) => ({ ortho: !s.ortho })),

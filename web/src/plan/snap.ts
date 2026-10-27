@@ -3,7 +3,7 @@ import { dist, distToSeg, mid, projectOnSeg, projectOnLine, rot, segIntersect, s
 import { gridIntersections } from '../model/ops';
 import { underlayGeom } from '../underlay/store';
 
-export type SnapKind = 'intersection' | 'column' | 'face' | 'end' | 'mid' | 'perp' | 'near' | 'ortho' | 'none';
+export type SnapKind = 'intersection' | 'column' | 'face' | 'end' | 'mid' | 'perp' | 'near' | 'ortho' | 'align' | 'none';
 export interface Snap {
   p: Pt;
   kind: SnapKind;

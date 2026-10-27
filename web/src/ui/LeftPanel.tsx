@@ -12,6 +12,7 @@ export function LeftPanel() {
   const also = useApp((s) => s.alsoStories);
   const act = useApp((s) => s.active);
   const angle = useApp((s) => s.columnAngle);
+  const tool = useApp((s) => s.tool);
   const st = useApp.getState();
   const el = storyElevations(model);
   const stories = [...model.stories].reverse();
@@ -67,6 +68,7 @@ export function LeftPanel() {
           <span>Angle°</span>
           <input type="number" value={angle} step={15} onChange={(e) => st.setColumnAngle(+e.target.value || 0)} />
         </div>
+        {tool === 'column' && <ColumnAlign />}
         <div className="row">
           <span>Beam</span>
           <select value={act.beam} onChange={(e) => st.setActive('beam', e.target.value)}>
@@ -104,6 +106,45 @@ export function LeftPanel() {
         <h4>View</h4>
         <ViewControls />
       </div>
+    </div>
+  );
+}
+
+/** Column tool option: keep new columns on a vertical/horizontal line through a picked point. */
+function ColumnAlign() {
+  const al = useApp((s) => s.colAlign);
+  const set = useApp((s) => s.setColAlign);
+  const faces = al.mode === 'y' ? (['Bottom face', 'Top face'] as const) : (['Left face', 'Right face'] as const);
+  return (
+    <div style={{ borderLeft: '2px solid #ff9f43', paddingLeft: 6, marginBottom: 6 }}>
+      <div className="row">
+        <span>Align</span>
+        <select value={al.mode} onChange={(e) => set({ mode: e.target.value as any })}>
+          <option value="off">Off</option>
+          <option value="x">Vertical (same X)</option>
+          <option value="y">Horizontal (same Y)</option>
+        </select>
+      </div>
+      {al.mode !== 'off' && (
+        <>
+          <div className="row">
+            <span>On line</span>
+            <select value={al.anchor} onChange={(e) => set({ anchor: e.target.value as any })}>
+              <option value="center">Centre</option>
+              <option value="min">{faces[0]}</option>
+              <option value="max">{faces[1]}</option>
+            </select>
+          </div>
+          <div className="row small">
+            <button className={al.picking ? 'on' : ''} onClick={() => set({ picking: !al.picking })} title="Then click a point on the plan (snaps to underlay, grids, columns...)">
+              {al.picking ? 'Click a point…' : al.ref ? 'Re-pick point' : 'Pick point'}
+            </button>
+            <span className="muted" style={{ width: 'auto' }}>
+              {al.ref ? `${al.mode === 'x' ? 'X' : 'Y'} = ${fmt(al.mode === 'x' ? al.ref.x : al.ref.y)}` : 'no point yet'}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
