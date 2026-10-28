@@ -572,11 +572,6 @@ function EtabsDialog() {
       const r = await bridge.import();
       useApp.getState().commit((m) => applyImport(m, r, imp));
       const st = useApp.getState();
-      const names = st.model.frameSections.map((s) => s.name);
-      if (!names.includes(st.active.column) && names[0]) st.setActive('column', names[0]);
-      if (!names.includes(st.active.beam) && names[0]) st.setActive('beam', names[0]);
-      const sn = st.model.slabSections.map((s) => s.name);
-      if (!sn.includes(st.active.slab) && sn[0]) st.setActive('slab', sn[0]);
       if (!st.model.stories.some((s) => s.name === st.activeStory)) st.setActiveStory(st.model.stories[0]?.name ?? '');
       add(`✔ Imported ${r.stories.length} stories, ${r.grids.length} grids, ${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections`, ...r.warnings.map((w) => '⚠ ' + w));
       requestAnimationFrame(() => fitAll());

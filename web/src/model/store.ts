@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { emptyModel, type Model, type Pt } from './types';
+import { firstSection } from '../ui/sectionGroups';
 
 export type ToolName =
   | 'select'
@@ -85,6 +86,21 @@ interface AppState {
 
 const HISTORY = 200;
 
+type Active = AppState['active'];
+
+/**
+ * Active sections that exist in `m`: any that no longer do fall back to the first item of its dropdown,
+ * so what the panel shows is what gets drawn. Returns `a` itself when nothing changed.
+ */
+export function validActive(a: Active, m: Model): Active {
+  const fs = new Set(m.frameSections.map((s) => s.name));
+  const column = fs.has(a.column) ? a.column : firstSection(m.frameSections, 'Columns') || a.column;
+  const beam = fs.has(a.beam) ? a.beam : firstSection(m.frameSections, 'Beams') || a.beam;
+  const thinnest = [...m.slabSections].sort((x, y) => x.thickness - y.thickness)[0]?.name;
+  const slab = m.slabSections.some((s) => s.name === a.slab) ? a.slab : thinnest ?? a.slab;
+  return column === a.column && beam === a.beam && slab === a.slab ? a : { column, beam, slab };
+}
+
 function readNum(key: string, fallback: number) {
   try {
     const v = parseFloat(localStorage.getItem(key) ?? '');
@@ -103,11 +119,12 @@ export const useApp = create<AppState>((set, get) => ({
     const prev = get().model;
     const next = fn(prev);
     if (next === prev) return;
-    set((s) => ({ model: next, past: [...s.past.slice(-HISTORY + 1), prev], future: [], dirty: s.dirty + 1 }));
+    set((s) => ({ model: next, past: [...s.past.slice(-HISTORY + 1), prev], future: [], dirty: s.dirty + 1, active: validActive(s.active, next) }));
   },
   setModel: (m, resetHistory = true) =>
     set((s) => ({
       model: m,
+      active: validActive(s.active, m),
       past: resetHistory ? [] : [...s.past, s.model],
       future: [],
       dirty: s.dirty + 1,
@@ -117,12 +134,13 @@ export const useApp = create<AppState>((set, get) => ({
   undo: () => {
     const { past, model, future } = get();
     if (!past.length) return;
-    set({ model: past[past.length - 1], past: past.slice(0, -1), future: [model, ...future], selection: [], dirty: get().dirty + 1 });
+    const m = past[past.length - 1];
+    set({ model: m, past: past.slice(0, -1), future: [model, ...future], selection: [], dirty: get().dirty + 1, active: validActive(get().active, m) });
   },
   redo: () => {
     const { past, model, future } = get();
     if (!future.length) return;
-    set({ model: future[0], past: [...past, model], future: future.slice(1), selection: [], dirty: get().dirty + 1 });
+    set({ model: future[0], past: [...past, model], future: future.slice(1), selection: [], dirty: get().dirty + 1, active: validActive(get().active, future[0]) });
   },
 
   activeStory: 'Story1',
