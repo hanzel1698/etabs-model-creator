@@ -166,11 +166,11 @@ export const useApp = create<AppState>((set, get) => ({
   colAlign: { mode: 'off', anchor: 'center', ref: null, picking: false },
   setColAlign: (p) => set((s) => ({ colAlign: { ...s.colAlign, ...p } })),
   setColumnAngle: (a) => set({ columnAngle: a }),
-  ortho: false,
+  ortho: true,
   toggleOrtho: () => set((s) => ({ ortho: !s.ortho })),
-  autoBeam: false,
+  autoBeam: true,
   toggleAutoBeam: () => set((s) => ({ autoBeam: !s.autoBeam })),
-  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: true, underlay: true, columns: true, beams: true, slabs: true, nodes: false },
+  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, slabs: true, nodes: false },
   toggleShow: (k) =>
     set((s) => {
       const show = { ...s.show, [k]: !s.show[k] };

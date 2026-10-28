@@ -543,7 +543,7 @@ function EtabsDialog() {
   const [log, setLog] = useState<string[]>([]);
   const [url, setUrl] = useState(bridgeUrl());
   const [imp, setImp] = useState({ sections: true, stories: true, grids: true });
-  const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; supports: Supports }>({ updateStories: false, pushGrids: true, supports: 'fixed' });
+  const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; supports: Supports }>({ updateStories: false, pushGrids: false, supports: 'none' });
   const model = useApp((s) => s.model);
 
   const add = (...l: string[]) => setLog((x) => [...x, ...l]);
