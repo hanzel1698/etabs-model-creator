@@ -1,6 +1,7 @@
 import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { useApp } from './store';
 import { emptyModel, type Model } from './types';
+import { log } from '../log/sessionLog';
 import { applySavedMeta, metaOf, useUnderlay } from '../underlay/store';
 
 const KEY = 'emc-model';
@@ -22,6 +23,7 @@ export function startAutosave() {
 export function downloadProject() {
   const data = { app: 'etabs-model-creator', version: 1, model: useApp.getState().model, underlay: metaOf(useUnderlay.getState()) };
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  log('file', 'Saved model.emc.json');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'model.emc.json';

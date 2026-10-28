@@ -11,6 +11,8 @@ import { restoreModel, startAutosave, downloadProject, openProject } from './mod
 import { loadDxfFile, loadPdfFile, restoreUnderlay } from './underlay/store';
 import { emptyModel } from './model/types';
 import { fmt } from './model/geom';
+import { startSessionLog, log, toggleLog, useLog } from './log/sessionLog';
+import { LogPanel } from './ui/LogPanel';
 
 const View3D = lazy(() => import('./view3d/View3D'));
 
@@ -38,6 +40,7 @@ export function App() {
   const ulRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    startSessionLog();
     (async () => {
       await restoreModel();
       await restoreUnderlay();
@@ -54,6 +57,7 @@ export function App() {
       if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z')) && !inInput) return e.preventDefault(), st.redo();
       if (e.ctrlKey && e.key.toLowerCase() === 's') return e.preventDefault(), downloadProject();
       if (e.key === 'F8') return e.preventDefault(), st.toggleOrtho();
+      if (e.key === '`' && !inInput) return e.preventDefault(), toggleLog();
       if (e.key === 'Escape') {
         (document.activeElement as HTMLElement)?.blur?.();
         usePreview.getState().set({ input: '' });
@@ -91,6 +95,7 @@ export function App() {
   }, []);
 
   const loadUnderlay = async (f: File) => {
+    log('file', `Underlay ${f.name}`);
     try {
       if (/\.dxf$/i.test(f.name)) await loadDxfFile(f);
       else if (/\.pdf$/i.test(f.name)) await loadPdfFile(f, useApp.getState().model.stories.map((s) => s.name));
@@ -107,7 +112,7 @@ export function App() {
     <div className="app">
       <div className="topbar">
         <span className="brand">ETABS Model Creator</span>
-        <button title="New model" onClick={() => confirm('Start a new model? Unsaved work is lost.') && (useApp.getState().setModel(emptyModel()), resetTool())}>New</button>
+        <button title="New model" onClick={() => confirm('Start a new model? Unsaved work is lost.') && (log('file', 'New model'), useApp.getState().setModel(emptyModel()), resetTool())}>New</button>
         <button onClick={() => fileRef.current?.click()}>Open</button>
         <button onClick={downloadProject} title="Ctrl+S">Save</button>
         <button onClick={() => ulRef.current?.click()} title="Load a DXF (all stories in model space) or a PDF (one page per story)">Underlay…</button>
@@ -135,7 +140,7 @@ export function App() {
         <input ref={fileRef} type="file" accept=".json" hidden onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = '';
-            if (f) openProject(f).then(() => fitAll()).catch((er) => useApp.getState().setToast(er.message));
+            if (f) log('file', `Open ${f.name}`), openProject(f).then(() => fitAll()).catch((er) => useApp.getState().setToast(er.message));
           }} />
         <input ref={ulRef} type="file" accept=".dxf,.pdf" hidden onChange={(e) => (e.target.files?.[0] && loadUnderlay(e.target.files[0]), (e.target.value = ''))} />
       </div>
@@ -150,6 +155,7 @@ export function App() {
         )}
         {toast && <div className="toast">{toast}</div>}
         <MeasureBox />
+        <LogPanel />
       </div>
       <RightPanel />
       <StatusBar ortho={ortho} />
@@ -182,6 +188,16 @@ const Counts = memo(function Counts({ story }: { story: string }) {
   );
 });
 
+function LogButton() {
+  const open = useLog((s) => s.open);
+  const n = useLog((s) => s.entries.length);
+  return (
+    <button className={open ? 'on' : ''} onClick={toggleLog} title="Session log of everything done since the app was opened (`)">
+      Log <span className="muted">{n}</span>
+    </button>
+  );
+}
+
 function StatusBar({ ortho }: { ortho: boolean }) {
   const hint = usePreview((s) => s.hint);
   const input = usePreview((s) => s.input);
@@ -199,6 +215,7 @@ function StatusBar({ ortho }: { ortho: boolean }) {
           onChange={(e) => usePreview.getState().set({ input: e.target.value })}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
+              if (input.trim()) log('input', input.trim());
               onInput(input);
               (e.target as HTMLInputElement).blur();
             }
@@ -208,6 +225,7 @@ function StatusBar({ ortho }: { ortho: boolean }) {
       <span className="hint">{hint}</span>
       <button className={ortho ? 'on' : ''} onClick={() => useApp.getState().toggleOrtho()} title="F8">Ortho</button>
       <Counts story={story} />
+      <LogButton />
       <span className="coords">{cursor ? `X ${fmt(cursor.x)}  Y ${fmt(cursor.y)} mm` : ''}</span>
     </div>
   );

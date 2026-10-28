@@ -456,3 +456,49 @@ table.grid tr.group-row td {
   font-variant-numeric: tabular-nums;
   margin-bottom: 6px;
 }
+
+.log-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38%;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.35);
+  z-index: 40;
+}
+.log-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.log-head input {
+  width: 180px;
+}
+.log-list {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 8px;
+  font: 12px/1.45 Consolas, monospace;
+  user-select: text;
+  cursor: text;
+  outline: none;
+}
+.log-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.log-line.warn {
+  color: var(--accent2);
+}
+.log-line.error {
+  color: var(--danger);
+}

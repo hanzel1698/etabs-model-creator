@@ -11,6 +11,7 @@ import { setTool } from '../plan/tools';
 import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports } from '../etabs/bridgeClient';
 import { toPayload, applyImport } from '../etabs/mapping';
 import { fitAll } from '../plan/PlanView';
+import { log as sessionLog } from '../log/sessionLog';
 
 export function Modal({ title, children, footer, wide }: { title: string; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   return (
@@ -546,7 +547,10 @@ function EtabsDialog() {
   const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; supports: Supports }>({ updateStories: false, pushGrids: false, supports: 'none' });
   const model = useApp((s) => s.model);
 
-  const add = (...l: string[]) => setLog((x) => [...x, ...l]);
+  const add = (...l: string[]) => {
+    l.forEach((x) => sessionLog('etabs', x, x.startsWith('✖') ? 'error' : x.startsWith('⚠') ? 'warn' : 'info'));
+    setLog((x) => [...x, ...l]);
+  };
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
     try {
