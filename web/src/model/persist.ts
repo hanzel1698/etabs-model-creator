@@ -1,7 +1,7 @@
 import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { useApp } from './store';
 import { emptyModel, type Model } from './types';
-import { metaOf, useUnderlay } from '../underlay/store';
+import { applySavedMeta, metaOf, useUnderlay } from '../underlay/store';
 
 const KEY = 'emc-model';
 
@@ -33,9 +33,6 @@ export async function openProject(file: File) {
   const j = JSON.parse(await file.text());
   if (!j.model) throw new Error('Not an ETABS Model Creator project');
   useApp.getState().setModel({ ...emptyModel(), ...j.model });
-  if (j.underlay) {
-    const u = useUnderlay.getState();
-    // keep the loaded underlay file, apply saved placement only if it is the same file
-    if (u.fileName === j.underlay.fileName) u.set({ regions: j.underlay.regions, sheets: j.underlay.sheets, opacity: j.underlay.opacity });
-  }
+  // keep the loaded underlay file, apply saved scale/placement only if it is the same file
+  if (j.underlay) applySavedMeta(j.underlay);
 }

@@ -89,8 +89,23 @@ export async function saveUnderlayMeta() {
   await idbSet('underlayMeta', metaOf(useUnderlay.getState()));
 }
 
+function parseDxfWith(text: string, scale: number, hiddenLayers: string[]) {
+  const dxf = parseDxf(text, scale);
+  dxf.layers.forEach((l) => (l.visible = !hiddenLayers.includes(l.name)));
+  return dxf;
+}
+
 export async function loadDxfFile(file: File) {
   const text = await file.text();
+  const prev = useUnderlay.getState();
+  if (prev.kind === 'dxf' && prev.fileName === file.name) {
+    // same drawing again (e.g. an updated revision): keep its units, regions and layer settings
+    prev.set({ dxf: parseDxfWith(text, prev.dxfScale, prev.hiddenLayers), dxfText: text });
+    await idbSet('underlayFile', text);
+    await saveUnderlayMeta();
+    toast(`Reloaded ${file.name}, keeping its scale and story regions.`);
+    return;
+  }
   const units = readInsUnits(text);
   let scale = unitScaleFromInsunits(units);
   let dxf = parseDxf(text, scale);
@@ -119,7 +134,26 @@ export function rescaleDxf(scale: number) {
     rect: { minX: r.rect.minX * f, minY: r.rect.minY * f, maxX: r.rect.maxX * f, maxY: r.rect.maxY * f },
     ref: { x: r.ref.x * f, y: r.ref.y * f },
   }));
-  s.set({ dxfScale: scale, dxf: parseDxf(s.dxfText, scale), regions });
+  s.set({ dxfScale: scale, dxf: parseDxfWith(s.dxfText, scale, s.hiddenLayers), regions });
+  saveUnderlayMeta();
+}
+
+/** Apply the underlay settings saved in a project, if the loaded underlay is the same file. */
+export function applySavedMeta(m: Partial<UnderlayMeta>) {
+  const s = useUnderlay.getState();
+  if (!m.fileName || s.fileName !== m.fileName) return;
+  const scale = m.dxfScale ?? s.dxfScale;
+  const hidden = m.hiddenLayers ?? s.hiddenLayers;
+  const dxf = s.kind === 'dxf' && s.dxfText ? parseDxfWith(s.dxfText, scale, hidden) : s.dxf;
+  s.set({
+    dxf,
+    dxfScale: scale,
+    hiddenLayers: hidden,
+    regions: m.regions ?? s.regions,
+    sheets: m.sheets ?? s.sheets,
+    opacity: m.opacity ?? s.opacity,
+    showText: m.showText ?? s.showText,
+  });
   saveUnderlayMeta();
 }
 
@@ -153,9 +187,7 @@ export async function restoreUnderlay() {
   const file = await idbGet('underlayFile');
   if (!meta || !file || meta.kind === 'none') return;
   if (meta.kind === 'dxf' && typeof file === 'string') {
-    const dxf = parseDxf(file, meta.dxfScale);
-    dxf.layers.forEach((l) => (l.visible = !meta.hiddenLayers.includes(l.name)));
-    useUnderlay.getState().set({ ...meta, dxf, dxfText: file });
+    useUnderlay.getState().set({ ...meta, dxf: parseDxfWith(file, meta.dxfScale, meta.hiddenLayers), dxfText: file });
   } else if (meta.kind === 'pdf' && file instanceof ArrayBuffer) {
     const n = await pdfPageCount(file);
     useUnderlay.getState().set({ ...meta, pdfBytes: file, pdfPages: n });
