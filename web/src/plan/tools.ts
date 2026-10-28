@@ -84,12 +84,21 @@ export function moveModelToOrigin(o: Pt) {
   if (st.colAlign.ref) st.setColAlign({ ref: { x: st.colAlign.ref.x - o.x, y: st.colAlign.ref.y - o.y } });
   const u = useUnderlay.getState();
   if (u.kind === 'dxf' && u.dxf) {
-    if (u.setupMode || !u.regions.length) {
-      // picked on the raw drawing: that raw point becomes this story's reference point
-      const reg = regionFor(st.activeStory);
-      const regions = reg
-        ? u.regions.map((r) => (r === reg ? { ...r, ref: { ...o } } : r))
-        : [...u.regions, { id: uid(), stories: u.regions.length ? [st.activeStory] : st.model.stories.map((s) => s.name), rect: { ...u.dxf.fitBox }, ref: { ...o } }];
+    // A model drawn on the raw drawing sits inside a region's raw box, not around the origin like
+    // the story-aligned view, even when the setup view is currently off.
+    type Box = { minX: number; minY: number; maxX: number; maxY: number };
+    const inBox = (b: Box) => o.x >= b.minX && o.x <= b.maxX && o.y >= b.minY && o.y <= b.maxY;
+    const shifted = (r: (typeof u.regions)[number]) => ({ minX: r.rect.minX - r.ref.x, minY: r.rect.minY - r.ref.y, maxX: r.rect.maxX - r.ref.x, maxY: r.rect.maxY - r.ref.y });
+    const onRaw = u.setupMode || !u.regions.length || (u.regions.some((r) => inBox(r.rect)) && !u.regions.some((r) => inBox(shifted(r))));
+    if (onRaw) {
+      // picked on the raw drawing: that raw point becomes the reference point of the region it lies in
+      const hit = u.regions.filter((r) => inBox(r.rect));
+      const reg = hit.length ? null : regionFor(st.activeStory);
+      const regions = hit.length
+        ? u.regions.map((r) => (hit.includes(r) ? { ...r, ref: { ...o } } : r))
+        : reg
+          ? u.regions.map((r) => (r === reg ? { ...r, ref: { ...o } } : r))
+          : [...u.regions, { id: uid(), stories: u.regions.length ? [st.activeStory] : st.model.stories.map((s) => s.name), rect: { ...u.dxf.fitBox }, ref: { ...o } }];
       u.set({ regions, setupMode: false });
     } else {
       u.set({ regions: u.regions.map((r) => ({ ...r, ref: { x: r.ref.x + o.x, y: r.ref.y + o.y } })) });
