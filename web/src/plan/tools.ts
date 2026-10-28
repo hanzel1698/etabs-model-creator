@@ -1,6 +1,6 @@
 import { useApp, usePreview, drawStories, toast, type ToolName } from '../model/store';
 import type { Model, Pt } from '../model/types';
-import { autoSizeBeams, RANK_NAME } from '../model/autoBeam';
+import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
 import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel } from '../model/ops';
 import { uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
@@ -200,7 +200,8 @@ export function commitBeams(fn: (m: Model) => Model) {
     const old = new Set(m.beams.map((b) => b.id));
     const r = autoSizeBeams(out, out.beams.filter((b) => !old.has(b.id)).map((b) => b.id), A().active.beam);
     const kinds = [...new Set([...r.sizes.values()].map((s) => `${s.section} (${RANK_NAME[s.rank]}${s.periphery ? ', GF periphery' : ''})`))];
-    picked = kinds.length > 3 ? `${r.sizes.size} beams sized` : kinds.join(', ');
+    const note = noFitNote(r.sizes, A().active.beam);
+    picked = (kinds.length > 3 ? `${r.sizes.size} beams sized` : kinds.join(', ')) + (note ? '.' + note : '');
     return r.model;
   });
   if (picked) toast(`Auto: ${picked}`);

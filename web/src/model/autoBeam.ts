@@ -138,38 +138,43 @@ export function autoSize(m: Model, b: Beam, baseWidth: number): AutoSize {
   return { rank, width: autoWidth(rank, baseWidth), depth, periphery };
 }
 
-/** Name of a rectangular section with these dimensions, creating `B{w}x{d}` when there is none. */
-export function ensureBeamSection(m: Model, width: number, depth: number, material: string): { model: Model; name: string } {
-  const hit = m.frameSections.find((s) => s.shape === 'Rectangle' && s.t2 === width && s.t3 === depth && s.name.toUpperCase().startsWith('B'));
-  if (hit) return { model: m, name: hit.name };
-  let name = `B${width}x${depth}`;
-  for (let n = 2; m.frameSections.some((s) => s.name === name); n++) name = `B${width}x${depth}_${n}`;
-  const sec: FrameSection = { name, shape: 'Rectangle', t2: width, t3: depth, material, fromEtabs: false };
-  return { model: { ...m, frameSections: [...m.frameSections, sec] }, name };
+/**
+ * The smallest listed beam section (B…, rectangular) at least `width` wide and `depth` deep: least area,
+ * then shallowest, then narrowest. Undefined when none is big enough. Sections are never created.
+ */
+export function pickBeamSection(sections: FrameSection[], width: number, depth: number): FrameSection | undefined {
+  const fits = sections.filter((s) => s.shape === 'Rectangle' && s.name.toUpperCase().startsWith('B') && s.t2 >= width && s.t3 >= depth);
+  return fits.sort((a, b) => a.t2 * a.t3 - b.t2 * b.t3 || a.t3 - b.t3 || a.t2 - b.t2 || a.name.localeCompare(b.name, undefined, { numeric: true }))[0];
 }
 
 /**
- * Give the beams `ids` auto sections. `base` is the active beam section: its width is the preferred
- * width and its material is used for new sections. Returns the sizes it picked (by beam id).
+ * Give the beams `ids` sections from the list for their auto sizes. `base` is the active beam section:
+ * its width is the preferred width, and beams with no listed section big enough get it (`fits` false).
+ * Returns the sizes it picked (by beam id).
  */
-export function autoSizeBeams(m: Model, ids: string[], base: string): { model: Model; sizes: Map<string, AutoSize & { section: string }> } {
-  const bs = m.frameSections.find((s) => s.name === base);
-  const baseWidth = bs?.t2 ?? 300;
-  const material = bs?.material ?? m.frameSections.find((s) => s.name.toUpperCase().startsWith('B'))?.material ?? m.materials[0]?.name ?? '';
+export function autoSizeBeams(m: Model, ids: string[], base: string): { model: Model; sizes: Map<string, AutoSize & { section: string; fits: boolean }> } {
+  const baseWidth = m.frameSections.find((s) => s.name === base)?.t2 ?? 300;
   // classify everything against the geometry as it is, then rename
   const want = new Set(ids);
-  const sizes = new Map<string, AutoSize & { section: string }>();
-  for (const b of m.beams) if (want.has(b.id)) sizes.set(b.id, { ...autoSize(m, b, baseWidth), section: '' });
-  let out = m;
-  for (const s of sizes.values()) {
-    const r = ensureBeamSection(out, s.width, s.depth, material);
-    out = r.model;
-    s.section = r.name;
-  }
+  const sizes = new Map<string, AutoSize & { section: string; fits: boolean }>();
+  for (const b of m.beams)
+    if (want.has(b.id)) {
+      const s = autoSize(m, b, baseWidth);
+      const hit = pickBeamSection(m.frameSections, s.width, s.depth);
+      sizes.set(b.id, { ...s, section: hit?.name ?? base, fits: !!hit });
+    }
   if (!sizes.size) return { model: m, sizes };
-  const beams = out.beams.map((b) => {
+  const beams = m.beams.map((b) => {
     const s = sizes.get(b.id);
     return s && s.section !== b.section ? { ...b, section: s.section } : b;
   });
-  return { model: { ...out, beams }, sizes };
+  return { model: { ...m, beams }, sizes };
+}
+
+/** Toast note for beams that got the active section because nothing listed was big enough. */
+export function noFitNote(sizes: Map<string, AutoSize & { fits: boolean }>, base: string): string {
+  const miss = [...sizes.values()].filter((s) => !s.fits);
+  if (!miss.length) return '';
+  const need = [...new Set(miss.map((s) => `${s.width}x${s.depth}`))].slice(0, 3).join(', ');
+  return ` ${miss.length > 1 ? `${miss.length} beams need` : '1 beam needs'} a bigger section than any listed (${need}) and got ${base}.`;
 }

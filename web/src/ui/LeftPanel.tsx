@@ -6,7 +6,7 @@ import { SectionOptions } from './sectionGroups';
 import { autoBeamsOnGrids } from '../model/ops';
 import { fitAll } from '../plan/PlanView';
 import { commitBeams, setTool } from '../plan/tools';
-import { autoSizeBeams } from '../model/autoBeam';
+import { autoSizeBeams, noFitNote } from '../model/autoBeam';
 import { fmt } from '../model/geom';
 
 export function LeftPanel() {
@@ -82,7 +82,7 @@ export function LeftPanel() {
         </label>
         {auto && (
           <div className="row small muted" style={{ marginBottom: 6 }}>
-            New beams are sized from their supports and span; the beam width above is the preferred width.
+            New beams get the smallest listed section that fits their supports and span; the beam width above is the preferred width.
           </div>
         )}
         <div className="row">
@@ -121,7 +121,7 @@ export function LeftPanel() {
               const before = new Map(m.beams.map((b) => [b.id, b.section]));
               const changed = r.model.beams.filter((b) => before.get(b.id) !== b.section).length;
               if (changed) s.commit(() => r.model);
-              toast(`Auto-sized ${ids.length} beam${ids.length > 1 ? 's' : ''}: ${changed} changed.`);
+              toast(`Auto-sized ${ids.length} beam${ids.length > 1 ? 's' : ''}: ${changed} changed.` + noFitNote(r.sizes, s.active.beam));
             }}
           >
             Auto-size beams
@@ -154,6 +154,8 @@ const AUTO_TIP = [
   '• tertiary (carried by secondary beams): width ≤ 200',
   '• depth = span / 10 in 100 mm steps, 300 to 800',
   '• ground floor periphery beams: depth ≥ plinth height',
+  'Each beam gets the smallest listed B section at least that wide and deep (none are created);',
+  'if none is big enough it keeps the active beam section.',
 ].join('\n');
 
 /** Column tool option: keep new columns on a vertical/horizontal line through a picked point. */

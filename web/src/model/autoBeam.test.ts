@@ -32,6 +32,11 @@ function frame(): Model {
   return m;
 }
 
+const withSections = (m: Model, ...dims: [number, number][]): Model => ({
+  ...m,
+  frameSections: [...m.frameSections, ...dims.map(([t2, t3]) => ({ name: `B${t2}x${t3}`, shape: 'Rectangle' as const, t2, t3, material: '4000Psi', fromEtabs: false }))],
+});
+
 describe('auto beam rules', () => {
   it('depth = span/10 in 100 mm steps, 300..800', () => {
     expect([1000, 2999, 3000, 3001, 4000, 4500, 6500, 7000, 7200, 12000].map(autoDepth)).toEqual([300, 300, 300, 400, 400, 500, 700, 700, 800, 800]);
@@ -89,24 +94,35 @@ describe('auto beam rules', () => {
     expect(isPeriphery(m, beam(m, P(3000, 0), P(3000, 5000)))).toBe(false);
   });
 
-  it('sizes beams, creating sections, and deepens GF periphery beams to the plinth', () => {
-    let m = frame();
+  it('sizes beams from the listed sections and deepens GF periphery beams to the plinth', () => {
+    let m = withSections(frame(), [200, 300], [250, 500], [300, 450], [300, 600]);
     m = { ...m, foundation: { foundingDepth: 2000, footingThickness: 600, plinthHeight: 600 } };
     const ids = m.beams.map((b) => b.id);
     const { model } = autoSizeBeams(m, ids, 'B300x500');
     const sec = (a: Pt, b: Pt) => beam(model, a, b).section;
     expect(sec(P(0, 0), P(6000, 0))).toBe('B300x600'); // 6 m primary
     expect(sec(P(0, 0), P(0, 5000))).toBe('B300x600'); // 5 m → 500, periphery → plinth 600
-    expect(sec(P(6000, 0), P(6000, 5000))).toBe('B300x500'); // interior, existing section reused
+    expect(sec(P(6000, 0), P(6000, 5000))).toBe('B300x500'); // interior
     expect(sec(P(3000, 0), P(3000, 5000))).toBe('B250x500');
     expect(sec(P(0, 2500), P(3000, 2500))).toBe('B200x300'); // 3 m tertiary keeps span/10
+    expect(model.frameSections).toBe(m.frameSections); // nothing created
     // a short primary is still 450 deep
     const short = addBeams(m, [[P(6000, 0), P(6000, 2000)]], ['Story1'], 'B300x500');
     const sb = short.beams.at(-1)!;
     expect(autoSizeBeams(short, [sb.id], 'B300x500').sizes.get(sb.id)!.section).toBe('B300x450');
-    expect(model.frameSections.find((s) => s.name === 'B250x500')).toMatchObject({ t2: 250, t3: 500, shape: 'Rectangle', material: '4000Psi' });
     // not the GF story → no plinth rule
     const up = autoSizeBeams({ ...m, stories: [{ name: 'GF', height: 1000, isMaster: true, similarTo: '' }, ...m.stories] }, ids, 'B300x500').model;
     expect(beam(up, P(0, 0), P(0, 5000)).section).toBe('B300x500');
+  });
+
+  it('takes the smallest bigger listed section, or the active one when none is big enough', () => {
+    const m = withSections(frame(), [300, 400], [350, 700]); // with B300x500 from the empty model
+    const ids = m.beams.map((b) => b.id);
+    const { sizes } = autoSizeBeams(m, ids, 'B300x500');
+    const at = (a: Pt, b: Pt) => sizes.get(beam(m, a, b).id)!;
+    expect(at(P(3000, 0), P(3000, 5000))).toMatchObject({ width: 250, depth: 500, section: 'B300x500', fits: true });
+    expect(at(P(0, 0), P(6000, 0))).toMatchObject({ width: 300, depth: 600, section: 'B350x700', fits: true });
+    const small = withSections({ ...m, frameSections: m.frameSections.filter((s) => !s.name.startsWith('B')) }, [300, 400]);
+    expect(autoSizeBeams(small, ids, 'B300x400').sizes.get(beam(m, P(0, 0), P(6000, 0)).id)).toMatchObject({ section: 'B300x400', fits: false });
   });
 });
