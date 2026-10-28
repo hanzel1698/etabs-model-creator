@@ -38,8 +38,8 @@ const withSections = (m: Model, ...dims: [number, number][]): Model => ({
 });
 
 describe('auto beam rules', () => {
-  it('depth = span/10 in 100 mm steps, 300..800', () => {
-    expect([1000, 2999, 3000, 3001, 4000, 4500, 6500, 7000, 7200, 12000].map(autoDepth)).toEqual([300, 300, 300, 400, 400, 500, 700, 700, 800, 800]);
+  it('depth = span/10 in 100 mm steps, 400..800, 300 only up to 1.5 m', () => {
+    expect([1000, 1500, 1501, 2999, 3000, 3001, 4000, 4500, 6500, 7000, 7200, 12000].map(autoDepth)).toEqual([300, 300, 400, 400, 400, 400, 400, 500, 700, 700, 800, 800]);
   });
 
   it('width bounds by rank around the preferred width', () => {
@@ -96,7 +96,7 @@ describe('auto beam rules', () => {
   });
 
   it('sizes beams from the listed sections and deepens GF periphery beams to the plinth', () => {
-    let m = withSections(frame(), [200, 300], [250, 500], [300, 450], [300, 600]);
+    let m = withSections(frame(), [200, 300], [200, 400], [250, 500], [300, 450], [300, 600]);
     m = { ...m, foundation: { foundingDepth: 2000, footingThickness: 600, plinthHeight: 600 } };
     const ids = m.beams.map((b) => b.id);
     const { model } = autoSizeBeams(m, ids, 'B300x500');
@@ -105,7 +105,7 @@ describe('auto beam rules', () => {
     expect(sec(P(0, 0), P(0, 5000))).toBe('B300x600'); // 5 m → 500, periphery → plinth 600
     expect(sec(P(6000, 0), P(6000, 5000))).toBe('B300x500'); // interior
     expect(sec(P(3000, 0), P(3000, 5000))).toBe('B300x500'); // secondary keeps the 300 preferred width
-    expect(sec(P(0, 2500), P(3000, 2500))).toBe('B200x300'); // 3 m tertiary keeps span/10
+    expect(sec(P(0, 2500), P(3000, 2500))).toBe('B200x400'); // 3 m tertiary: 200x300 is for spans up to 1.5 m
     // a narrower preferred width: secondaries are still at least 250 wide
     expect(beam(autoSizeBeams(m, ids, 'B200x300').model, P(3000, 0), P(3000, 5000)).section).toBe('B250x500');
     expect(model.frameSections).toBe(m.frameSections); // nothing created

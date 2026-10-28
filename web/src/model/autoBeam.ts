@@ -4,8 +4,8 @@ import { cross, dist, distToSeg, dot, norm, sub } from './geom';
 // Auto beam sizing (beam tool "Auto" mode).
 //  - primary   (an end on a column):         width >= 300, depth >= 450
 //  - secondary (ends on primary beams):      width >= 250
-//  - tertiary  (ends on secondary beams…):   width <= 200
-//  - depth = span/10 rounded up to 100, 300 min, 800 max
+//  - tertiary  (ends on secondary beams…):   width 200
+//  - depth = span/10 rounded up to 100, 800 max; 400 min, or 300 for spans up to 1.5 m (200x300 is for short beams only)
 //  - ground floor (bottom story from the foundation inputs): periphery beams are at least the plinth height deep
 
 const TOL = 1; // mm
@@ -14,19 +14,22 @@ const PAR = Math.sin((5 * Math.PI) / 180); // beams within 5° of each other are
 export type BeamRank = 1 | 2 | 3;
 export const RANK_NAME: Record<BeamRank, string> = { 1: 'primary', 2: 'secondary', 3: 'tertiary' };
 
-export const AUTO_MIN_DEPTH = 300;
+export const AUTO_MIN_DEPTH = 400;
+export const SHORT_SPAN = 1500; // beams up to this long may be AUTO_SHORT_DEPTH deep
+export const AUTO_SHORT_DEPTH = 300;
 export const PRIMARY_MIN_DEPTH = 450;
 export const AUTO_MAX_DEPTH = 800;
 
-/** span/10 in whole 100 mm steps: ≤3 m → 300, 3–4 m → 400, … 6–7 m → 700, above 7 m → 800. */
+/** span/10 in whole 100 mm steps: ≤1.5 m → 300, ≤4 m → 400, 4–5 m → 500, … 6–7 m → 700, above 7 m → 800. */
 export function autoDepth(span: number): number {
-  const d = Math.ceil(Math.round(span) / 1000) * 100;
-  return Math.min(AUTO_MAX_DEPTH, Math.max(AUTO_MIN_DEPTH, d));
+  const s = Math.round(span);
+  const d = Math.ceil(s / 1000) * 100;
+  return Math.min(AUTO_MAX_DEPTH, Math.max(s <= SHORT_SPAN ? AUTO_SHORT_DEPTH : AUTO_MIN_DEPTH, d));
 }
 
-/** `base` is the preferred width (the active beam section's); the rank sets its lower or upper bound. */
+/** `base` is the preferred width (the active beam section's); the rank sets its lower bound, tertiary beams are 200. */
 export function autoWidth(rank: BeamRank, base: number): number {
-  return rank === 1 ? Math.max(base, 300) : rank === 2 ? Math.max(base, 250) : Math.min(base, 200);
+  return rank === 1 ? Math.max(base, 300) : rank === 2 ? Math.max(base, 250) : 200;
 }
 
 const ends = (b: Beam): [Pt, Pt] => [
