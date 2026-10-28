@@ -290,6 +290,37 @@ def push_sections(m, p, log):
         log.append(("Updated" if s["name"] in existing_a else "Created") + f" slab section {s['name']}")
 
 
+def update_existing_stories(m, p, log):
+    """SetStories_2 only works on a model with no objects, and the API cannot add, remove or rename stories
+    after that (the Story Definitions table is not editable either). Stories can still be changed one by one
+    when ETABS already has the same story names in the same order."""
+    base, cur = get_stories(m)
+    want = [s["name"] for s in p["stories"]]
+    have = [s["name"] for s in cur]
+    if want != have:
+        log.append(f"WARNING stories not updated: ETABS cannot add, remove or rename stories once the model has objects. "
+                   f"ETABS has {', '.join(have)} (base {base:g}); the app has {', '.join(want)} (base {p['baseElevation']:g}). "
+                   f"Make the stories match in ETABS (Edit > Edit Stories and Grid Systems), or push into an empty model.")
+        return
+    for s in p["stories"]:
+        ok(m.Story.SetHeight(s["name"], float(s["height"])), f"Story.SetHeight {s['name']}")
+        ok(m.Story.SetMasterStory(s["name"], bool(s["isMaster"])), f"Story.SetMasterStory {s['name']}")
+    # SetSimilarTo only takes a master story name, so "None" cannot be set back through the API
+    kept = []
+    for s, c in zip(p["stories"], cur):
+        if s["isMaster"]:
+            continue
+        if s["similarTo"]:
+            ok(m.Story.SetSimilarTo(s["name"], s["similarTo"]), f"Story.SetSimilarTo {s['name']}")
+        elif c["similarTo"] and c["similarTo"] != "None":
+            kept.append(f"{s['name']} ({c['similarTo']})")
+    if kept:
+        log.append(f"Similar-to left as in ETABS for {', '.join(kept)} - the API cannot set it to None; change it in ETABS if needed")
+    log.append(f"Story heights updated ({len(want)})" +
+               (f" - WARNING base elevation is {base:g} in ETABS, {p['baseElevation']:g} in the app; change it in ETABS"
+                if abs(base - p["baseElevation"]) > 1e-6 else ""))
+
+
 def push_stories(m, p, log):
     st = p["stories"]
     n = len(st)
@@ -298,9 +329,13 @@ def push_stories(m, p, log):
                                 [bool(s["isMaster"]) for s in st], [s["similarTo"] or "None" for s in st],
                                 [False] * n, [0.0] * n, [0] * n), "Story.SetStories_2")
         log.append(f"Stories set ({n})")
+        return
+    except Exception:
+        pass  # the model already has objects
+    try:
+        update_existing_stories(m, p, log)
     except Exception as e:
-        log.append(f"WARNING stories not updated: {e}. ETABS only allows replacing stories in some cases - "
-                   f"edit them in ETABS to match the app if needed.")
+        log.append(f"WARNING stories not updated: {e}. Edit them in ETABS to match the app if needed.")
 
 
 def push_grids(m, grids, log):
