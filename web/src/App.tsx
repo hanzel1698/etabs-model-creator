@@ -132,6 +132,7 @@ export function App() {
         <button onClick={() => useApp.getState().undo()} title="Ctrl+Z">Undo</button>
         <button onClick={() => useApp.getState().redo()} title="Ctrl+Y">Redo</button>
         <span className="sep" />
+        <StoryStepper />
         <button className={panel === 'plan' ? 'on' : ''} onClick={() => useApp.getState().setPanel('plan')}>Plan</button>
         <button className={panel === 'split' ? 'on' : ''} onClick={() => useApp.getState().setPanel('split')}>Split</button>
         <button className={panel === '3d' ? 'on' : ''} onClick={() => useApp.getState().setPanel('3d')}>3D</button>
@@ -161,6 +162,22 @@ export function App() {
       <StatusBar ortho={ortho} />
       <Dialogs />
     </div>
+  );
+}
+
+/** Step the active story up or down (stories are stored bottom to top). */
+function StoryStepper() {
+  const stories = useApp((s) => s.model.stories);
+  const active = useApp((s) => s.activeStory);
+  const i = stories.findIndex((s) => s.name === active);
+  const up = stories[i + 1]?.name,
+    down = i > 0 ? stories[i - 1].name : undefined;
+  return (
+    <>
+      <button disabled={!up} onClick={() => up && useApp.getState().setActiveStory(up)} title={up ? `Story up: ${up}` : 'Top story'}>▲</button>
+      <button disabled={!down} onClick={() => down && useApp.getState().setActiveStory(down)} title={down ? `Story down: ${down}` : 'Bottom story'}>▼</button>
+      <span className="story-step">{active}</span>
+    </>
   );
 }
 

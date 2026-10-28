@@ -120,6 +120,12 @@ label {
   background: var(--line);
   margin: 0 5px;
 }
+.topbar .story-step {
+  min-width: 64px;
+  margin: 0 6px 0 2px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .brand {
   font-weight: 600;
   margin-right: 8px;

@@ -22,7 +22,18 @@ export const UnderlayLayer = memo(function UnderlayLayer({ story, viewRot }: { s
   if (u.kind === 'dxf' && u.dxf) {
     // The DXF linework itself is drawn on a canvas (UnderlayCanvas): large architectural DXFs have
     // ~100k segments, which freezes the browser as SVG. Only the light region overlays stay in SVG.
-    if (!u.setupMode) return null;
+    if (!u.setupMode) {
+      // the cropped view: name the story above the top edge of its region (shifted so its reference point is 0,0)
+      const reg = regionFor(story);
+      if (!reg) return null;
+      const w = reg.rect.maxX - reg.rect.minX;
+      const fs = Math.max(400, w / 30);
+      return (
+        <text className="nosel" transform={textTransform((reg.rect.minX + reg.rect.maxX) / 2 - reg.ref.x, reg.rect.maxY - reg.ref.y, viewRot)} dy={-fs * 0.5} fontSize={fs} fontWeight={700} textAnchor="middle" fill="#4aa3ff">
+          {story}
+        </text>
+      );
+    }
     return (
       <g className="underlay">
         <g>
