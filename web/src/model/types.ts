@@ -80,7 +80,7 @@ export interface Model {
   slabSections: SlabSection[];
   materials: Material[];
   pushedIds: string[]; // ids that exist in ETABS from previous pushes (for delete sync)
-  /** inputs the ground floor (bottom story top) elevation was computed from (= foundingDepth - footingThickness + plinthHeight) */
+  /** inputs the bottom story (footing top → ground floor level) was computed from (height = foundingDepth - footingThickness + plinthHeight) */
   foundation?: { foundingDepth: number; footingThickness: number; plinthHeight: number };
 }
 

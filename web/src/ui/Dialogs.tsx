@@ -310,8 +310,10 @@ function StoriesDialog() {
     return [n.foundingDepth, n.footingThickness, n.plinthHeight].every(isFinite) ? n : null;
   };
   const [rows, setRows] = useState<(Story & { orig: string })[]>(model.stories.map((s) => ({ ...s, orig: s.name })));
-  // founding depth - footing thickness + plinth height is the ground floor (Story 1) elevation,
-  // so it sets the bottom story's height above the base
+  // founding depth - footing thickness + plinth height is the ground floor level, so it gets its own
+  // bottom story (footing top → GF level) under the floor-to-floor stories; a saved foundation means
+  // the bottom story is that one
+  const [fndRow, setFndRow] = useState<string | null>(model.foundation ? model.stories[0]?.name ?? null : null);
   const setFoundation = (p: Partial<typeof fnd>) => {
     const next = { ...fnd, ...p };
     setFnd(next);
@@ -319,7 +321,13 @@ function StoriesDialog() {
       ft = parseFloat(next.footingThickness),
       ph = parseFloat(next.plinthHeight);
     const h = fd - ft + ph - base;
-    if ([fd, ft, ph].every(isFinite) && h > 0 && rows.length) setRows([{ ...rows[0], height: h }, ...rows.slice(1)]);
+    if (![fd, ft, ph].every(isFinite) || h <= 0) return;
+    if (fndRow && rows[0]?.orig === fndRow) return setRows([{ ...rows[0], height: h }, ...rows.slice(1)]);
+    let name = 'GF';
+    for (let n = 2; rows.some((x) => x.name === name); n++) name = `GF${n}`;
+    const orig = `__new${uid()}`;
+    setFndRow(orig);
+    setRows([{ name, orig, height: h, isMaster: false, similarTo: '' }, ...rows]);
   };
   const [addN, setAddN] = useState(1);
   const [addH, setAddH] = useState(3000);
@@ -406,8 +414,8 @@ function StoriesDialog() {
           <span className="muted" style={{ width: 'auto' }}>mm</span>
         </div>
         <div className="small muted">
-          {rows[0]?.name ?? 'Story 1'} elev. = founding depth − footing thickness + plinth height
-          {gf ? ` = ${fmt(gf.foundingDepth - gf.footingThickness + gf.plinthHeight)}` : ''}. Filling these sets the bottom story's height. Base elev. defaults to 0.
+          Ground floor level = founding depth − footing thickness + plinth height
+          {gf ? ` = ${fmt(gf.foundingDepth - gf.footingThickness + gf.plinthHeight)}` : ''}. Filling these adds a bottom story from the footing top up to ground floor level; your floor-to-floor stories sit above it. Base elev. defaults to 0.
         </div>
       </div>
       <div className="row">
