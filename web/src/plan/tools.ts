@@ -53,7 +53,10 @@ export function setTool(t: ToolName) {
     const u = useUnderlay.getState();
     if (t === 'region' && u.kind !== 'dxf') return toast('Load a DXF underlay first.');
     if (t === 'calibrate' && u.kind === 'none') return toast('Load a DXF or PDF underlay first.');
-    if (t === 'region') u.set({ setupMode: true });
+    if (t === 'region' && !u.setupMode) {
+      u.set({ setupMode: true });
+      requestAnimationFrame(() => fitAll());
+    }
   }
   if (DRAW_TOOLS.includes(t)) leaveSetupView();
   resetTool();

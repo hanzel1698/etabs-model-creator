@@ -18,8 +18,13 @@ export function fitAll(w?: number, h?: number) {
   m.grids.forEach((g) => (xs.push(g.x1, g.x2), ys.push(g.y1, g.y2)));
   m.columns.forEach((c) => (xs.push(c.x), ys.push(c.y)));
   m.beams.forEach((b) => (xs.push(b.x1, b.x2), ys.push(b.y1, b.y2)));
+  const u = useUnderlay.getState();
+  // the setup view shows the raw drawing, which can be far from the model: frame the drawing
+  if (u.kind === 'dxf' && u.dxf && u.setupMode) {
+    const b = u.dxf.fitBox;
+    return viewport.fit(b.minX, b.minY, b.maxX, b.maxY, W, H);
+  }
   if (!xs.length) {
-    const u = useUnderlay.getState();
     if (u.kind === 'dxf' && u.dxf) {
       const story = useApp.getState().activeStory;
       const reg = u.setupMode ? null : u.regions.find((r) => r.stories.includes(story));
