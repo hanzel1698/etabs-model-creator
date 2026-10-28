@@ -32,16 +32,19 @@ export function UnderlayCanvas({ w, h }: { w: number; h: number }) {
       if (!u.setupMode && u.regions.length && !reg) return;
       const [a, b, c, d, e, f] = viewport.m();
       ctx.setTransform(a * dpr, b * dpr, c * dpr, d * dpr, e * dpr, f * dpr);
+      ctx.globalAlpha = u.opacity;
+      // clips intersect with every earlier one until restored, so each frame's region clip is scoped
+      ctx.save();
       if (reg) {
         ctx.translate(-reg.ref.x, -reg.ref.y);
         ctx.beginPath();
         ctx.rect(reg.rect.minX, reg.rect.minY, reg.rect.maxX - reg.rect.minX, reg.rect.maxY - reg.rect.minY);
         ctx.clip();
       }
-      ctx.globalAlpha = u.opacity;
       ctx.strokeStyle = color;
       ctx.lineWidth = 1 / viewport.k; // 1 screen px
       for (const l of paths) if (l.visible) ctx.stroke(l.p);
+      ctx.restore();
 
       if (u.showText) {
         // texts are drawn in screen space so tiny ones can be skipped cheaply
