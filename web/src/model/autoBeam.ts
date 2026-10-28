@@ -3,7 +3,7 @@ import { cross, dist, distToSeg, dot, norm, sub } from './geom';
 
 // Auto beam sizing (beam tool "Auto" mode).
 //  - primary   (an end on a column):         width >= 300, depth >= 450
-//  - secondary (ends on primary beams):      width <= 250
+//  - secondary (ends on primary beams):      width >= 250
 //  - tertiary  (ends on secondary beams…):   width <= 200
 //  - depth = span/10 rounded up to 100, 300 min, 800 max
 //  - ground floor (bottom story from the foundation inputs): periphery beams are at least the plinth height deep
@@ -26,7 +26,7 @@ export function autoDepth(span: number): number {
 
 /** `base` is the preferred width (the active beam section's); the rank sets its lower or upper bound. */
 export function autoWidth(rank: BeamRank, base: number): number {
-  return rank === 1 ? Math.max(base, 300) : Math.min(base, rank === 2 ? 250 : 200);
+  return rank === 1 ? Math.max(base, 300) : rank === 2 ? Math.max(base, 250) : Math.min(base, 200);
 }
 
 const ends = (b: Beam): [Pt, Pt] => [

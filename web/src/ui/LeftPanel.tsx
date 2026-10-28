@@ -150,7 +150,7 @@ export function LeftPanel() {
 const AUTO_TIP = [
   'Auto beam sizes:',
   '• primary (an end on a column): width ≥ 300, depth ≥ 450',
-  '• secondary (carried by primary beams): width ≤ 250',
+  '• secondary (carried by primary beams): width ≥ 250',
   '• tertiary (carried by secondary beams): width ≤ 200',
   '• depth = span / 10 in 100 mm steps, 300 to 800',
   '• ground floor periphery beams: depth ≥ plinth height',
