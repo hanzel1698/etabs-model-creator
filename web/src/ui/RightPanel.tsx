@@ -1,5 +1,5 @@
 import { useApp } from '../model/store';
-import { deleteIds, patchIds } from '../model/ops';
+import { cachedStoryNodes, deleteIds, patchIds, type PlanNode } from '../model/ops';
 import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
 import { useUnderlay, saveUnderlayMeta, removeUnderlay } from '../underlay/store';
@@ -25,6 +25,7 @@ function Properties() {
   const beams = model.beams.filter((x) => s.has(x.id));
   const slabs = model.slabs.filter((x) => s.has(x.id));
   const grids = model.grids.filter((x) => s.has(x.id));
+  const nodes = cachedStoryNodes(model, st.activeStory).filter((x) => s.has(x.id));
   const frames = [...cols, ...beams];
   const common = <T,>(arr: T[], f: (x: T) => string | number) => (arr.length && arr.every((x) => f(x) === f(arr[0])) ? String(f(arr[0])) : '');
 
@@ -63,13 +64,13 @@ function Properties() {
         Selection <span className="muted">{sel.length}</span>
       </h4>
       <div className="small muted" style={{ marginBottom: 6 }}>
-        {[cols.length && `${cols.length} col`, beams.length && `${beams.length} beam`, slabs.length && `${slabs.length} slab`, grids.length && `${grids.length} grid`].filter(Boolean).join(' · ')}
+        {[cols.length && `${cols.length} col`, beams.length && `${beams.length} beam`, slabs.length && `${slabs.length} slab`, grids.length && `${grids.length} grid`, nodes.length && `${nodes.length} node`].filter(Boolean).join(' · ')}
       </div>
       {frames.length > 0 && (
         <div className="row">
           <span>Section</span>
           <select value={common(frames, (x) => x.section)} onChange={(e) => st.commit((m) => patchIds(m, frames.map((x) => x.id), { section: e.target.value }))}>
-            <option value="">(mixed)</option>
+            <option value="" disabled>(mixed)</option>
             <SectionOptions sections={model.frameSections} prefer={cols.length && !beams.length ? 'Columns' : beams.length && !cols.length ? 'Beams' : undefined} />
           </select>
         </div>
@@ -84,7 +85,7 @@ function Properties() {
         <div className="row">
           <span>Slab</span>
           <select value={common(slabs, (x) => x.section)} onChange={(e) => st.commit((m) => patchIds(m, slabs.map((x) => x.id), { section: e.target.value }))}>
-            <option value="">(mixed)</option>
+            <option value="" disabled>(mixed)</option>
             {[...model.slabSections].sort((a, b) => a.thickness - b.thickness).map((x) => (
               <option key={x.name}>{x.name}</option>
             ))}
@@ -95,7 +96,7 @@ function Properties() {
         <div className="row">
           <span>Story</span>
           <select value={common([...frames, ...slabs], (x) => x.story)} onChange={(e) => st.commit((m) => patchIds(m, sel, { story: e.target.value }))}>
-            <option value="">(mixed)</option>
+            <option value="" disabled>(mixed)</option>
             {model.stories.map((x) => (
               <option key={x.name}>{x.name}</option>
             ))}
@@ -103,6 +104,7 @@ function Properties() {
         </div>
       )}
       {beams.length === 1 && <div className="small muted">Length {fmt(dist({ x: beams[0].x1, y: beams[0].y1 }, { x: beams[0].x2, y: beams[0].y2 }))} mm</div>}
+      {nodes.length > 0 && <NodeCoords nodes={nodes} />}
       {grids.length === 1 && (
         <div className="row">
           <span>Label</span>
@@ -133,19 +135,55 @@ function Properties() {
           </button>
         )}
         <button onClick={() => openDialog({ kind: 'selectBy' })}>Select by…</button>
-        <button onClick={() => openDialog({ kind: 'replicate' })} title="E">Replicate…</button>
-        <button onClick={() => openDialog({ kind: 'move' })}>Move…</button>
-        <button
-          className="danger"
-          onClick={() => {
-            st.commit((m) => deleteIds(m, sel));
-            st.setSelection([]);
-          }}
-          title="Del"
-        >
-          Delete
-        </button>
+        {sel.length > nodes.length && (
+          <>
+            <button onClick={() => openDialog({ kind: 'replicate' })} title="E">Replicate…</button>
+            <button onClick={() => openDialog({ kind: 'move' })}>Move…</button>
+            <button
+              className="danger"
+              onClick={() => {
+                st.commit((m) => deleteIds(m, sel));
+                st.setSelection([]);
+              }}
+              title="Del"
+            >
+              Delete
+            </button>
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+const NODE_FROM = { grid: 'grid intersection', column: 'column centre', beam: 'beam intersection' } as const;
+
+function NodeCoords({ nodes }: { nodes: PlanNode[] }) {
+  if (nodes.length === 1) {
+    const n = nodes[0];
+    return (
+      <>
+        <div className="row">
+          <span>X</span>
+          <input type="text" readOnly value={fmt(n.x, 1)} />
+        </div>
+        <div className="row">
+          <span>Y</span>
+          <input type="text" readOnly value={fmt(n.y, 1)} />
+        </div>
+        <div className="small muted">{n.from.map((f) => NODE_FROM[f]).join(' · ')} (mm)</div>
+      </>
+    );
+  }
+  return (
+    <div className="node-list small">
+      <div className="muted">X, Y (mm)</div>
+      {nodes.slice(0, 200).map((n) => (
+        <div key={n.id}>
+          {fmt(n.x, 1)}, {fmt(n.y, 1)}
+        </div>
+      ))}
+      {nodes.length > 200 && <div className="muted">… {nodes.length - 200} more</div>}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, nextGridLabel, oppositeLabelStart, patchIds, replicate } from './ops';
+import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, nextGridLabel, oppositeLabelStart, patchIds, replicate, storyNodes } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
 import { emptyModel } from './types';
 import { toPayload } from '../etabs/mapping';
@@ -152,5 +152,18 @@ describe('grid dimensions', () => {
     expect(ys).toEqual([5000]); // only two Y grids: no overall line
     const top = d.find((x) => !x.vertical)!;
     expect(top.a.y).toBeGreaterThan(6000); // above the grid ends (5000 + 1000 overhang)
+  });
+});
+
+describe('storyNodes', () => {
+  it('merges grid intersections, column centres and beam crossings', () => {
+    let m = { ...emptyModel(), grids: generateGrids({ xSpacing: [6000], ySpacing: [5000], x0: 0, y0: 0, xLabelStart: 'A', yLabelStart: '1', extend: 1000 }) };
+    m = addColumns(m, [{ x: 0, y: 0 }], ['Story1'], 'C400x400', 0);
+    m = addBeams(m, [[{ x: 3000, y: -1000 }, { x: 3000, y: 6000 }], [{ x: -500, y: 2500 }, { x: 7000, y: 2500 }]], ['Story1'], 'B300x500');
+    const n = storyNodes(m, 'Story1');
+    expect(n).toHaveLength(5);
+    expect(n.find((p) => p.x === 0 && p.y === 0)!.from).toEqual(['grid', 'column']);
+    expect(n.find((p) => p.from.includes('beam'))).toMatchObject({ x: 3000, y: 2500, id: 'node:3000,2500' });
+    expect(storyNodes(m, 'Story2')).toHaveLength(4);
   });
 });

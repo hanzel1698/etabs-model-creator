@@ -1,6 +1,7 @@
 import { useApp, usePreview, drawStories, toast, type ToolName } from '../model/store';
 import type { Model, Pt } from '../model/types';
-import { addBeams, addColumns, addSlab, findBay, gridSegs, makeGrid, moveIds, nextGridLabel } from '../model/ops';
+import { autoSizeBeams, RANK_NAME } from '../model/autoBeam';
+import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel } from '../model/ops';
 import { uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
@@ -14,7 +15,7 @@ const P = () => usePreview.getState();
 const A = () => useApp.getState();
 
 const hints: Record<ToolName, string> = {
-  select: 'Click or drag a window (L→R: inside, R→L: crossing). Shift adds. Del deletes.',
+  select: 'Click or drag a window (L→R: inside, R→L: crossing). Shift adds, Alt+drag picks nodes only. Del deletes.',
   grid: 'Click two points to draw a grid line. Or use “Generate grids”.',
   column: 'Click to place a column (snaps to grid intersections). Drag a window to fill all intersections.',
   beam: 'Click start, then end (chained). Type dx,dy or @dist<angle or a length + Enter. Right-click/Esc ends the chain.',
@@ -187,6 +188,24 @@ export function onMove(screen: Pt) {
   p.set(upd);
 }
 
+/**
+ * Commit an edit that adds beams; in Auto mode the new beams then get sections from their supports
+ * and span (see model/autoBeam), with the active beam section as the preferred width.
+ */
+export function commitBeams(fn: (m: Model) => Model) {
+  let picked = '';
+  A().commit((m) => {
+    const out = fn(m);
+    if (!A().autoBeam || out === m) return out;
+    const old = new Set(m.beams.map((b) => b.id));
+    const r = autoSizeBeams(out, out.beams.filter((b) => !old.has(b.id)).map((b) => b.id), A().active.beam);
+    const kinds = [...new Set([...r.sizes.values()].map((s) => `${s.section} (${RANK_NAME[s.rank]}${s.periphery ? ', GF periphery' : ''})`))];
+    picked = kinds.length > 3 ? `${r.sizes.size} beams sized` : kinds.join(', ');
+    return r.model;
+  });
+  if (picked) toast(`Auto: ${picked}`);
+}
+
 const distToSegLine = (p: Pt, [a, b]: [Pt, Pt]) => Math.abs(side(p, a, b)) / (dist(a, b) || 1);
 
 /** Called with a snapped world point on a primary click. */
@@ -222,7 +241,7 @@ export function onClick(pt: Pt) {
     case 'beam': {
       if (!p.rubber.length) return p.set({ rubber: [pt] });
       const a = p.rubber[p.rubber.length - 1];
-      commit((m) => addBeams(m, [[a, pt]], drawStories(), A().active.beam));
+      commitBeams((m) => addBeams(m, [[a, pt]], drawStories(), A().active.beam));
       return p.set({ rubber: [pt] });
     }
     case 'beamOffset': {
@@ -352,7 +371,7 @@ function createOffsetBeam(line: [Pt, Pt]) {
       [a, b] = [add(a, { x: d.x * t0, y: d.y * t0 }), add(a, { x: d.x * t1, y: d.y * t1 })];
     }
   }
-  A().commit((m) => addBeams(m, [[a, b]], drawStories(), A().active.beam));
+  commitBeams((m) => addBeams(m, [[a, b]], drawStories(), A().active.beam));
   P().set({ input: '' });
 }
 
@@ -446,6 +465,16 @@ export function fillIntersections(a: Pt, b: Pt) {
 export function hitTest(m: Model, screen: Pt, story: string): string | null {
   const w = viewport.toWorld(screen);
   const tol = 8 / viewport.k;
+  // nodes win over the column under them, but only within a few px of the node itself
+  if (A().show.nodes) {
+    let best: string | null = null,
+      bd = 6 / viewport.k;
+    for (const n of cachedStoryNodes(m, story)) {
+      const d = dist(n, w);
+      if (d < bd) (bd = d), (best = n.id);
+    }
+    if (best) return best;
+  }
   const secs = new Map(m.frameSections.map((s) => [s.name, s]));
   for (const c of m.columns)
     if (c.story === story) {
@@ -509,6 +538,7 @@ export function boxSelect(m: Model, a: Pt, b: Pt, story: string, crossing: boole
   for (const bm of m.beams) if (bm.story === story && test([{ x: bm.x1, y: bm.y1 }, { x: bm.x2, y: bm.y2 }], false)) ids.push(bm.id);
   for (const s of m.slabs) if (s.story === story && test(s.pts, true)) ids.push(s.id);
   for (const g of m.grids) if (test([{ x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 }], false)) ids.push(g.id);
+  if (A().show.nodes) for (const n of cachedStoryNodes(m, story)) if (test([n], false)) ids.push(n.id);
   return ids;
 }
 

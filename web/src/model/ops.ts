@@ -176,6 +176,50 @@ export function autoBeamsOnGrids(m: Model, story: string, section: string): Mode
   return addBeams(m, segs, [story], section);
 }
 
+// ---------- nodes (derived, not stored) ----------
+
+export type NodeSource = 'grid' | 'column' | 'beam';
+export interface PlanNode {
+  id: string; // 'node:x,y' (mm, rounded), stable while the geometry is unchanged
+  x: number;
+  y: number;
+  from: NodeSource[];
+}
+
+export const isNodeId = (id: string) => id.startsWith('node:');
+
+/** Points of interest on a story: grid intersections, column centres and beam-to-beam intersections, merged within TOL. */
+export function storyNodes(m: Model, story: string): PlanNode[] {
+  const out: PlanNode[] = [];
+  const add = (p: Pt, src: NodeSource) => {
+    const n = out.find((o) => Math.abs(o.x - p.x) < TOL && Math.abs(o.y - p.y) < TOL);
+    if (n) {
+      if (!n.from.includes(src)) n.from.push(src);
+    } else out.push({ id: '', x: p.x, y: p.y, from: [src] });
+  };
+  gridIntersections(m.grids).forEach((p) => add(p, 'grid'));
+  m.columns.forEach((c) => c.story === story && add(c, 'column'));
+  const beams = m.beams.filter((b) => b.story === story);
+  for (let i = 0; i < beams.length; i++)
+    for (let j = i + 1; j < beams.length; j++) {
+      const a = beams[i],
+        b = beams[j];
+      const r = segIntersect({ x: a.x1, y: a.y1 }, { x: a.x2, y: a.y2 }, { x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }, 1e-4);
+      if (r) add(r.p, 'beam');
+    }
+  out.forEach((n) => (n.id = `node:${Math.round(n.x)},${Math.round(n.y)}`));
+  return out;
+}
+
+const nodeCache = new WeakMap<Model, Map<string, PlanNode[]>>();
+export function cachedStoryNodes(m: Model, story: string): PlanNode[] {
+  let byStory = nodeCache.get(m);
+  if (!byStory) nodeCache.set(m, (byStory = new Map()));
+  let v = byStory.get(story);
+  if (!v) byStory.set(story, (v = storyNodes(m, story)));
+  return v;
+}
+
 export function deleteIds(m: Model, ids: string[]): Model {
   const s = new Set(ids);
   return {

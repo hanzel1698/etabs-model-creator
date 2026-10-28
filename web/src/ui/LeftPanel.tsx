@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { useApp } from '../model/store';
+import { toast, useApp } from '../model/store';
 import { storyElevations } from '../model/types';
 import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
 import { autoBeamsOnGrids } from '../model/ops';
 import { fitAll } from '../plan/PlanView';
-import { setTool } from '../plan/tools';
+import { commitBeams, setTool } from '../plan/tools';
+import { autoSizeBeams } from '../model/autoBeam';
 import { fmt } from '../model/geom';
 
 export function LeftPanel() {
@@ -15,6 +16,7 @@ export function LeftPanel() {
   const act = useApp((s) => s.active);
   const angle = useApp((s) => s.columnAngle);
   const tool = useApp((s) => s.tool);
+  const auto = useApp((s) => s.autoBeam);
   const st = useApp.getState();
   const el = storyElevations(model);
   const stories = [...model.stories].reverse();
@@ -75,6 +77,14 @@ export function LeftPanel() {
             <SectionOptions sections={model.frameSections} prefer="Beams" />
           </select>
         </div>
+        <label className="small" title={AUTO_TIP}>
+          <input type="checkbox" checked={auto} onChange={st.toggleAutoBeam} /> Auto beam size
+        </label>
+        {auto && (
+          <div className="row small muted" style={{ marginBottom: 6 }}>
+            New beams are sized from their supports and span; the beam width above is the preferred width.
+          </div>
+        )}
         <div className="row">
           <span>Slab</span>
           <select value={act.slab} onChange={(e) => st.setActive('slab', e.target.value)}>
@@ -92,10 +102,29 @@ export function LeftPanel() {
           <button
             title="Beams along grid lines between consecutive columns on the active story"
             onClick={() => {
-              for (const s of [active, ...also]) st.commit((m) => autoBeamsOnGrids(m, s, act.beam));
+              for (const s of [active, ...also]) commitBeams((m) => autoBeamsOnGrids(m, s, act.beam));
             }}
           >
             Beams on grids
+          </button>
+          <button
+            title={'Re-size the selected beams (or every beam on the ticked stories) with the Auto rules.\n' + AUTO_TIP}
+            onClick={() => {
+              const s = useApp.getState();
+              const m = s.model;
+              const sel = new Set(s.selection);
+              const stories = new Set([active, ...also]);
+              let ids = m.beams.filter((b) => sel.has(b.id)).map((b) => b.id);
+              if (!ids.length) ids = m.beams.filter((b) => stories.has(b.story)).map((b) => b.id);
+              if (!ids.length) return toast('No beams to size.');
+              const r = autoSizeBeams(m, ids, s.active.beam);
+              const before = new Map(m.beams.map((b) => [b.id, b.section]));
+              const changed = r.model.beams.filter((b) => before.get(b.id) !== b.section).length;
+              if (changed) s.commit(() => r.model);
+              toast(`Auto-sized ${ids.length} beam${ids.length > 1 ? 's' : ''}: ${changed} changed.`);
+            }}
+          >
+            Auto-size beams
           </button>
           <button
             title="Show bubbles at both ends of every grid line"
@@ -117,6 +146,15 @@ export function LeftPanel() {
     </div>
   );
 }
+
+const AUTO_TIP = [
+  'Auto beam sizes:',
+  '• primary (an end on a column): width ≥ 300, depth ≥ 450',
+  '• secondary (carried by primary beams): width ≤ 250',
+  '• tertiary (carried by secondary beams): width ≤ 200',
+  '• depth = span / 10 in 100 mm steps, 300 to 800',
+  '• ground floor periphery beams: depth ≥ plinth height',
+].join('\n');
 
 /** Column tool option: keep new columns on a vertical/horizontal line through a picked point. */
 function ColumnAlign() {
@@ -194,6 +232,7 @@ function ViewControls() {
     ['ghostBelow', 'Story below (ghost)'],
     ['underlay', 'Underlay'],
     ['slabs', 'Slabs'],
+    ['nodes', 'Nodes'],
   ];
   return (
     <>

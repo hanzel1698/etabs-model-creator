@@ -16,6 +16,7 @@
   --dim: #8fb0d6;
   --beam: #ffd166;
   --col: #ef476f;
+  --node: #7fd3ff;
   --colEdge: #0b0d10;
   --slab: rgba(72, 202, 228, 0.1);
   --slabEdge: rgba(72, 202, 228, 0.55);
@@ -447,4 +448,11 @@ table.grid tr.group-row td {
   font-weight: 600;
   color: var(--accent);
   border-bottom-color: var(--accent);
+}
+
+.node-list {
+  max-height: 220px;
+  overflow-y: auto;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
 }

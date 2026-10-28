@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp, usePreview } from '../model/store';
+import { cachedStoryNodes, isNodeId } from '../model/ops';
 import type { Pt } from '../model/types';
 import { viewport } from './viewport';
 import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer } from './layers';
@@ -53,6 +54,8 @@ export function PlanView() {
   const ts = useApp((s) => s.textScale);
   const bubble = useApp((s) => s.gridBubble);
   const colorBy = useApp((s) => s.colorBySection);
+  // the setup view shows the raw DXF: place this story's model on its region (reference point = model 0,0)
+  const setupRef = useUnderlay((u) => (u.kind === 'dxf' && u.setupMode ? u.regions.find((r) => r.stories.includes(story))?.ref ?? null : null));
 
   // keep the world transform in sync without re-rendering React
   useEffect(() => {
@@ -181,8 +184,12 @@ export function PlanView() {
       usePreview.getState().set({ box: null });
       if (st.tool === 'column') return fillIntersections(d.start, p);
       let ids = boxSelect(st.model, d.start, p, st.activeStory, p.x < d.start.x);
-      const nonGrid = ids.filter((id) => !st.model.grids.some((g) => g.id === id));
-      if (nonGrid.length) ids = nonGrid;
+      // priority: elements, then nodes, then grids; Alt+drag picks nodes only
+      const nodes = ids.filter(isNodeId);
+      const elems = ids.filter((id) => !isNodeId(id) && !st.model.grids.some((g) => g.id === id));
+      if (e.altKey) ids = nodes;
+      else if (elems.length) ids = elems;
+      else if (nodes.length) ids = nodes;
       st.setSelection(e.shiftKey ? [...new Set([...st.selection, ...ids])] : ids);
       return;
     }
@@ -217,19 +224,41 @@ export function PlanView() {
       <svg width={size.w} height={size.h} className="plan-svg">
         <g ref={worldRef}>
           {show.underlay && <UnderlayLayer story={story} viewRot={viewRot} />}
-          {show.slabs && <SlabLayer slabs={slabs} sel={sel} />}
-          <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} bubble={bubble} />
-          {show.gridDims && <GridDimLayer grids={model.grids} viewRot={viewRot} bubble={bubble} />}
-          {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy={false} />}
-          {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy={false} />}
-          <BeamLayer beams={beams} sel={sel} colorBy={colorBy} />
-          <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} />
-          {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} showSlabs={show.slabs} />}
+          <g transform={setupRef ? `translate(${setupRef.x} ${setupRef.y})` : undefined}>
+            {show.slabs && <SlabLayer slabs={slabs} sel={sel} />}
+            <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} bubble={bubble} />
+            {show.gridDims && <GridDimLayer grids={model.grids} viewRot={viewRot} bubble={bubble} />}
+            {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy={false} />}
+            {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy={false} />}
+            <BeamLayer beams={beams} sel={sel} colorBy={colorBy} />
+            <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} />
+            {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} showSlabs={show.slabs} />}
+          </g>
         </g>
+        {show.nodes && <NodeLayer story={story} sel={sel} offset={setupRef} />}
         <Overlay />
       </svg>
       <Compass rot={viewRot} />
     </div>
+  );
+}
+
+// ---------- nodes (screen space so they stay a fixed size at any zoom) ----------
+
+function NodeLayer({ story, sel, offset }: { story: string; sel: Set<string>; offset: Pt | null }) {
+  useVp();
+  const model = useApp((s) => s.model);
+  const nodes = cachedStoryNodes(model, story);
+  const ox = offset?.x ?? 0,
+    oy = offset?.y ?? 0;
+  return (
+    <g className="nodes">
+      {nodes.map((n) => {
+        const p = viewport.toScreen({ x: n.x + ox, y: n.y + oy });
+        const s = sel.has(n.id);
+        return <rect key={n.id} x={p.x - (s ? 4 : 2.5)} y={p.y - (s ? 4 : 2.5)} width={s ? 8 : 5} height={s ? 8 : 5} fill={s ? 'var(--sel)' : 'var(--node)'} stroke={s ? 'var(--bg)' : 'none'} strokeWidth={1} />;
+      })}
+    </g>
   );
 }
 

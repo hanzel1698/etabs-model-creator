@@ -31,6 +31,7 @@ export interface ShowFlags {
   ghostBelow: boolean;
   underlay: boolean;
   slabs: boolean;
+  nodes: boolean;
 }
 
 interface AppState {
@@ -56,6 +57,9 @@ interface AppState {
   setColumnAngle: (a: number) => void;
   ortho: boolean;
   toggleOrtho: () => void;
+  /** beam tool: size new beams from their supports and span instead of using the active beam section as is */
+  autoBeam: boolean;
+  toggleAutoBeam: () => void;
   show: ShowFlags;
   toggleShow: (k: keyof ShowFlags) => void;
 
@@ -155,7 +159,9 @@ export const useApp = create<AppState>((set, get) => ({
   setColumnAngle: (a) => set({ columnAngle: a }),
   ortho: false,
   toggleOrtho: () => set((s) => ({ ortho: !s.ortho })),
-  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: true, underlay: true, slabs: true },
+  autoBeam: false,
+  toggleAutoBeam: () => set((s) => ({ autoBeam: !s.autoBeam })),
+  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: true, underlay: true, slabs: true, nodes: false },
   toggleShow: (k) => set((s) => ({ show: { ...s.show, [k]: !s.show[k] } })),
 
   selection: [],
