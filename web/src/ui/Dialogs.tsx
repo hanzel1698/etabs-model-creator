@@ -309,15 +309,18 @@ function StoriesDialog() {
     const n = { foundingDepth: parseFloat(fnd.foundingDepth), footingThickness: parseFloat(fnd.footingThickness), plinthHeight: parseFloat(fnd.plinthHeight) };
     return [n.foundingDepth, n.footingThickness, n.plinthHeight].every(isFinite) ? n : null;
   };
+  const [rows, setRows] = useState<(Story & { orig: string })[]>(model.stories.map((s) => ({ ...s, orig: s.name })));
+  // founding depth - footing thickness + plinth height is the ground floor (Story 1) elevation,
+  // so it sets the bottom story's height above the base
   const setFoundation = (p: Partial<typeof fnd>) => {
     const next = { ...fnd, ...p };
     setFnd(next);
     const fd = parseFloat(next.foundingDepth),
       ft = parseFloat(next.footingThickness),
       ph = parseFloat(next.plinthHeight);
-    if ([fd, ft, ph].every(isFinite)) setBase(fd - ft + ph);
+    const h = fd - ft + ph - base;
+    if ([fd, ft, ph].every(isFinite) && h > 0 && rows.length) setRows([{ ...rows[0], height: h }, ...rows.slice(1)]);
   };
-  const [rows, setRows] = useState<(Story & { orig: string })[]>(model.stories.map((s) => ({ ...s, orig: s.name })));
   const [addN, setAddN] = useState(1);
   const [addH, setAddH] = useState(3000);
   const up = (i: number, p: Partial<Story>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
@@ -343,6 +346,7 @@ function StoriesDialog() {
     closeDialog();
   };
   const el = storyElevations({ ...model, baseElevation: base, stories: rows });
+  const gf = fndNums();
   const display = rows.map((r, i) => ({ r, i })).reverse();
   /** Insert a new story at `index` (rows are bottom → top), with the given height. Stories above move up. */
   const insertAt = (index: number, height: number) => {
@@ -380,7 +384,7 @@ function StoriesDialog() {
         </tbody>
       </table>
       <div className="section">
-        <h4>Base elevation</h4>
+        <h4>Ground floor elevation</h4>
         <div className="row small">
           <span style={{ width: 110 }}>Founding depth</span>
           <input type="number" placeholder="e.g. 1500" value={fnd.foundingDepth} onChange={(e) => setFoundation({ foundingDepth: e.target.value })} />
@@ -401,7 +405,10 @@ function StoriesDialog() {
           <input type="number" value={base} onChange={(e) => setBase(+e.target.value)} />
           <span className="muted" style={{ width: 'auto' }}>mm</span>
         </div>
-        <div className="small muted">Base elev. = founding depth − footing thickness + plinth height. You can still type a base elevation directly.</div>
+        <div className="small muted">
+          {rows[0]?.name ?? 'Story 1'} elev. = founding depth − footing thickness + plinth height
+          {gf ? ` = ${fmt(gf.foundingDepth - gf.footingThickness + gf.plinthHeight)}` : ''}. Filling these sets the bottom story's height. Base elev. defaults to 0.
+        </div>
       </div>
       <div className="row">
         <span>Add</span>
