@@ -1,7 +1,7 @@
 import { useApp, usePreview, drawStories, toast, type ToolName } from '../model/store';
 import type { Model, Pt } from '../model/types';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
-import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel } from '../model/ops';
+import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, setBeamEnd } from '../model/ops';
 import { uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
@@ -462,6 +462,59 @@ export function fillIntersections(a: Pt, b: Pt) {
 }
 
 // ---------- selection ----------
+
+// ---------- beam end grips (select tool) ----------
+
+export type Grip = { id: string; end: 1 | 2 };
+
+/** The end grip of a selected beam under the cursor, if any. */
+export function gripAt(screen: Pt): Grip | null {
+  const { model, selection, activeStory } = A();
+  const s = new Set(selection);
+  const w = viewport.toWorld(screen);
+  let best: Grip | null = null,
+    bd = 7 / viewport.k;
+  for (const b of model.beams)
+    if (s.has(b.id) && b.story === activeStory)
+      for (const end of [1, 2] as const) {
+        const d = dist(w, end === 1 ? { x: b.x1, y: b.y1 } : { x: b.x2, y: b.y2 });
+        if (d < bd) (bd = d), (best = { id: b.id, end });
+      }
+  return best;
+}
+
+/** Snapped position for a dragged grip; the beam itself is left out so it can't snap to its own end or line. */
+function gripSnap(g: Grip, screen: Pt): { s: Snap; fixed: Pt } | null {
+  const m = A().model;
+  const b = m.beams.find((x) => x.id === g.id);
+  if (!b) return null;
+  const fixed = g.end === 1 ? { x: b.x2, y: b.y2 } : { x: b.x1, y: b.y1 };
+  const s = snapPoint({ ...m, beams: m.beams.filter((x) => x.id !== g.id) }, viewport.toWorld(screen), SNAP_PX / viewport.k, {
+    story: A().activeStory,
+    from: fixed,
+    ortho: A().ortho,
+    underlay: A().show.underlay,
+  });
+  return { s, fixed };
+}
+
+export function gripMove(g: Grip, screen: Pt) {
+  const r = gripSnap(g, screen);
+  if (!r) return;
+  P().set({ grip: [r.fixed, r.s.p], cursor: r.s.p, snap: r.s.kind === 'none' ? null : r.s, hint: liveText(r.fixed, r.s.p) });
+}
+
+export function gripDrop(g: Grip, screen: Pt) {
+  const r = gripSnap(g, screen);
+  P().set({ grip: null, snap: null, hint: hints.select });
+  if (!r) return;
+  if (dist(r.fixed, r.s.p) < 1) return toast('A beam needs two different end points.');
+  A().commit((m) => setBeamEnd(m, g.id, g.end, r.s.p));
+}
+
+export function gripCancel() {
+  P().set({ grip: null, snap: null, hint: hints.select });
+}
 
 export function hitTest(m: Model, screen: Pt, story: string): string | null {
   const w = viewport.toWorld(screen);

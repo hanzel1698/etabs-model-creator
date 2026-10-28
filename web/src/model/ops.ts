@@ -284,6 +284,17 @@ export function replicate(m: Model, ids: string[], opts: { dx: number; dy: numbe
   return { model: out, created };
 }
 
+/** Move one end of a beam (1 = start, 2 = end). A move that would leave a zero-length beam is ignored. */
+export function setBeamEnd(m: Model, id: string, end: 1 | 2, p: Pt): Model {
+  const b = m.beams.find((x) => x.id === id);
+  if (!b) return m;
+  const other = end === 1 ? { x: b.x2, y: b.y2 } : { x: b.x1, y: b.y1 };
+  const cur = end === 1 ? { x: b.x1, y: b.y1 } : { x: b.x2, y: b.y2 };
+  if (dist(other, p) < 1 || (cur.x === p.x && cur.y === p.y)) return m;
+  const nb = end === 1 ? { ...b, x1: p.x, y1: p.y } : { ...b, x2: p.x, y2: p.y };
+  return { ...m, beams: m.beams.map((x) => (x.id === id ? nb : x)) };
+}
+
 export function patchIds(m: Model, ids: string[], patch: { section?: string; story?: string; angle?: number }): Model {
   const s = new Set(ids);
   const p = (o: any) => {

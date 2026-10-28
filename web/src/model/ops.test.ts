@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, nextGridLabel, oppositeLabelStart, patchIds, replicate, storyNodes } from './ops';
+import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, nextGridLabel, oppositeLabelStart, patchIds, replicate, setBeamEnd, storyNodes } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
 import { emptyModel } from './types';
 import { toPayload } from '../etabs/mapping';
@@ -165,5 +165,17 @@ describe('storyNodes', () => {
     expect(n.find((p) => p.x === 0 && p.y === 0)!.from).toEqual(['grid', 'column']);
     expect(n.find((p) => p.from.includes('beam'))).toMatchObject({ x: 3000, y: 2500, id: 'node:3000,2500' });
     expect(storyNodes(m, 'Story2')).toHaveLength(4);
+  });
+});
+
+describe('setBeamEnd', () => {
+  const m = { ...emptyModel(), beams: [{ id: 'b', story: 'Story1', x1: 0, y1: 0, x2: 6000, y2: 0, section: 'B300x500' }] };
+  it('moves only the picked end', () => {
+    expect(setBeamEnd(m, 'b', 2, { x: 6000, y: 4000 }).beams[0]).toMatchObject({ x1: 0, y1: 0, x2: 6000, y2: 4000 });
+    expect(setBeamEnd(m, 'b', 1, { x: 1000, y: 0 }).beams[0]).toMatchObject({ x1: 1000, y1: 0, x2: 6000, y2: 0 });
+  });
+  it('ignores zero-length results and no-op moves', () => {
+    expect(setBeamEnd(m, 'b', 2, { x: 0, y: 0 })).toBe(m);
+    expect(setBeamEnd(m, 'b', 2, { x: 6000, y: 0 })).toBe(m);
   });
 });

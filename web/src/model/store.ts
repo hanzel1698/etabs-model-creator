@@ -217,6 +217,7 @@ export interface Preview {
   input: string; // command line text
   measure: { pts: Pt[]; text: string } | null;
   offsetLine: [Pt, Pt] | null;
+  grip: [Pt, Pt] | null; // beam being reshaped: fixed end, dragged end (world)
 }
 
 export const usePreview = create<Preview & { set: (p: Partial<Preview>) => void }>((set) => ({
@@ -230,6 +231,7 @@ export const usePreview = create<Preview & { set: (p: Partial<Preview>) => void 
   input: '',
   measure: null,
   offsetLine: null,
+  grip: null,
   set: (p) => set(p),
 }));
 

@@ -1,5 +1,7 @@
 import { useApp } from '../model/store';
-import { cachedStoryNodes, deleteIds, patchIds, type PlanNode } from '../model/ops';
+import { cachedStoryNodes, deleteIds, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
+import type { Beam } from '../model/types';
+import { useEffect, useState } from 'react';
 import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
 import { useUnderlay, saveUnderlayMeta, removeUnderlay } from '../underlay/store';
@@ -103,6 +105,7 @@ function Properties() {
           </select>
         </div>
       )}
+      {beams.length === 1 && <BeamEnds b={beams[0]} />}
       {beams.length === 1 && <div className="small muted">Length {fmt(dist({ x: beams[0].x1, y: beams[0].y1 }, { x: beams[0].x2, y: beams[0].y2 }))} mm</div>}
       {nodes.length > 0 && <NodeCoords nodes={nodes} />}
       {grids.length === 1 && (
@@ -152,6 +155,48 @@ function Properties() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Editable end coordinates of a single beam; a value applies on Enter or when the field loses focus. */
+function BeamEnds({ b }: { b: Beam }) {
+  const fields = [
+    ['X1', 'x1', 1, 'x'],
+    ['Y1', 'y1', 1, 'y'],
+    ['X2', 'x2', 2, 'x'],
+    ['Y2', 'y2', 2, 'y'],
+  ] as const;
+  return (
+    <>
+      {fields.map(([label, key, end, axis]) => (
+        <CoordInput
+          key={key}
+          label={label}
+          value={b[key]}
+          onSet={(v) => {
+            const p = end === 1 ? { x: b.x1, y: b.y1 } : { x: b.x2, y: b.y2 };
+            useApp.getState().commit((m) => setBeamEnd(m, b.id, end, { ...p, [axis]: v }));
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
+function CoordInput({ label, value, onSet }: { label: string; value: number; onSet: (v: number) => void }) {
+  const shown = fmt(value, 1);
+  const [text, setText] = useState(shown);
+  useEffect(() => setText(shown), [shown]);
+  const apply = () => {
+    const v = parseFloat(text);
+    if (isFinite(v) && fmt(v, 1) !== shown) onSet(v);
+    setText(shown); // a rejected value (e.g. a zero-length beam) snaps back; an accepted one updates via `shown`
+  };
+  return (
+    <div className="row">
+      <span>{label}</span>
+      <input type="text" value={text} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
     </div>
   );
 }

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp, usePreview } from '../model/store';
 import { cachedStoryNodes, isNodeId } from '../model/ops';
-import type { Pt } from '../model/types';
+import type { Beam, Pt } from '../model/types';
 import { viewport } from './viewport';
 import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer } from './layers';
-import { onMove, onClick, onCancel, finishPolygon, hitTest, boxSelect, fillIntersections, doSnap } from './tools';
+import { onMove, onClick, onCancel, finishPolygon, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, type Grip } from './tools';
 import { columnOutline } from './snap';
 import { useUnderlay } from '../underlay/store';
 import { UnderlayCanvas } from './UnderlayCanvas';
@@ -93,7 +93,7 @@ export function PlanView() {
   const empty = useMemo(() => new Set<string>(), []);
 
   // ---------- input ----------
-  const drag = useRef<{ mode: 'pan' | 'box' | 'none'; start: Pt; last: Pt; button: number } | null>(null);
+  const drag = useRef<{ mode: 'pan' | 'box' | 'grip' | 'none'; start: Pt; last: Pt; button: number; grip?: Grip } | null>(null);
   const space = useRef(false);
 
   useEffect(() => {
@@ -102,6 +102,7 @@ export function PlanView() {
         space.current = true;
         e.preventDefault();
       }
+      if (e.key === 'Escape') dropStaleGrip();
     };
     const ku = (e: KeyboardEvent) => e.code === 'Space' && (space.current = false);
     window.addEventListener('keydown', kd);
@@ -140,7 +141,15 @@ export function PlanView() {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
+  // a grip drag whose pointer-up never arrived (pointer cancelled, capture lost) must not leave its preview behind
+  const dropStaleGrip = () => {
+    if (drag.current?.mode !== 'grip') return;
+    drag.current = null;
+    gripCancel();
+  };
+
   const down = (e: React.PointerEvent) => {
+    dropStaleGrip();
     const p = local(e);
     (document.activeElement as HTMLElement | null)?.blur?.();
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -150,7 +159,9 @@ export function PlanView() {
       return;
     }
     if (e.button === 2) return;
-    if (e.button === 0) drag.current = { mode: 'none', start: p, last: p, button: 0 };
+    if (e.button !== 0) return;
+    const grip = useApp.getState().tool === 'select' ? gripAt(p) : null;
+    drag.current = grip ? { mode: 'grip', start: p, last: p, button: 0, grip } : { mode: 'none', start: p, last: p, button: 0 };
   };
 
   const move = (e: React.PointerEvent) => {
@@ -161,6 +172,8 @@ export function PlanView() {
       d.last = p;
       return;
     }
+    if (d?.mode === 'grip') return gripMove(d.grip!, p);
+    if (!d && useApp.getState().tool === 'select') hostRef.current!.style.cursor = gripAt(p) ? 'move' : 'default';
     if (d && d.button === 0) {
       const t = useApp.getState().tool;
       if ((t === 'select' || t === 'column') && Math.hypot(p.x - d.start.x, p.y - d.start.y) > 5) d.mode = 'box';
@@ -179,6 +192,7 @@ export function PlanView() {
     if (!d) return;
     if (d.mode === 'pan') return;
     const p = local(e);
+    if (d.mode === 'grip') return gripDrop(d.grip!, p);
     const st = useApp.getState();
     if (d.mode === 'box') {
       usePreview.getState().set({ box: null });
@@ -219,7 +233,7 @@ export function PlanView() {
   const cursor = tool === 'select' ? 'default' : 'crosshair';
 
   return (
-    <div id="plan-host" ref={hostRef} className="plan-host" style={{ cursor }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onContextMenu={ctx} onDoubleClick={dblClick} onPointerLeave={() => usePreview.getState().set({ cursor: null, snap: null })}>
+    <div id="plan-host" ref={hostRef} className="plan-host" style={{ cursor }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={dropStaleGrip} onContextMenu={ctx} onDoubleClick={dblClick} onPointerLeave={() => usePreview.getState().set({ cursor: null, snap: null })}>
       <UnderlayCanvas w={size.w} h={size.h} />
       <svg width={size.w} height={size.h} className="plan-svg">
         <g ref={worldRef}>
@@ -236,6 +250,7 @@ export function PlanView() {
           </g>
         </g>
         {show.nodes && <NodeLayer story={story} sel={sel} offset={setupRef} />}
+        {tool === 'select' && <GripLayer beams={beams} sel={sel} offset={setupRef} />}
         <Overlay />
       </svg>
       <Compass rot={viewRot} />
@@ -258,6 +273,28 @@ function NodeLayer({ story, sel, offset }: { story: string; sel: Set<string>; of
         const s = sel.has(n.id);
         return <rect key={n.id} x={p.x - (s ? 4 : 2.5)} y={p.y - (s ? 4 : 2.5)} width={s ? 8 : 5} height={s ? 8 : 5} fill={s ? 'var(--sel)' : 'var(--node)'} stroke={s ? 'var(--bg)' : 'none'} strokeWidth={1} />;
       })}
+    </g>
+  );
+}
+
+/** End grips on selected beams (screen space, fixed size). Drag one to reshape the beam. */
+function GripLayer({ beams, sel, offset }: { beams: Beam[]; sel: Set<string>; offset: Pt | null }) {
+  useVp();
+  const ox = offset?.x ?? 0,
+    oy = offset?.y ?? 0;
+  const picked = beams.filter((b) => sel.has(b.id));
+  if (picked.length > 200) return null;
+  return (
+    <g className="grips">
+      {picked.flatMap((b) =>
+        [
+          { x: b.x1, y: b.y1 },
+          { x: b.x2, y: b.y2 },
+        ].map((q, i) => {
+          const p = viewport.toScreen({ x: q.x + ox, y: q.y + oy });
+          return <rect key={b.id + i} x={p.x - 4.5} y={p.y - 4.5} width={9} height={9} fill="#4aa3ff" stroke="var(--bg)" strokeWidth={1.5} />;
+        }),
+      )}
     </g>
   );
 }
@@ -294,6 +331,10 @@ function Overlay() {
     const pts = pv.measure.pts.map(S);
     items.push(<polyline key="ms" points={pts.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#ff7ad9" strokeWidth={1.5} />);
     pts.forEach((p, i) => items.push(<circle key={'mp' + i} cx={p.x} cy={p.y} r={3} fill="#ff7ad9" />));
+  }
+  if (pv.grip) {
+    const [a, b] = pv.grip.map(S);
+    items.push(<line key="grip" x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#4aa3ff" strokeWidth={2} strokeDasharray="8 4" />);
   }
   if (pv.offsetLine) {
     const [a, b] = pv.offsetLine.map(S);
