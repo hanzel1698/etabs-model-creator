@@ -86,7 +86,13 @@ export const metaOf = (s: UnderlayMeta): UnderlayMeta => ({
 });
 
 export async function saveUnderlayMeta() {
-  await idbSet('underlayMeta', metaOf(useUnderlay.getState()));
+  const s = useUnderlay.getState();
+  await idbSet('underlayMeta', metaOf(s));
+  if (s.kind === 'dxf' && s.fileName) {
+    // remembered per file name, so loading the drawing again after removing it keeps its units
+    const scales = ((await idbGet('dxfScales')) as Record<string, number> | undefined) ?? {};
+    if (scales[s.fileName] !== s.dxfScale) await idbSet('dxfScales', { ...scales, [s.fileName]: s.dxfScale });
+  }
 }
 
 function parseDxfWith(text: string, scale: number, hiddenLayers: string[]) {
@@ -106,15 +112,17 @@ export async function loadDxfFile(file: File) {
     toast(`Reloaded ${file.name}, keeping its scale and story regions.`);
     return;
   }
+  const known = ((await idbGet('dxfScales')) as Record<string, number> | undefined)?.[file.name];
   const units = readInsUnits(text);
-  let scale = unitScaleFromInsunits(units);
+  let scale = known ?? unitScaleFromInsunits(units);
   let dxf = parseDxf(text, scale);
+  if (known) toast(`Using the units last set for ${file.name} (×${known}). Change them in Underlay → Setup if needed.`);
   // Many architectural DXFs are drawn in mm but carry a wrong $INSUNITS (often inches).
   // If the bulk of the drawing (fitBox) is over 500 m after scaling but a plausible 3–500 m when read as mm,
   // the header is wrong, so fall back to mm.
   const fb = dxf.fitBox;
   const size = Math.max(fb.maxX - fb.minX, fb.maxY - fb.minY);
-  if (scale > 1 && size > 5e5 && size / scale >= 3e3 && size / scale <= 5e5) {
+  if (!known && scale > 1 && size > 5e5 && size / scale >= 3e3 && size / scale <= 5e5) {
     scale = 1;
     dxf = parseDxf(text, 1);
     toast(`The DXF says its units are ${units === 1 ? 'inches' : 'code ' + units}, but that makes the plan ${(size / 1000).toFixed(0)} m across, so mm is used. Change it in Underlay → Setup if needed.`);
