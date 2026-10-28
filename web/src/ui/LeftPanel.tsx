@@ -226,6 +226,7 @@ function ViewControls() {
   const rot = useApp((s) => s.viewRotation);
   const ts = useApp((s) => s.textScale);
   const colorBy = useApp((s) => s.colorBySection);
+  const hidden = useApp((s) => s.hidden.length);
   const st = useApp.getState();
   const toggles: [keyof typeof show, string][] = [
     ['sectionLabels', 'Section labels'],
@@ -233,6 +234,8 @@ function ViewControls() {
     ['gridDims', 'Grid dimensions'],
     ['ghostBelow', 'Story below (ghost)'],
     ['underlay', 'Underlay'],
+    ['columns', 'Columns'],
+    ['beams', 'Beams'],
     ['slabs', 'Slabs'],
     ['nodes', 'Nodes'],
   ];
@@ -243,6 +246,17 @@ function ViewControls() {
           <input type="checkbox" checked={show[k]} onChange={() => st.toggleShow(k)} /> {l}
         </label>
       ))}
+      <div className="chips">
+        <button title="Hide the selected columns, beams and slabs (H)" onClick={() => (st.selection.length ? st.hideIds(st.selection) : st.setToast('Select the elements to hide.'))}>
+          Hide selected
+        </button>
+        <button title="Hide every column, beam and slab that is not selected (I)" onClick={() => (st.selection.length ? st.showOnlyIds(st.selection) : st.setToast('Select the elements to show.'))}>
+          Show only selected
+        </button>
+        <button title="Unhide everything hidden by selection (U)" disabled={!hidden} onClick={st.showAll}>
+          Show all{hidden ? ` (${hidden} hidden)` : ''}
+        </button>
+      </div>
       <label className="small">
         <input type="checkbox" checked={colorBy} onChange={st.toggleColorBySection} /> Colour by section
       </label>

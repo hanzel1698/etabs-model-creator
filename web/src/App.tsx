@@ -82,6 +82,9 @@ export function App() {
       if (hit) return setTool(hit.t);
       if (k === 'F') return fitAll();
       if (k === 'E' && st.selection.length) return openDialog({ kind: 'replicate' });
+      if (k === 'H' && st.selection.length) return st.hideIds(st.selection);
+      if (k === 'I' && st.selection.length) return st.showOnlyIds(st.selection);
+      if (k === 'U') return st.showAll();
     };
     window.addEventListener('keydown', kd);
     return () => window.removeEventListener('keydown', kd);

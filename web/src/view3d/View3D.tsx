@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { useApp, sectionColor } from '../model/store';
+import { useApp, sectionColor, visibleModel } from '../model/store';
 import { storyElevations, type Model } from '../model/types';
 
 const S = 0.001; // mm → m in the scene
@@ -66,7 +66,7 @@ function build(m: Model, sel: Set<string>, onlyStory: string | null): THREE.Grou
 export default function View3D() {
   const host = useRef<HTMLDivElement>(null);
   const ctx = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; group: THREE.Group | null; render: () => void } | null>(null);
-  const model = useApp((s) => s.model);
+  const model = useApp(visibleModel);
   const selection = useApp((s) => s.selection);
   const activeStory = useApp((s) => s.activeStory);
   const [onlyStory, setOnlyStory] = useState(false);

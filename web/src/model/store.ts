@@ -30,6 +30,8 @@ export interface ShowFlags {
   gridDims: boolean;
   ghostBelow: boolean;
   underlay: boolean;
+  columns: boolean;
+  beams: boolean;
   slabs: boolean;
   nodes: boolean;
 }
@@ -62,6 +64,12 @@ interface AppState {
   toggleAutoBeam: () => void;
   show: ShowFlags;
   toggleShow: (k: keyof ShowFlags) => void;
+  /** ids of columns, beams and slabs hidden from view (view only, not saved) */
+  hidden: string[];
+  hideIds: (ids: string[]) => void;
+  /** hide every column, beam and slab not in `ids` */
+  showOnlyIds: (ids: string[]) => void;
+  showAll: () => void;
 
   selection: string[];
   setSelection: (ids: string[]) => void;
@@ -134,6 +142,7 @@ export const useApp = create<AppState>((set, get) => ({
       dirty: s.dirty + 1,
       activeStory: m.stories.some((st) => st.name === s.activeStory) ? s.activeStory : m.stories[0]?.name ?? '',
       selection: [],
+      hidden: resetHistory ? [] : s.hidden,
     })),
   undo: () => {
     const { past, model, future } = get();
@@ -161,8 +170,29 @@ export const useApp = create<AppState>((set, get) => ({
   toggleOrtho: () => set((s) => ({ ortho: !s.ortho })),
   autoBeam: false,
   toggleAutoBeam: () => set((s) => ({ autoBeam: !s.autoBeam })),
-  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: true, underlay: true, slabs: true, nodes: false },
-  toggleShow: (k) => set((s) => ({ show: { ...s.show, [k]: !s.show[k] } })),
+  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: true, underlay: true, columns: true, beams: true, slabs: true, nodes: false },
+  toggleShow: (k) =>
+    set((s) => {
+      const show = { ...s.show, [k]: !s.show[k] };
+      // switching a type off also drops it from the selection, so Delete can't reach what isn't shown
+      const off = (['columns', 'beams', 'slabs'] as const).filter((t) => !show[t]).flatMap((t) => s.model[t].map((x) => x.id));
+      if (!off.length) return { show };
+      const gone = new Set(off);
+      return { show, selection: s.selection.filter((id) => !gone.has(id)) };
+    }),
+  hidden: [],
+  hideIds: (ids) =>
+    set((s) => {
+      const el = new Set(elementIds(s.model));
+      const add = ids.filter((id) => el.has(id));
+      return add.length ? { hidden: [...new Set([...s.hidden, ...add])], selection: s.selection.filter((id) => !add.includes(id)) } : {};
+    }),
+  showOnlyIds: (ids) =>
+    set((s) => {
+      const keep = new Set(ids);
+      return { hidden: elementIds(s.model).filter((id) => !keep.has(id)) };
+    }),
+  showAll: () => set({ hidden: [] }),
 
   selection: [],
   setSelection: (ids) => set({ selection: ids }),
@@ -192,6 +222,31 @@ export const useApp = create<AppState>((set, get) => ({
   toast: '',
   setToast: (t) => set({ toast: t }),
 }));
+
+const elementIds = (m: Model) => [...m.columns, ...m.beams, ...m.slabs].map((x) => x.id);
+
+let visCache: { m: Model; show: ShowFlags; hidden: string[]; v: Model } | null = null;
+/**
+ * The model as shown: columns, beams and slabs that are switched off or hidden are left out.
+ * For drawing, picking and snapping only; edits always go to `model`. Same object while nothing changes.
+ */
+export function visibleModel(s: Pick<AppState, 'model' | 'show' | 'hidden'>): Model {
+  const c = visCache;
+  if (c && c.m === s.model && c.hidden === s.hidden && c.show.columns === s.show.columns && c.show.beams === s.show.beams && c.show.slabs === s.show.slabs) return c.v;
+  const m = s.model;
+  const h = new Set(s.hidden);
+  const v =
+    !h.size && s.show.columns && s.show.beams && s.show.slabs
+      ? m
+      : {
+          ...m,
+          columns: s.show.columns ? m.columns.filter((x) => !h.has(x.id)) : [],
+          beams: s.show.beams ? m.beams.filter((x) => !h.has(x.id)) : [],
+          slabs: s.show.slabs ? m.slabs.filter((x) => !h.has(x.id)) : [],
+        };
+  visCache = { m, show: s.show, hidden: s.hidden, v };
+  return v;
+}
 
 /** Stories that new elements are drawn on. */
 export const drawStories = () => {

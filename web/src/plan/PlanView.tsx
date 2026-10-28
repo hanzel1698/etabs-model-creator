@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { useApp, usePreview } from '../model/store';
+import { useApp, usePreview, visibleModel } from '../model/store';
 import { cachedStoryNodes, isNodeId } from '../model/ops';
 import type { Beam, Pt } from '../model/types';
 import { viewport } from './viewport';
@@ -45,7 +45,7 @@ export function PlanView() {
   const hostRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<SVGGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
-  const model = useApp((s) => s.model);
+  const model = useApp(visibleModel);
   const story = useApp((s) => s.activeStory);
   const selection = useApp((s) => s.selection);
   const show = useApp((s) => s.show);
@@ -197,7 +197,7 @@ export function PlanView() {
     if (d.mode === 'box') {
       usePreview.getState().set({ box: null });
       if (st.tool === 'column') return fillIntersections(d.start, p);
-      let ids = boxSelect(st.model, d.start, p, st.activeStory, p.x < d.start.x);
+      let ids = boxSelect(visibleModel(st), d.start, p, st.activeStory, p.x < d.start.x);
       // priority: elements, then nodes, then grids; Alt+drag picks nodes only
       const nodes = ids.filter(isNodeId);
       const elems = ids.filter((id) => !isNodeId(id) && !st.model.grids.some((g) => g.id === id));
@@ -208,7 +208,7 @@ export function PlanView() {
       return;
     }
     if (st.tool === 'select') {
-      const id = hitTest(st.model, p, st.activeStory);
+      const id = hitTest(visibleModel(st), p, st.activeStory);
       if (e.shiftKey && id) st.setSelection(st.selection.includes(id) ? st.selection.filter((x) => x !== id) : [...st.selection, id]);
       else st.setSelection(id ? [id] : []);
       return;
@@ -262,7 +262,7 @@ export function PlanView() {
 
 function NodeLayer({ story, sel, offset }: { story: string; sel: Set<string>; offset: Pt | null }) {
   useVp();
-  const model = useApp((s) => s.model);
+  const model = useApp(visibleModel);
   const nodes = cachedStoryNodes(model, story);
   const ox = offset?.x ?? 0,
     oy = offset?.y ?? 0;

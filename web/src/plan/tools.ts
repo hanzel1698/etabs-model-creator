@@ -1,4 +1,4 @@
-import { useApp, usePreview, drawStories, toast, type ToolName } from '../model/store';
+import { useApp, usePreview, drawStories, toast, visibleModel, type ToolName } from '../model/store';
 import type { Model, Pt } from '../model/types';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
 import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, setBeamEnd } from '../model/ops';
@@ -147,7 +147,7 @@ export function doSnap(screen: Pt): Snap {
   const rub = P().rubber;
   const from = rub.length ? rub[rub.length - 1] : null;
   // region corners and reference point are raw DXF points: never snap them to model elements
-  const m = A().model;
+  const m = visibleModel(A());
   return snapPoint(t === 'region' ? { ...m, grids: [], columns: [], beams: [], slabs: [] } : m, w, SNAP_PX / viewport.k, {
     story: A().activeStory,
     from,
@@ -469,7 +469,8 @@ export type Grip = { id: string; end: 1 | 2 };
 
 /** The end grip of a selected beam under the cursor, if any. */
 export function gripAt(screen: Pt): Grip | null {
-  const { model, selection, activeStory } = A();
+  const { selection, activeStory } = A();
+  const model = visibleModel(A());
   const s = new Set(selection);
   const w = viewport.toWorld(screen);
   let best: Grip | null = null,
@@ -485,7 +486,7 @@ export function gripAt(screen: Pt): Grip | null {
 
 /** Snapped position for a dragged grip; the beam itself is left out so it can't snap to its own end or line. */
 function gripSnap(g: Grip, screen: Pt): { s: Snap; fixed: Pt } | null {
-  const m = A().model;
+  const m = visibleModel(A());
   const b = m.beams.find((x) => x.id === g.id);
   if (!b) return null;
   const fixed = g.end === 1 ? { x: b.x2, y: b.y2 } : { x: b.x1, y: b.y1 };
