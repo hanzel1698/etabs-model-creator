@@ -5,6 +5,7 @@ import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
 import { autoBeamsOnGrids } from '../model/ops';
 import { fitAll } from '../plan/PlanView';
+import { setTool } from '../plan/tools';
 import { fmt } from '../model/geom';
 
 export function LeftPanel() {
@@ -102,6 +103,9 @@ export function LeftPanel() {
             onClick={() => st.commit((m) => ({ ...m, grids: m.grids.map((g) => (g.bubble === 'both' ? g : { ...g, bubble: 'both' })) }))}
           >
             All grid bubbles → both
+          </button>
+          <button title="Pick a point (e.g. grid A/1); the whole model moves so it becomes (0,0)" onClick={() => setTool('origin')}>
+            Move model to origin…
           </button>
         </div>
       </div>

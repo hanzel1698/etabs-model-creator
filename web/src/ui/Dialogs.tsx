@@ -97,11 +97,12 @@ function RegionDialog({ d }: { d: Extract<Dialog, { kind: 'region' }> }) {
     const rect = { minX: Math.min(d.rect.a.x, d.rect.b.x), minY: Math.min(d.rect.a.y, d.rect.b.y), maxX: Math.max(d.rect.a.x, d.rect.b.x), maxY: Math.max(d.rect.a.y, d.rect.b.y) };
     // a story can belong to one region only
     const regions = u.regions.map((r) => ({ ...r, stories: r.stories.filter((s) => !stories.includes(s)) })).filter((r) => r.stories.length);
-    u.set({ regions: [...regions, { id: uid(), stories, rect, ref: d.ref }] });
+    u.set({ regions: [...regions, { id: uid(), stories, rect, ref: d.ref }], setupMode: false });
     saveUnderlayMeta();
     closeDialog();
     setTool('select');
-    toast(`Region assigned to ${stories.join(', ')}. Untick “Show whole DXF” to see each story aligned.`);
+    requestAnimationFrame(() => fitAll());
+    toast(`Region assigned to ${stories.join(', ')}. Its reference point is now the model origin (0,0). Tick “Show whole DXF” to define more regions.`);
   };
   return (
     <Modal title="Assign region to stories" footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" disabled={!stories.length} onClick={save}>Assign</button></>}>

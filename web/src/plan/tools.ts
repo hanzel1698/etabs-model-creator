@@ -1,11 +1,13 @@
 import { useApp, usePreview, drawStories, toast, type ToolName } from '../model/store';
 import type { Model, Pt } from '../model/types';
-import { addBeams, addColumns, addSlab, findBay, gridSegs, makeGrid, nextGridLabel } from '../model/ops';
+import { addBeams, addColumns, addSlab, findBay, gridSegs, makeGrid, moveIds, nextGridLabel } from '../model/ops';
+import { uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
 import { viewport } from './viewport';
 import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf } from '../underlay/store';
 import { openDialog } from '../ui/dialogState';
+import { fitAll } from './PlanView';
 
 const SNAP_PX = 12;
 const P = () => usePreview.getState();
@@ -24,7 +26,11 @@ const hints: Record<ToolName, string> = {
   area: 'Click polygon corners; Enter closes and shows the area.',
   region: 'DXF setup: click two corners around one story plan.',
   calibrate: 'Calibrate: click the two ends of a line whose real length you know.',
+  origin: 'Click the point (e.g. grid A/1) that should become the model origin (0,0). The whole model moves with it.',
 };
+
+// tools whose points snap to the underlay, so they must not run on the raw (setup) DXF
+const DRAW_TOOLS: ToolName[] = ['grid', 'column', 'beam', 'slabDraw'];
 
 // tool-local state
 let regionRect: { a: Pt; b: Pt } | null = null;
@@ -49,7 +55,52 @@ export function setTool(t: ToolName) {
     if (t === 'calibrate' && u.kind === 'none') return toast('Load a DXF or PDF underlay first.');
     if (t === 'region') u.set({ setupMode: true });
   }
+  if (DRAW_TOOLS.includes(t)) leaveSetupView();
   resetTool();
+}
+
+/**
+ * Drawing on the raw DXF (setup view) stores raw drawing coordinates, which end up as ETABS grid
+ * ordinates like 6547680. Switch back to the story-aligned view before drawing.
+ */
+function leaveSetupView() {
+  const u = useUnderlay.getState();
+  if (u.kind !== 'dxf') return;
+  if (u.setupMode && u.regions.length) {
+    u.set({ setupMode: false });
+    requestAnimationFrame(() => fitAll());
+    toast('Left the whole-DXF setup view so drawing uses story coordinates (reference point = 0,0).');
+  } else if (!u.regions.length) {
+    toast('No story region yet: points snap to raw DXF coordinates. Define a story region first, or use “Move model to origin” afterwards.');
+  }
+}
+
+/** Shift the whole model so `o` becomes (0,0), and move the underlay placement with it so it stays aligned. */
+export function moveModelToOrigin(o: Pt) {
+  if (!o.x && !o.y) return toast('That point is already the origin.');
+  if (!confirm(`Move the whole model by (${fmt(-o.x)}, ${fmt(-o.y)}) mm so this point becomes (0,0)?`)) return;
+  const st = A();
+  st.commit((m) => moveIds(m, [...m.grids, ...m.columns, ...m.beams, ...m.slabs].map((x) => x.id), -o.x, -o.y));
+  if (st.colAlign.ref) st.setColAlign({ ref: { x: st.colAlign.ref.x - o.x, y: st.colAlign.ref.y - o.y } });
+  const u = useUnderlay.getState();
+  if (u.kind === 'dxf' && u.dxf) {
+    if (u.setupMode || !u.regions.length) {
+      // picked on the raw drawing: that raw point becomes this story's reference point
+      const reg = regionFor(st.activeStory);
+      const regions = reg
+        ? u.regions.map((r) => (r === reg ? { ...r, ref: { ...o } } : r))
+        : [...u.regions, { id: uid(), stories: u.regions.length ? [st.activeStory] : st.model.stories.map((s) => s.name), rect: { ...u.dxf.fitBox }, ref: { ...o } }];
+      u.set({ regions, setupMode: false });
+    } else {
+      u.set({ regions: u.regions.map((r) => ({ ...r, ref: { x: r.ref.x + o.x, y: r.ref.y + o.y } })) });
+    }
+  } else if (u.kind === 'pdf') {
+    u.set({ sheets: u.sheets.map((s) => ({ ...s, ref: { x: s.ref.x + o.x / s.s, y: s.ref.y + o.y / s.s } })) });
+  }
+  saveUnderlayMeta();
+  setTool('select');
+  requestAnimationFrame(() => fitAll());
+  toast('Model moved: the picked point is now (0,0). Push to ETABS to update the grid ordinates.');
 }
 
 /**
@@ -129,6 +180,8 @@ export function onClick(pt: Pt) {
   const t = A().tool;
   const p = P();
   const commit = A().commit;
+  if (DRAW_TOOLS.includes(t) && useUnderlay.getState().setupMode && useUnderlay.getState().kind === 'dxf')
+    return toast('Untick “Show whole DXF (setup)” before drawing: the setup view uses raw DXF coordinates.');
   switch (t) {
     case 'grid': {
       if (!p.rubber.length) return p.set({ rubber: [pt] });
@@ -191,6 +244,8 @@ export function onClick(pt: Pt) {
       }
       return p.set({ rubber: pts, measure: null });
     }
+    case 'origin':
+      return moveModelToOrigin(pt);
     case 'region': {
       if (!regionRect) {
         if (!p.rubber.length) return p.set({ rubber: [pt], hint: 'Click the opposite corner.' });
