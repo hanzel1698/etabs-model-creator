@@ -142,7 +142,9 @@ export function doSnap(screen: Pt): Snap {
   if (t === 'select') return { p: w, kind: 'none' };
   const rub = P().rubber;
   const from = rub.length ? rub[rub.length - 1] : null;
-  return snapPoint(A().model, w, SNAP_PX / viewport.k, {
+  // region corners and reference point are raw DXF points: never snap them to model elements
+  const m = A().model;
+  return snapPoint(t === 'region' ? { ...m, grids: [], columns: [], beams: [], slabs: [] } : m, w, SNAP_PX / viewport.k, {
     story: A().activeStory,
     from,
     ortho: A().ortho,
