@@ -267,11 +267,26 @@ export function replicate(m: Model, ids: string[], opts: { dx: number; dy: numbe
   const slabs = m.slabs.filter((x) => s.has(x.id));
   const steps = opts.stories ? [0] : Array.from({ length: Math.max(1, opts.n) }, (_, i) => i + 1);
   const targets = (orig: string) => (opts.stories ? opts.stories.filter((st) => st !== orig || opts.dx || opts.dy) : [orig]);
+  // A column only spans one storey, so an unshifted copy to a story further up or down also fills the storeys in between,
+  // otherwise it would float above (or hang below) the original with a gap.
+  const names = m.stories.map((x) => x.name);
+  const colTargets = (orig: string) => {
+    const t = targets(orig);
+    const o = names.indexOf(orig);
+    if (!opts.stories || opts.dx || opts.dy || o < 0) return t;
+    const idx = new Set<number>();
+    for (const st of t) {
+      const i = names.indexOf(st);
+      if (i < 0) continue;
+      for (let j = Math.min(o, i); j <= Math.max(o, i); j++) if (j !== o) idx.add(j);
+    }
+    return [...idx].sort((a, b) => a - b).map((i) => names[i]);
+  };
   for (const k of steps) {
     const dx = opts.stories ? opts.dx : opts.dx * k,
       dy = opts.stories ? opts.dy : opts.dy * k;
     for (const c of cols)
-      for (const st of targets(c.story)) {
+      for (const st of colTargets(c.story)) {
         const before = out.columns.length;
         out = addColumns(out, [{ x: c.x + dx, y: c.y + dy }], [st], c.section, c.angle);
         if (out.columns.length > before) created.push(out.columns[out.columns.length - 1].id);

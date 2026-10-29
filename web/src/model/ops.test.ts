@@ -94,6 +94,16 @@ describe('replicate + payload', () => {
     const beam1 = p.frames.find((f) => f.kind === 'beam' && f.story === 'Story1')!;
     expect(beam1.z1).toBe(3000);
   });
+  it('fills the storeys between when copying a column to a non-adjacent story', () => {
+    let m = emptyModel();
+    m = addColumns(m, [{ x: 0, y: 0 }], ['Story1'], 'C400x400', 0);
+    m = addBeams(m, [[{ x: 0, y: 0 }, { x: 6000, y: 0 }]], ['Story1'], 'B300x500');
+    const r = replicate(m, [...m.columns, ...m.beams].map((x) => x.id), { dx: 0, dy: 0, n: 1, stories: ['Story3'] });
+    expect(r.model.columns.map((c) => c.story).sort()).toEqual(['Story1', 'Story2', 'Story3']);
+    expect(r.model.beams.map((b) => b.story).sort()).toEqual(['Story1', 'Story3']);
+    const down = replicate(r.model, [r.model.columns.find((c) => c.story === 'Story3')!.id], { dx: 0, dy: 0, n: 1, stories: ['Story1'] });
+    expect(down.created.length).toBe(0);
+  });
   it('moves by dz onto the story at that level', () => {
     let m = emptyModel();
     m = addColumns(m, [{ x: 0, y: 0 }], ['Story1'], 'C400x400', 0);
