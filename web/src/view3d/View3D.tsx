@@ -55,7 +55,7 @@ function build(m: Model, sel: Set<string>, onlyStory: string | null): THREE.Grou
     const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
     // shape lies in XY (model plan); rotate so plan Y → -Z and extrude goes down from the story level
     geo.rotateX(-Math.PI / 2);
-    const mesh = new THREE.Mesh(geo, sel.has(sl.id) ? selMat : mat('slab', '#48cae4', 0.45));
+    const mesh = new THREE.Mesh(geo, sel.has(sl.id) ? selMat : mat('s' + sl.section, sectionColor(sl.section), 0.45));
     mesh.position.y = e.top * S - t;
     mesh.userData.id = sl.id;
     g.add(mesh);

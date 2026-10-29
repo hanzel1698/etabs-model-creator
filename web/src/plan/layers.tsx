@@ -128,19 +128,25 @@ export const GridLayer = memo(function GridLayer({ grids, sel, viewRot, showLabe
 
 // ---------------- slabs / beams / columns ----------------
 
-export const SlabLayer = memo(function SlabLayer({ slabs, sel, ghost }: { slabs: Slab[]; sel: Set<string>; ghost?: boolean }) {
+export const SlabLayer = memo(function SlabLayer({ slabs, sel, ghost, colorBy }: { slabs: Slab[]; sel: Set<string>; ghost?: boolean; colorBy: boolean }) {
   return (
     <g className="slabs" opacity={ghost ? 0.25 : 1}>
-      {slabs.map((s) => (
-        <polygon
-          key={s.id}
-          points={s.pts.map((p) => `${p.x},${p.y}`).join(' ')}
-          fill={sel.has(s.id) ? 'var(--selFill)' : 'var(--slab)'}
-          stroke={sel.has(s.id) ? 'var(--sel)' : 'var(--slabEdge)'}
-          strokeWidth={1}
-          style={NS}
-        />
-      ))}
+      {slabs.map((s) => {
+        const picked = sel.has(s.id);
+        const c = !picked && colorBy ? sectionColor(s.section) : null;
+        return (
+          <polygon
+            key={s.id}
+            points={s.pts.map((p) => `${p.x},${p.y}`).join(' ')}
+            fill={picked ? 'var(--selFill)' : c ?? 'var(--slab)'}
+            fillOpacity={c ? 0.18 : undefined}
+            stroke={picked ? 'var(--sel)' : c ?? 'var(--slabEdge)'}
+            strokeOpacity={c ? 0.7 : undefined}
+            strokeWidth={1}
+            style={NS}
+          />
+        );
+      })}
     </g>
   );
 });

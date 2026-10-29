@@ -240,7 +240,7 @@ export function PlanView() {
         <g ref={worldRef}>
           {show.underlay && <UnderlayLayer story={story} viewRot={viewRot} />}
           <g transform={setupRef ? `translate(${setupRef.x} ${setupRef.y})` : undefined}>
-            {show.slabs && <SlabLayer slabs={slabs} sel={sel} />}
+            {show.slabs && <SlabLayer slabs={slabs} sel={sel} colorBy={colorBy} />}
             <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} bubble={bubble} />
             {show.gridDims && <GridDimLayer grids={model.grids} viewRot={viewRot} bubble={bubble} />}
             {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy={false} />}
