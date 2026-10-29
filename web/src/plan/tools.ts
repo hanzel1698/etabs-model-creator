@@ -1,5 +1,5 @@
 import { useApp, usePreview, drawStories, toast, visibleModel, type ToolName } from '../model/store';
-import type { Model, Pt } from '../model/types';
+import type { Beam, Model, Pt } from '../model/types';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
 import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, panelSize, setBeamEnd } from '../model/ops';
 import { uid } from '../model/types';
@@ -190,16 +190,20 @@ export function onMove(screen: Pt) {
 }
 
 /**
- * Commit an edit that adds beams; in Auto mode the new beams then get sections from their supports
- * and span (see model/autoBeam), with the active beam section as the preferred width.
+ * Commit an edit that adds beams or moves beam ends; in Auto mode the new or reshaped beams then get
+ * sections from their supports and span (see model/autoBeam), with the active beam section as the preferred width.
  */
 export function commitBeams(fn: (m: Model) => Model) {
   let picked = '';
   A().commit((m) => {
     const out = fn(m);
     if (!A().autoBeam || out === m) return out;
-    const old = new Set(m.beams.map((b) => b.id));
-    const r = autoSizeBeams(out, out.beams.filter((b) => !old.has(b.id)).map((b) => b.id), A().active.beam);
+    const old = new Map(m.beams.map((b) => [b.id, b]));
+    const reshaped = (b: Beam) => {
+      const o = old.get(b.id);
+      return !o || o.x1 !== b.x1 || o.y1 !== b.y1 || o.x2 !== b.x2 || o.y2 !== b.y2;
+    };
+    const r = autoSizeBeams(out, out.beams.filter(reshaped).map((b) => b.id), A().active.beam);
     const kinds = [...new Set([...r.sizes.values()].map((s) => `${s.section} (${RANK_NAME[s.rank]}${s.periphery ? ', GF periphery' : ''})`))];
     const note = noFitNote(r.sizes, A().active.beam);
     picked = (kinds.length > 3 ? `${r.sizes.size} beams sized` : kinds.join(', ')) + (note ? '.' + note : '');
@@ -522,7 +526,7 @@ export function gripDrop(g: Grip, screen: Pt) {
   P().set({ grip: null, snap: null, hint: hints.select });
   if (!r) return;
   if (dist(r.fixed, r.s.p) < 1) return toast('A beam needs two different end points.');
-  A().commit((m) => setBeamEnd(m, g.id, g.end, r.s.p));
+  commitBeams((m) => setBeamEnd(m, g.id, g.end, r.s.p));
 }
 
 export function gripCancel() {

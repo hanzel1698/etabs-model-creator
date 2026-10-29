@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
 import { useUnderlay, saveUnderlayMeta, removeUnderlay } from '../underlay/store';
-import { setTool } from '../plan/tools';
+import { commitBeams, setTool } from '../plan/tools';
 import { fitAll } from '../plan/PlanView';
 import { dist, fmt } from '../model/geom';
 
@@ -176,7 +176,7 @@ function BeamEnds({ b }: { b: Beam }) {
           value={b[key]}
           onSet={(v) => {
             const p = end === 1 ? { x: b.x1, y: b.y1 } : { x: b.x2, y: b.y2 };
-            useApp.getState().commit((m) => setBeamEnd(m, b.id, end, { ...p, [axis]: v }));
+            commitBeams((m) => setBeamEnd(m, b.id, end, { ...p, [axis]: v }));
           }}
         />
       ))}
