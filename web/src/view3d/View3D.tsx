@@ -1,19 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
 import { storyElevations, type Model } from '../model/types';
+import SectionSlider from './SectionSlider';
 
 const S = 0.001; // mm → m in the scene
+const OPEN = 1e9; // clip-plane constant that clips nothing
 
-function build(m: Model, sel: Set<string>, onlyStory: string | null): THREE.Group {
+function build(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE.Plane[]): THREE.Group {
   const g = new THREE.Group();
   const el = storyElevations(m);
   const secs = new Map(m.frameSections.map((s) => [s.name, s]));
   const slabSecs = new Map(m.slabSections.map((s) => [s.name, s]));
   const mats = new Map<string, THREE.Material>();
   const mat = (key: string, color: string, opacity = 1) => {
-    if (!mats.has(key)) mats.set(key, new THREE.MeshLambertMaterial({ color: new THREE.Color(color), transparent: opacity < 1, opacity }));
+    // double-sided so members cut by the section planes show their insides instead of vanishing faces
+    if (!mats.has(key)) mats.set(key, new THREE.MeshLambertMaterial({ color: new THREE.Color(color), transparent: opacity < 1, opacity, clippingPlanes: clip, side: THREE.DoubleSide }));
     return mats.get(key)!;
   };
   const selMat = mat('__sel', '#39ff9a');
@@ -65,18 +68,31 @@ function build(m: Model, sel: Set<string>, onlyStory: string | null): THREE.Grou
 
 export default function View3D() {
   const host = useRef<HTMLDivElement>(null);
-  const ctx = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; group: THREE.Group | null; render: () => void } | null>(null);
+  const ctx = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; group: THREE.Group | null; clip: THREE.Plane[]; render: () => void } | null>(null);
   const model = useApp(visibleModel);
   const selection = useApp((s) => s.selection);
   const activeStory = useApp((s) => s.activeStory);
   const [onlyStory, setOnlyStory] = useState(false);
   const fitted = useRef(false);
+  // section cut (mm); null = whole building
+  const [cut, setCut] = useState<{ lo: number; hi: number } | null>(null);
+  const levels = useMemo(() => {
+    const el = storyElevations(model);
+    return [{ name: 'Base', elev: model.baseElevation }, ...model.stories.map((s) => ({ name: s.name, elev: el[s.name].top }))];
+  }, [model.stories, model.baseElevation]);
+  const minE = levels[0].elev,
+    maxE = levels[levels.length - 1].elev;
+  const lo = cut ? Math.max(minE, Math.min(cut.lo, maxE)) : minE;
+  const hi = cut ? Math.min(maxE, Math.max(cut.hi, lo)) : maxE;
 
   useEffect(() => {
     const el = host.current!;
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x15181d);
+    renderer.localClippingEnabled = true;
+    // keep y >= lo and y <= hi
+    const clip = [new THREE.Plane(new THREE.Vector3(0, 1, 0), OPEN), new THREE.Plane(new THREE.Vector3(0, -1, 0), OPEN)];
     el.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 1.1));
@@ -117,7 +133,8 @@ export default function View3D() {
       if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 4 || !ctx.current?.group) return;
       const r = renderer.domElement.getBoundingClientRect();
       ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
-      const hit = ray.intersectObjects(ctx.current.group.children)[0];
+      const [pl, ph] = ctx.current.clip;
+      const hit = ray.intersectObjects(ctx.current.group.children).find((h) => pl.distanceToPoint(h.point) >= -1e-6 && ph.distanceToPoint(h.point) >= -1e-6);
       const st = useApp.getState();
       const id = hit?.object.userData.id as string | undefined;
       if (!id) return st.setSelection([]);
@@ -127,7 +144,7 @@ export default function View3D() {
     };
     renderer.domElement.addEventListener('pointerdown', pd);
     renderer.domElement.addEventListener('pointerup', pu);
-    ctx.current = { renderer, scene, camera, controls, group: null, render };
+    ctx.current = { renderer, scene, camera, controls, group: null, clip, render };
     return () => {
       ro.disconnect();
       renderer.dispose();
@@ -143,7 +160,7 @@ export default function View3D() {
       c.scene.remove(c.group);
       c.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
     }
-    c.group = build(model, new Set(selection), onlyStory ? activeStory : null);
+    c.group = build(model, new Set(selection), onlyStory ? activeStory : null, c.clip);
     c.scene.add(c.group);
     if (!fitted.current && c.group.children.length) {
       fitView();
@@ -151,6 +168,16 @@ export default function View3D() {
     }
     c.render();
   }, [model, selection, onlyStory, activeStory]);
+
+  useEffect(() => {
+    const c = ctx.current;
+    if (!c) return;
+    // tiny slack so members sitting exactly on a story level aren't shaved off
+    const eps = 0.5;
+    c.clip[0].constant = lo > minE ? -(lo - eps) * S : OPEN;
+    c.clip[1].constant = hi < maxE ? (hi + eps) * S : OPEN;
+    c.render();
+  }, [lo, hi, minE, maxE]);
 
   const fitView = () => {
     const c = ctx.current;
@@ -175,6 +202,7 @@ export default function View3D() {
           Active story only
         </button>
       </div>
+      <SectionSlider levels={levels} lo={lo} hi={hi} onChange={(l, h) => setCut(l <= minE && h >= maxE ? null : { lo: l, hi: h })} />
     </div>
   );
 }
