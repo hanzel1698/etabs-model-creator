@@ -279,12 +279,11 @@ label {
   z-index: 2;
 }
 
-/* section-by-elevation slider (3D view): a narrow translucent strip hugging the canvas's right edge;
-   story names sit outside it, on the canvas */
+/* section sliders (3D view): narrow translucent strips docked to the canvas's right (elevation),
+   bottom (X grids) and left (Y grids) edges; names sit outside the strip, on the canvas.
+   Each collapses into a round button in a corner. */
 .view3d .sec-btn {
   position: absolute;
-  top: 8px;
-  right: 3px;
   z-index: 3;
   width: 30px;
   height: 30px;
@@ -297,6 +296,18 @@ label {
   border: 1px solid rgba(138, 148, 163, 0.35);
   backdrop-filter: blur(6px);
   transition: opacity 0.18s, transform 0.18s, border-color 0.15s;
+}
+.view3d .sec-btn.right {
+  top: 8px;
+  right: 3px;
+}
+.view3d .sec-btn.bottom {
+  bottom: 3px;
+  right: 3px;
+}
+.view3d .sec-btn.left {
+  bottom: 3px;
+  left: 3px;
 }
 .view3d .sec-btn:hover {
   border-color: var(--accent);
@@ -313,24 +324,44 @@ label {
 }
 .view3d .sec-panel {
   position: absolute;
-  top: 8px;
-  right: 3px;
-  bottom: 8px;
   z-index: 3;
-  width: 30px;
   display: flex;
-  flex-direction: column;
-  padding: 4px 0 12px;
   border-radius: 15px;
   background: rgba(28, 32, 39, 0.5);
   border: 1px solid rgba(138, 148, 163, 0.25);
   backdrop-filter: blur(6px);
-  transform-origin: top right;
   transform: scale(0.15);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s, transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
   user-select: none;
+}
+.view3d .sec-panel.right {
+  top: 8px;
+  bottom: 41px;
+  right: 3px;
+  width: 30px;
+  flex-direction: column;
+  padding: 4px 0 12px;
+  transform-origin: top right;
+}
+.view3d .sec-panel.left {
+  top: 40px;
+  bottom: 41px;
+  left: 3px;
+  width: 30px;
+  flex-direction: column-reverse;
+  padding: 12px 0 4px;
+  transform-origin: bottom left;
+}
+.view3d .sec-panel.bottom {
+  left: 41px;
+  right: 41px;
+  bottom: 3px;
+  height: 30px;
+  flex-direction: row-reverse;
+  padding: 0 4px 0 12px;
+  transform-origin: bottom right;
 }
 .view3d .sec-panel.open {
   transform: none;
@@ -339,10 +370,20 @@ label {
 }
 .sec-head {
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 2px;
+}
+.sec-panel.v .sec-head {
+  flex-direction: column;
+}
+.sec-panel.right .sec-head {
   margin-bottom: 12px;
+}
+.sec-panel.left .sec-head {
+  margin-top: 12px;
+}
+.sec-panel.h .sec-head {
+  margin-left: 12px;
 }
 .sec-head button {
   width: 22px;
@@ -362,40 +403,67 @@ label {
   cursor: pointer;
   touch-action: none;
 }
-.sec-rail {
+.sec-rail,
+.sec-range {
   position: absolute;
-  left: calc(50% - 1.5px);
-  top: 0;
-  bottom: 0;
-  width: 3px;
   border-radius: 2px;
+}
+.sec-rail {
   background: rgba(138, 148, 163, 0.35);
 }
 .sec-range {
-  position: absolute;
+  background: var(--accent);
+}
+.v .sec-rail,
+.v .sec-range {
   left: calc(50% - 1.5px);
   width: 3px;
-  background: var(--accent);
+}
+.v .sec-rail {
+  top: 0;
+  bottom: 0;
+}
+.h .sec-rail,
+.h .sec-range {
+  top: calc(50% - 1.5px);
+  height: 3px;
+}
+.h .sec-rail {
+  left: 0;
+  right: 0;
 }
 .sec-level {
   position: absolute;
+  pointer-events: none;
+}
+.v .sec-level {
   left: 0;
   right: 0;
   height: 0;
-  pointer-events: none;
+}
+.h .sec-level {
+  top: 0;
+  bottom: 0;
+  width: 0;
 }
 .sec-tick {
   position: absolute;
+  background: var(--muted);
+}
+.v .sec-tick {
   left: calc(50% - 7px);
   width: 14px;
   top: -0.5px;
   height: 1px;
-  background: var(--muted);
+}
+.h .sec-tick {
+  top: calc(50% - 7px);
+  height: 14px;
+  left: -0.5px;
+  width: 1px;
 }
 .sec-name {
   position: absolute;
-  right: calc(100% + 5px);
-  top: -7px;
   font-size: 11px;
   line-height: 14px;
   white-space: nowrap;
@@ -405,6 +473,19 @@ label {
   cursor: pointer;
   padding: 0 3px;
   border-radius: 3px;
+}
+.right .sec-name {
+  right: calc(100% + 5px);
+  top: -7px;
+}
+.left .sec-name {
+  left: calc(100% + 5px);
+  top: -7px;
+}
+.bottom .sec-name {
+  bottom: calc(100% + 5px);
+  left: 0;
+  transform: translateX(-50%);
 }
 .sec-name:hover {
   color: var(--accent2);
@@ -416,24 +497,31 @@ label {
 }
 .sec-handle {
   position: absolute;
+  border-radius: 5px;
+  background: var(--accent2);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  touch-action: none;
+}
+.v .sec-handle {
   left: calc(50% - 11px);
   width: 22px;
   height: 10px;
   margin-top: -5px;
-  border-radius: 5px;
-  background: var(--accent2);
-  border: 1px solid rgba(0, 0, 0, 0.5);
   cursor: ns-resize;
-  touch-action: none;
+}
+.h .sec-handle {
+  top: calc(50% - 11px);
+  height: 22px;
+  width: 10px;
+  margin-left: -5px;
+  cursor: ew-resize;
 }
 .sec-handle:hover {
   filter: brightness(1.15);
 }
-/* elevation readout: left of the strip, covering the story name while shown */
+/* value readout: on the names' side of the strip, covering the name while shown */
 .sec-val {
   position: absolute;
-  right: calc(100% + 9px);
-  top: -4px;
   padding: 0 4px;
   border-radius: 3px;
   font-size: 10px;
@@ -444,6 +532,19 @@ label {
   white-space: nowrap;
   pointer-events: none;
   display: none;
+}
+.right .sec-val {
+  right: calc(100% + 9px);
+  top: -4px;
+}
+.left .sec-val {
+  left: calc(100% + 9px);
+  top: -4px;
+}
+.bottom .sec-val {
+  bottom: calc(100% + 9px);
+  left: 50%;
+  transform: translateX(-50%);
 }
 .sec-handle:hover .sec-val,
 .sec-track:active .sec-val {

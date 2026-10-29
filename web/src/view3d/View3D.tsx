@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
 import { storyElevations, type Model } from '../model/types';
-import SectionSlider from './SectionSlider';
+import SectionSlider, { type Mark } from './SectionSlider';
 
 const S = 0.001; // mm → m in the scene
 const OPEN = 1e9; // clip-plane constant that clips nothing
@@ -66,6 +66,22 @@ function build(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE
   return g;
 }
 
+// one section range over a sorted list of marks (mm); the full range means no cut
+function useCut(marks: Mark[]) {
+  const [cut, setCut] = useState<{ lo: number; hi: number } | null>(null);
+  const min = marks[0]?.at ?? 0,
+    max = marks[marks.length - 1]?.at ?? 0;
+  const lo = cut ? Math.max(min, Math.min(cut.lo, max)) : min;
+  const hi = cut ? Math.min(max, Math.max(cut.hi, lo)) : max;
+  return { marks, min, max, lo, hi, set: (l: number, h: number) => setCut(l <= min && h >= max ? null : { lo: l, hi: h }) };
+}
+
+const gridMarks = (m: Model, dir: 'X' | 'Y'): Mark[] =>
+  m.grids
+    .filter((g) => g.dir === dir)
+    .map((g) => ({ name: g.label, at: dir === 'X' ? g.x1 : g.y1 }))
+    .sort((a, b) => a.at - b.at);
+
 export default function View3D() {
   const host = useRef<HTMLDivElement>(null);
   const ctx = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; group: THREE.Group | null; clip: THREE.Plane[]; render: () => void } | null>(null);
@@ -74,16 +90,30 @@ export default function View3D() {
   const activeStory = useApp((s) => s.activeStory);
   const [onlyStory, setOnlyStory] = useState(false);
   const fitted = useRef(false);
-  // section cut (mm); null = whole building
-  const [cut, setCut] = useState<{ lo: number; hi: number } | null>(null);
-  const levels = useMemo(() => {
-    const el = storyElevations(model);
-    return [{ name: 'Base', elev: model.baseElevation }, ...model.stories.map((s) => ({ name: s.name, elev: el[s.name].top }))];
-  }, [model.stories, model.baseElevation]);
-  const minE = levels[0].elev,
-    maxE = levels[levels.length - 1].elev;
-  const lo = cut ? Math.max(minE, Math.min(cut.lo, maxE)) : minE;
-  const hi = cut ? Math.min(maxE, Math.max(cut.hi, lo)) : maxE;
+  // section cuts: by elevation, by X grids and by Y grids
+  const zCut = useCut(
+    useMemo(() => {
+      const el = storyElevations(model);
+      return [{ name: 'Base', at: model.baseElevation }, ...model.stories.map((s) => ({ name: s.name, at: el[s.name].top }))];
+    }, [model.stories, model.baseElevation]),
+  );
+  const xCut = useCut(useMemo(() => gridMarks(model, 'X'), [model.grids]));
+  const yCut = useCut(useMemo(() => gridMarks(model, 'Y'), [model.grids]));
+  // a grid cut sitting on a grid line is widened by this much so members on that grid stay whole:
+  // half the largest column/beam cross-section in the model
+  const gridPad = useMemo(() => {
+    const secs = new Map(model.frameSections.map((s) => [s.name, s]));
+    let r = 0;
+    for (const c of model.columns) {
+      const s = secs.get(c.section);
+      if (s) r = Math.max(r, s.shape === 'Circle' ? s.t3 / 2 : Math.hypot(s.t2, s.t3) / 2);
+    }
+    for (const b of model.beams) {
+      const s = secs.get(b.section);
+      if (s) r = Math.max(r, (s.shape === 'Circle' ? s.t3 : s.t2) / 2);
+    }
+    return r + 1;
+  }, [model.columns, model.beams, model.frameSections]);
 
   useEffect(() => {
     const el = host.current!;
@@ -91,8 +121,15 @@ export default function View3D() {
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x15181d);
     renderer.localClippingEnabled = true;
-    // keep y >= lo and y <= hi
-    const clip = [new THREE.Plane(new THREE.Vector3(0, 1, 0), OPEN), new THREE.Plane(new THREE.Vector3(0, -1, 0), OPEN)];
+    // pairs of (keep >= lo, keep <= hi) planes for elevation, model x and model y (three: x, y up, z = -model y)
+    const clip = [
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(0, -1, 0),
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(0, 0, 1),
+    ].map((n) => new THREE.Plane(n, OPEN));
     el.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 1.1));
@@ -133,8 +170,8 @@ export default function View3D() {
       if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 4 || !ctx.current?.group) return;
       const r = renderer.domElement.getBoundingClientRect();
       ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
-      const [pl, ph] = ctx.current.clip;
-      const hit = ray.intersectObjects(ctx.current.group.children).find((h) => pl.distanceToPoint(h.point) >= -1e-6 && ph.distanceToPoint(h.point) >= -1e-6);
+      const clip = ctx.current.clip;
+      const hit = ray.intersectObjects(ctx.current.group.children).find((h) => clip.every((p) => p.distanceToPoint(h.point) >= -1e-6));
       const st = useApp.getState();
       const id = hit?.object.userData.id as string | undefined;
       if (!id) return st.setSelection([]);
@@ -172,12 +209,15 @@ export default function View3D() {
   useEffect(() => {
     const c = ctx.current;
     if (!c) return;
-    // tiny slack so members sitting exactly on a story level aren't shaved off
+    // tiny slack so faces lying exactly on a cut level aren't shaved off
     const eps = 0.5;
-    c.clip[0].constant = lo > minE ? -(lo - eps) * S : OPEN;
-    c.clip[1].constant = hi < maxE ? (hi + eps) * S : OPEN;
+    [zCut, xCut, yCut].forEach((k, i) => {
+      const slack = (v: number) => (i > 0 && k.marks.some((m) => Math.abs(m.at - v) < 1e-6) ? gridPad : eps);
+      c.clip[2 * i].constant = k.lo > k.min ? -(k.lo - slack(k.lo)) * S : OPEN;
+      c.clip[2 * i + 1].constant = k.hi < k.max ? (k.hi + slack(k.hi)) * S : OPEN;
+    });
     c.render();
-  }, [lo, hi, minE, maxE]);
+  }, [zCut.lo, zCut.hi, zCut.min, zCut.max, xCut.lo, xCut.hi, xCut.min, xCut.max, yCut.lo, yCut.hi, yCut.min, yCut.max, gridPad]);
 
   const fitView = () => {
     const c = ctx.current;
@@ -202,7 +242,9 @@ export default function View3D() {
           Active story only
         </button>
       </div>
-      <SectionSlider levels={levels} lo={lo} hi={hi} onChange={(l, h) => setCut(l <= minE && h >= maxE ? null : { lo: l, hi: h })} />
+      <SectionSlider side="right" title="Section by elevation" marks={zCut.marks} lo={zCut.lo} hi={zCut.hi} onChange={zCut.set} />
+      {xCut.marks.length > 1 && <SectionSlider side="bottom" title="Section along X grids" marks={xCut.marks} lo={xCut.lo} hi={xCut.hi} onChange={xCut.set} />}
+      {yCut.marks.length > 1 && <SectionSlider side="left" title="Section along Y grids" marks={yCut.marks} lo={yCut.lo} hi={yCut.hi} onChange={yCut.set} />}
     </div>
   );
 }
