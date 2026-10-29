@@ -1,4 +1,4 @@
-import type { Beam, FrameSection, Model, Pt } from './types';
+import type { Beam, Column, FrameSection, Model, Pt } from './types';
 import { cross, dist, distToSeg, dot, norm, sub } from './geom';
 
 // Auto beam sizing (beam tool "Auto" mode).
@@ -39,9 +39,9 @@ const ends = (b: Beam): [Pt, Pt] => [
 const dir = (b: Beam) => norm(sub({ x: b.x2, y: b.y2 }, { x: b.x1, y: b.y1 }));
 const parallel = (a: Beam, b: Beam) => Math.abs(cross(dir(a), dir(b))) < PAR;
 
-function onColumn(m: Model, story: string, p: Pt): boolean {
+function columnAt(m: Model, story: string, p: Pt): Column | undefined {
   const secs = new Map(m.frameSections.map((s) => [s.name, s]));
-  return m.columns.some((c) => {
+  return m.columns.find((c) => {
     if (c.story !== story) return false;
     const s = secs.get(c.section);
     const r = s ? Math.max(s.t2, s.t3) / 2 : 200;
@@ -69,18 +69,24 @@ function supportsAt(m: Model, b: Beam, p: Pt): Beam[][] {
   });
 }
 
+/** The strongest beam carrying `b` at its end `p` (a line may be split into beams of different rank). */
+function bestSupport(m: Model, b: Beam, p: Pt, seen: Set<string>): { rank: BeamRank; by: Beam } | undefined {
+  let best: { rank: BeamRank; by: Beam } | undefined;
+  for (const line of supportsAt(m, b, p))
+    for (const o of line)
+      if (!seen.has(o.id)) {
+        const r = beamRank(m, o, new Set(seen));
+        if (!best || r < best.rank) best = { rank: r, by: o };
+      }
+  return best;
+}
+
 export function beamRank(m: Model, b: Beam, seen = new Set<string>()): BeamRank {
   const [a, c] = ends(b);
-  if (onColumn(m, b.story, a) || onColumn(m, b.story, c)) return 1;
+  if (columnAt(m, b.story, a) || columnAt(m, b.story, c)) return 1;
   seen.add(b.id);
   let worst = 0;
-  for (const p of [a, c]) {
-    // strongest support at this end (a line may be split into beams of different rank)
-    let best = Infinity;
-    for (const line of supportsAt(m, b, p))
-      for (const o of line) if (!seen.has(o.id)) best = Math.min(best, beamRank(m, o, new Set(seen)));
-    if (best < Infinity) worst = Math.max(worst, best);
-  }
+  for (const p of [a, c]) worst = Math.max(worst, bestSupport(m, b, p, seen)?.rank ?? 0);
   // no support found (floating, or only L corners): treat as primary
   return Math.min(3, worst + 1) as BeamRank;
 }
@@ -172,6 +178,73 @@ export function autoSizeBeams(m: Model, ids: string[], base: string): { model: M
     return s && s.section !== b.section ? { ...b, section: s.section } : b;
   });
   return { model: { ...m, beams }, sizes };
+}
+
+const at = (p: Pt) => `(${Math.round(p.x)}, ${Math.round(p.y)})`;
+
+/** Why `b` is primary, secondary or tertiary: the column or the strongest beam at each end. */
+function rankReason(m: Model, b: Beam): string {
+  const [a, c] = ends(b);
+  for (const p of [a, c]) {
+    const col = columnAt(m, b.story, p);
+    if (col) return `primary: the end at ${at(p)} sits on column ${col.section} at ${at(col)}`;
+  }
+  const seen = new Set([b.id]);
+  const sup = [a, c].map((p) => ({ p, s: bestSupport(m, b, p, seen) }));
+  const words = sup.map(({ p, s }) => (s ? `at ${at(p)} by ${RANK_NAME[s.rank]} beam ${s.by.section}` : `nothing at ${at(p)} (free end or L corner)`));
+  const rank = beamRank(m, b);
+  if (sup.every(({ s }) => !s)) return `primary: no column or beam carries either end, so it is treated as primary`;
+  const weakest = Math.max(...sup.map(({ s }) => s?.rank ?? 0)) as BeamRank;
+  return (
+    `${RANK_NAME[rank]}: no column at either end; carried ${words.join(', ')}; ` +
+    `one level below the weaker support (${RANK_NAME[weakest]})${weakest === 3 ? ', tertiary at most' : ''}`
+  );
+}
+
+/**
+ * Every step behind the section the Auto rules give `b` with `base` as the active beam section: its rank and why,
+ * the width and depth rules that applied, and how the listed section was picked.
+ */
+export function explainAutoSize(m: Model, b: Beam, base: string): string {
+  const baseSec = m.frameSections.find((s) => s.name === base);
+  const baseWidth = baseSec?.t2 ?? 300;
+  const s = autoSize(m, b, baseWidth);
+  const L = Math.round(dist(...ends(b)));
+  const out = [`Rank ${rankReason(m, b)}.`];
+
+  const pref = baseSec ? `the active section ${base} is ${baseWidth} wide` : `the active section ${base} is not listed, so 300 is assumed`;
+  out.push(
+    s.rank === 3
+      ? `Width 200: tertiary beams are always 200 wide.`
+      : `Width ${s.width}: ${RANK_NAME[s.rank]} beams are at least ${s.rank === 1 ? 300 : 250} wide and ${pref}, so the larger of the two.`
+  );
+
+  const tenth = Math.ceil(L / 1000) * 100;
+  const steps = [`span ${(L / 1000).toFixed(2)} m / 10 = ${Math.round(L / 10)}, rounded up to ${tenth}`];
+  const raw = autoDepth(L);
+  if (raw > tenth) steps.push(L <= SHORT_SPAN ? `raised to ${raw} (minimum for spans up to ${SHORT_SPAN / 1000} m)` : `raised to the ${raw} minimum (300 is only for spans up to ${SHORT_SPAN / 1000} m)`);
+  if (raw < tenth) steps.push(`capped at the ${AUTO_MAX_DEPTH} maximum`);
+  let d = raw;
+  if (s.rank === 1 && d < PRIMARY_MIN_DEPTH) steps.push(`raised to ${(d = PRIMARY_MIN_DEPTH)} (primary minimum)`);
+  if (s.periphery && s.depth > d) steps.push(`raised to ${s.depth} (ground-floor periphery beam: at least the plinth height)`);
+  else if (s.periphery) steps.push(`already at least the plinth height (ground-floor periphery beam)`);
+  out.push(`Depth ${s.depth}: ${steps.join(', ')}.`);
+
+  const fits = m.frameSections
+    .filter((x) => x.shape === 'Rectangle' && x.name.toUpperCase().startsWith('B') && x.t2 >= s.width && x.t3 >= s.depth)
+    .sort((x, y) => x.t2 * x.t3 - y.t2 * y.t3 || x.t3 - y.t3 || x.t2 - y.t2);
+  const hit = pickBeamSection(m.frameSections, s.width, s.depth);
+  if (!hit) out.push(`Section ${base}: no listed beam section is at least ${s.width}×${s.depth}, so it keeps the active section.`);
+  else {
+    const exact = hit.t2 === s.width && hit.t3 === s.depth;
+    const next = fits.filter((x) => x !== hit).slice(0, 3).map((x) => x.name);
+    out.push(
+      `Section ${hit.name} (${hit.t2}×${hit.t3}): ` +
+        (exact ? `listed at exactly ${s.width}×${s.depth}.` : `no listed section is exactly ${s.width}×${s.depth}; this is the smallest listed one at least that big (least area).`) +
+        (next.length ? ` Next that fit: ${next.join(', ')}.` : '')
+    );
+  }
+  return out.join(' ');
 }
 
 /** Toast note for beams that got the active section because nothing listed was big enough. */

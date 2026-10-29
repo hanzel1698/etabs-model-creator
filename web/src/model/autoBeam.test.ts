@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoDepth, autoSizeBeams, autoWidth, beamRank, isPeriphery } from './autoBeam';
+import { autoDepth, autoSizeBeams, autoWidth, beamRank, explainAutoSize, isPeriphery } from './autoBeam';
 import { addBeams, addColumns } from './ops';
 import { emptyModel, type Model, type Pt } from './types';
 
@@ -127,5 +127,23 @@ describe('auto beam rules', () => {
     expect(at(P(0, 0), P(6000, 0))).toMatchObject({ width: 300, depth: 600, section: 'B350x700', fits: true });
     const small = withSections({ ...m, frameSections: m.frameSections.filter((s) => !s.name.startsWith('B')) }, [300, 400]);
     expect(autoSizeBeams(small, ids, 'B300x400').sizes.get(beam(m, P(0, 0), P(6000, 0)).id)).toMatchObject({ section: 'B300x400', fits: false });
+  });
+
+  it('explains each step of the pick', () => {
+    const m = withSections(frame(), [200, 400], [250, 500], [300, 700]);
+    const why = (a: Pt, b: Pt, base = 'B300x500') => explainAutoSize(m, beam(m, a, b), base);
+    const sec = why(P(3000, 0), P(3000, 5000), 'B200x400');
+    expect(sec).toContain('Rank secondary: no column at either end; carried at (3000, 0) by primary beam B300x500, at (3000, 5000) by primary beam B300x500');
+    expect(sec).toContain('Width 250: secondary beams are at least 250 wide and the active section B200x400 is 200 wide');
+    expect(sec).toContain('Depth 500: span 5.00 m / 10 = 500, rounded up to 500.');
+    expect(sec).toContain('Section B250x500 (250×500): listed at exactly 250×500. Next that fit: B300x500, B300x700.');
+    const pri = why(P(0, 0), P(6000, 0));
+    expect(pri).toContain('Rank primary: the end at (0, 0) sits on column C400x400 at (0, 0)');
+    expect(pri).toContain('Section B300x700 (300×700): no listed section is exactly 300×600; this is the smallest listed one at least that big');
+    const ter = why(P(0, 2500), P(3000, 2500));
+    expect(ter).toContain('Rank tertiary');
+    expect(ter).toContain('Width 200: tertiary beams are always 200 wide.');
+    expect(ter).toContain('Depth 400: span 3.00 m / 10 = 300, rounded up to 300, raised to the 400 minimum');
+    expect(why(P(0, 0), P(6000, 0), 'B300x500')).not.toContain('no listed beam section');
   });
 });

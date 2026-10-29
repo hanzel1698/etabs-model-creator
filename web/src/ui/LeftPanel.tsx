@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast, useApp } from '../model/store';
 import { storyElevations } from '../model/types';
+import { logAutoSizes } from '../log/sessionLog';
 import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
 import { autoBeamsOnGrids, splitSlabsByBeams } from '../model/ops';
@@ -127,6 +128,7 @@ export function LeftPanel() {
               const changed = r.model.beams.filter((b) => before.get(b.id) !== b.section).length;
               if (changed) s.commit(() => r.model);
               toast(`Auto-sized ${ids.length} beam${ids.length > 1 ? 's' : ''}: ${changed} changed.` + noFitNote(r.sizes, s.active.beam));
+              logAutoSizes(r.model, ids, s.active.beam);
             }}
           >
             Auto-size beams

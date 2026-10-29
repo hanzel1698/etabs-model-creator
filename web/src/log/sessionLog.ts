@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { useApp, type ShowFlags, type ToolName } from '../model/store';
 import { useDialog, type Dialog } from '../ui/dialogState';
+import { explainAutoSize } from '../model/autoBeam';
 import type { Beam, Column, FrameSection, Grid, Material, Model, Pt, Slab, SlabSection, Story } from '../model/types';
 
 export type LogLevel = 'info' | 'warn' | 'error';
@@ -244,6 +245,17 @@ function describeIds(m: Model, ids: string[]) {
     return cols.length ? columnWords.describe(cols[0]) : beams.length ? beamWords.describe(beams[0]) : slabs.length ? slabWords.describe(slabs[0]) : gridWords.describe(grids[0]);
   const parts: [Keyed[], string][] = [[cols, 'column'], [beams, 'beam'], [slabs, 'slab'], [grids, 'grid']];
   return parts.filter(([l]) => l.length).map(([l, w]) => plural(l.length, w) + where(l)).join(', ') || plural(ids.length, 'element');
+}
+
+/** Up to this many auto-sized beams get their reasons written out. */
+const EXPLAIN = 30;
+
+/** Log why the Auto rules gave each of the beams `ids` in `m` its section, `base` being the active beam section. */
+export function logAutoSizes(m: Model, ids: string[], base: string) {
+  const set = new Set(ids);
+  const beams = m.beams.filter((b) => set.has(b.id));
+  for (const b of beams.slice(0, EXPLAIN)) log('auto', `${beamWords.describe(b)}. ${explainAutoSize(m, b, base)}`);
+  if (beams.length > EXPLAIN) log('auto', `…and ${plural(beams.length - EXPLAIN, 'more beam')} sized by the same rules (reasons not written out)`);
 }
 
 let started = false;

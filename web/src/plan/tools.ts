@@ -1,5 +1,6 @@
 import { useApp, usePreview, drawStories, toast, visibleModel, type ToolName } from '../model/store';
 import type { Beam, Model, Pt } from '../model/types';
+import { logAutoSizes } from '../log/sessionLog';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
 import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, panelSize, setBeamEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
 import { uid } from '../model/types';
@@ -197,6 +198,7 @@ export function onMove(screen: Pt) {
 export function commitBeams(fn: (m: Model) => Model) {
   let picked = '',
     cut = '';
+  let sized = null as { m: Model; ids: string[] } | null;
   A().commit((m) => {
     let out = fn(m);
     if (out === m || (!A().autoBeam && !A().autoSplitSlabs)) return out;
@@ -216,10 +218,12 @@ export function commitBeams(fn: (m: Model) => Model) {
     const kinds = [...new Set([...r.sizes.values()].map((s) => `${s.section} (${RANK_NAME[s.rank]}${s.periphery ? ', GF periphery' : ''})`))];
     const note = noFitNote(r.sizes, A().active.beam);
     picked = (kinds.length > 3 ? `${r.sizes.size} beams sized` : kinds.join(', ')) + (note ? '.' + note : '');
+    sized = { m: r.model, ids };
     return r.model;
   });
   const msg = [picked && `Auto: ${picked}`, cut].filter(Boolean).join(' · ');
   if (msg) toast(msg);
+  if (sized) logAutoSizes(sized.m, sized.ids, A().active.beam);
 }
 
 const distToSegLine = (p: Pt, [a, b]: [Pt, Pt]) => Math.abs(side(p, a, b)) / (dist(a, b) || 1);

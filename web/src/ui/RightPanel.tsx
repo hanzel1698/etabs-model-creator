@@ -1,6 +1,7 @@
 import { toast, useApp } from '../model/store';
 import { cachedStoryNodes, deleteIds, joinBeams, mergeSlabs, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
 import type { Beam } from '../model/types';
+import { logAutoSizes } from '../log/sessionLog';
 import { useEffect, useState } from 'react';
 import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
@@ -185,6 +186,7 @@ export function joinSelectedBeams() {
   const secs = [...new Set([...sized.sizes.values()].map((x) => x.section))].join(', ');
   const left = ids.length - r.from;
   toast(`${r.from} beams joined into ${r.joined} (auto-sized: ${secs}).` + (left ? ` ${left} left as they were.` : '') + noFitNote(sized.sizes, s.active.beam));
+  logAutoSizes(sized.model, r.ids, s.active.beam);
 }
 
 export function mergeSelectedSlabs() {
