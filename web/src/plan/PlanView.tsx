@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp, usePreview, visibleModel } from '../model/store';
-import { cachedStoryNodes, isNodeId } from '../model/ops';
+import { cachedStoryNodes, isNodeId, type PanelSize } from '../model/ops';
+import { fmt } from '../model/geom';
 import type { Beam, Pt } from '../model/types';
 import { viewport } from './viewport';
 import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer } from './layers';
@@ -332,6 +333,7 @@ function Overlay() {
     items.push(<polyline key="ms" points={pts.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#ff7ad9" strokeWidth={1.5} />);
     pts.forEach((p, i) => items.push(<circle key={'mp' + i} cx={p.x} cy={p.y} r={3} fill="#ff7ad9" />));
   }
+  if (pv.panel) items.push(<PanelDims key="pnl" s={pv.panel} />);
   if (pv.grip) {
     const [a, b] = pv.grip.map(S);
     items.push(<line key="grip" x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#4aa3ff" strokeWidth={2} strokeDasharray="8 4" />);
@@ -382,6 +384,52 @@ function Overlay() {
     );
   }
   return <g className="overlay">{items}</g>;
+}
+
+/**
+ * Panel Size & Type result drawn inside the panel: an Lx and an Ly dimension line across it, and
+ * the slab type with Ly/Lx at the centre. Screen space, so text keeps its size and stays upright.
+ */
+function PanelDims({ s }: { s: PanelSize }) {
+  const S = (p: Pt) => viewport.toScreen(p);
+  const at = (a: number, b: number) => S({ x: s.c.x + s.dx.x * a + s.dy.x * b, y: s.c.y + s.dx.y * a + s.dy.y * b });
+  const c = '#ff7ad9';
+  // dimension from p to q, label above the line (upright, along it)
+  const dim = (key: string, p: Pt, q: Pt, label: string) => {
+    let ang = (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI;
+    // keep text upright; vertical text reads bottom to top, as on drawings
+    if (ang > 89.5) ang -= 180;
+    else if (ang < -90.5) ang += 180;
+    const L = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    const ux = (q.x - p.x) / L,
+      uy = (q.y - p.y) / L;
+    const head = (o: Pt, d: number) => `M${o.x} ${o.y}l${(ux * 4 - uy * 3) * d * 2} ${(uy * 4 + ux * 3) * d * 2}M${o.x} ${o.y}l${(ux * 4 + uy * 3) * d * 2} ${(uy * 4 - ux * 3) * d * 2}`;
+    const m = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+    return (
+      <g key={key}>
+        <line x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={c} strokeWidth={1.2} />
+        <path d={head(p, 1) + head(q, -1)} stroke={c} strokeWidth={1.2} fill="none" />
+        {L > 40 && (
+          <text transform={`translate(${m.x},${m.y}) rotate(${ang})`} dy={-5} fontSize={12} textAnchor="middle" fill={c} className="halo">
+            {label}
+          </text>
+        )}
+      </g>
+    );
+  };
+  const centre = S(s.c);
+  return (
+    <g className="nosel">
+      {dim('lx', at(-s.lx / 2, s.ly * 0.25), at(s.lx / 2, s.ly * 0.25), `Lx = ${fmt(s.lx)}`)}
+      {dim('ly', at(s.lx * 0.25, -s.ly / 2), at(s.lx * 0.25, s.ly / 2), `Ly = ${fmt(s.ly)}`)}
+      <text x={centre.x} y={centre.y} fontSize={14} fontWeight={600} textAnchor="middle" fill={c} className="halo">
+        {s.oneWay ? 'One-way' : 'Two-way'}
+      </text>
+      <text x={centre.x} y={centre.y + 16} fontSize={11} textAnchor="middle" fill={c} className="halo">
+        Ly/Lx = {fmt(s.ratio, 2)}
+      </text>
+    </g>
+  );
 }
 
 function Compass({ rot }: { rot: number }) {

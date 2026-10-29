@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, nextGridLabel, oppositeLabelStart, patchIds, replicate, setBeamEnd, storyNodes } from './ops';
+import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, nextGridLabel, oppositeLabelStart, panelSize, patchIds, replicate, setBeamEnd, storyNodes } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
 import { emptyModel } from './types';
 import { toPayload } from '../etabs/mapping';
@@ -61,6 +61,19 @@ describe('bay detection', () => {
   });
   it('returns null outside', () => {
     expect(findBay([[{ x: 0, y: 0 }, { x: 1, y: 0 }]], { x: 5, y: 5 })).toBeNull();
+  });
+  it('sizes panels and classifies one-way / two-way', () => {
+    const two = panelSize([{ x: 0, y: 0 }, { x: 6000, y: 0 }, { x: 6000, y: 5000 }, { x: 0, y: 5000 }]);
+    expect(two.lx).toBeCloseTo(5000);
+    expect(two.ly).toBeCloseTo(6000);
+    expect(two.oneWay).toBe(false);
+    // rotated 30°, 3 m x 7 m
+    const r = Math.PI / 6,
+      rot = (x: number, y: number) => ({ x: x * Math.cos(r) - y * Math.sin(r), y: x * Math.sin(r) + y * Math.cos(r) });
+    const one = panelSize([rot(0, 0), rot(7000, 0), rot(7000, 3000), rot(0, 3000)]);
+    expect(one.lx).toBeCloseTo(3000);
+    expect(one.ly).toBeCloseTo(7000);
+    expect(one.oneWay).toBe(true);
   });
 });
 

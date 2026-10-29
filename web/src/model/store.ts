@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { emptyModel, type Model, type Pt } from './types';
+import type { PanelSize } from './ops';
 import { firstSection } from '../ui/sectionGroups';
 
 export type ToolName =
@@ -13,6 +14,7 @@ export type ToolName =
   | 'measure'
   | 'angle'
   | 'area'
+  | 'panel'
   | 'region'
   | 'calibrate'
   | 'origin';
@@ -273,6 +275,7 @@ export interface Preview {
   measure: { pts: Pt[]; text: string } | null;
   offsetLine: [Pt, Pt] | null;
   grip: [Pt, Pt] | null; // beam being reshaped: fixed end, dragged end (world)
+  panel: PanelSize | null; // Panel Size & Type result, drawn as dimensions inside the panel
 }
 
 export const usePreview = create<Preview & { set: (p: Partial<Preview>) => void }>((set) => ({
@@ -287,6 +290,7 @@ export const usePreview = create<Preview & { set: (p: Partial<Preview>) => void 
   measure: null,
   offsetLine: null,
   grip: null,
+  panel: null,
   set: (p) => set(p),
 }));
 

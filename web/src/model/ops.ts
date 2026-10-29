@@ -402,6 +402,51 @@ function simplify(pts: Pt[]): Pt[] {
   return out;
 }
 
+/**
+ * Panel spans of a bay: the sides of its smallest enclosing rectangle (exact for a rectangular bay,
+ * at any rotation). Lx is the short span, Ly the long one; Ly/Lx > 2 is a one-way slab.
+ */
+export interface PanelSize {
+  lx: number;
+  ly: number;
+  ratio: number;
+  oneWay: boolean;
+  c: Pt; // centre of the enclosing rectangle
+  dx: Pt; // unit vector along the Lx span
+  dy: Pt; // unit vector along the Ly span
+}
+
+export function panelSize(pts: Pt[]): PanelSize {
+  let best = { a: Infinity, w: 0, h: 0, ux: 1, uy: 0, um: 0, vm: 0 };
+  for (let i = 0; i < pts.length; i++) {
+    const e = sub(pts[(i + 1) % pts.length], pts[i]);
+    const len = Math.hypot(e.x, e.y);
+    if (len < 1e-9) continue;
+    const ux = e.x / len,
+      uy = e.y / len;
+    let u0 = Infinity,
+      u1 = -Infinity,
+      v0 = Infinity,
+      v1 = -Infinity;
+    for (const p of pts) {
+      const u = p.x * ux + p.y * uy,
+        v = -p.x * uy + p.y * ux;
+      (u0 = Math.min(u0, u)), (u1 = Math.max(u1, u)), (v0 = Math.min(v0, v)), (v1 = Math.max(v1, v));
+    }
+    const w = u1 - u0,
+      h = v1 - v0;
+    if (w * h < best.a - 1e-6) best = { a: w * h, w, h, ux, uy, um: (u0 + u1) / 2, vm: (v0 + v1) / 2 };
+  }
+  const { ux, uy, um, vm } = best;
+  const u = { x: ux, y: uy },
+    v = { x: -uy, y: ux };
+  const c = { x: um * ux - vm * uy, y: um * uy + vm * ux };
+  const lx = Math.min(best.w, best.h),
+    ly = Math.max(best.w, best.h);
+  const ratio = lx > 0 ? ly / lx : Infinity;
+  return { lx, ly, ratio, oneWay: ratio > 2, c, dx: best.w <= best.h ? u : v, dy: best.w <= best.h ? v : u };
+}
+
 export function gridSegs(m: Model): [Pt, Pt][] {
   return m.grids.map((g) => [
     { x: g.x1, y: g.y1 },

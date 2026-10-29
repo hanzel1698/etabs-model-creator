@@ -29,6 +29,7 @@ const MEASURE: { t: ToolName; label: string; key: string }[] = [
   { t: 'measure', label: 'Distance', key: 'M' },
   { t: 'angle', label: 'Angle', key: 'A' },
   { t: 'area', label: 'Area', key: 'R' },
+  { t: 'panel', label: 'Panel Size & Type', key: 'T' },
 ];
 
 export function App() {

@@ -1,7 +1,7 @@
 import { useApp, usePreview, drawStories, toast, visibleModel, type ToolName } from '../model/store';
 import type { Model, Pt } from '../model/types';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
-import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, setBeamEnd } from '../model/ops';
+import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, panelSize, setBeamEnd } from '../model/ops';
 import { uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
@@ -25,6 +25,7 @@ const hints: Record<ToolName, string> = {
   measure: 'Click points to measure distance (chained). Esc clears.',
   angle: 'Click 3 points: start, vertex, end.',
   area: 'Click polygon corners; Enter closes and shows the area.',
+  panel: 'Click inside a panel bounded by beams to show Lx, Ly (c/c of beams) and whether it is one-way or two-way.',
   region: 'DXF setup: click two corners around one story plan.',
   calibrate: 'Calibrate: click the two ends of a line whose real length you know.',
   origin: 'Click the point (e.g. grid A/1) that should become the model origin (0,0). The whole model moves with it.',
@@ -45,7 +46,7 @@ export function resetTool() {
   calibPts = [];
   calibStage = 'dist';
   offsetSrc = null;
-  P().set({ rubber: [], rubberClosed: false, box: null, measure: null, offsetLine: null, input: '', track: null, hint: hints[A().tool] });
+  P().set({ rubber: [], rubberClosed: false, box: null, measure: null, panel: null, offsetLine: null, input: '', track: null, hint: hints[A().tool] });
 }
 
 export function setTool(t: ToolName) {
@@ -143,7 +144,7 @@ const snapKindsFor = (t: ToolName): SnapKind[] | undefined => {
 export function doSnap(screen: Pt): Snap {
   const w = viewport.toWorld(screen);
   const t = A().tool;
-  if (t === 'select') return { p: w, kind: 'none' };
+  if (t === 'select' || t === 'panel') return { p: w, kind: 'none' };
   const rub = P().rubber;
   const from = rub.length ? rub[rub.length - 1] : null;
   // region corners and reference point are raw DXF points: never snap them to model elements
@@ -259,6 +260,17 @@ export function onClick(pt: Pt) {
       if (!bay) return toast('No closed bay found here. Use “Draw slab” to draw it.');
       for (const st of drawStories()) commit((mm) => addSlab(mm, bay!, st, A().active.slab));
       return;
+    }
+    case 'panel': {
+      const story = A().activeStory;
+      const segs: [Pt, Pt][] = A().model.beams.filter((b) => b.story === story).map((b) => [{ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }]);
+      const bay = findBay(segs, pt);
+      if (!bay) {
+        p.set({ measure: null, panel: null });
+        return toast('No panel closed by beams here.');
+      }
+      if (bay.length !== 4) toast(`${bay.length}-sided panel: Lx and Ly are taken from its enclosing rectangle.`);
+      return p.set({ measure: { pts: [...bay, bay[0]], text: '' }, panel: panelSize(bay) });
     }
     case 'slabDraw':
     case 'area': {
@@ -441,7 +453,7 @@ export function onInput(text: string) {
 
 export function onCancel() {
   const p = P();
-  if (p.rubber.length || p.measure || offsetSrc || regionRect || p.box) return resetTool();
+  if (p.rubber.length || p.measure || p.panel || offsetSrc || regionRect || p.box) return resetTool();
   if (A().tool !== 'select') setTool('select');
   else A().setSelection([]);
 }
