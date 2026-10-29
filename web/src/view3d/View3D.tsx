@@ -241,6 +241,16 @@ export default function View3D() {
         <button className={onlyStory ? 'on' : ''} onClick={() => setOnlyStory(!onlyStory)}>
           Active story only
         </button>
+        <button
+          title="Clear all section cuts and Active story only"
+          disabled={!onlyStory && ![zCut, xCut, yCut].some((k) => k.lo > k.min || k.hi < k.max)}
+          onClick={() => {
+            [zCut, xCut, yCut].forEach((k) => k.set(k.min, k.max));
+            setOnlyStory(false);
+          }}
+        >
+          Reset 3D view
+        </button>
       </div>
       <SectionSlider side="right" title="Section by elevation" marks={zCut.marks} lo={zCut.lo} hi={zCut.hi} onChange={zCut.set} />
       {xCut.marks.length > 1 && <SectionSlider side="bottom" title="Section along X grids" marks={xCut.marks} lo={xCut.lo} hi={xCut.hi} onChange={xCut.set} />}
