@@ -1,13 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useDialog, closeDialog, type Dialog } from './dialogState';
+import { useDialog, openDialog, closeDialog, type Dialog } from './dialogState';
 import { bySize, sectionGroup } from './sectionGroups';
 import { SelectByDialog } from './SelectByDialog';
 import { useApp, toast } from '../model/store';
 import { generateGrids, moveIds, oppositeLabelStart, replicate, storyAtOffset } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
 import { uid, storyElevations, type FrameSection, type Model, type SlabSection, type Story } from '../model/types';
-import { useUnderlay, saveUnderlayMeta, rescaleDxf } from '../underlay/store';
-import { setTool } from '../plan/tools';
+import { useUnderlay, saveUnderlayMeta, rescaleDxf, rectOf, withStories } from '../underlay/store';
+import { setTool, redrawRegion } from '../plan/tools';
 import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports, type Unowned } from '../etabs/bridgeClient';
 import { toPayload, applyImport } from '../etabs/mapping';
 import { fitAll } from '../plan/PlanView';
@@ -35,6 +35,8 @@ export function Dialogs() {
   switch (d.kind) {
     case 'region':
       return <RegionDialog d={d} />;
+    case 'regionStories':
+      return <RegionStoriesDialog id={d.regionId} />;
     case 'grids':
       return <GridsDialog />;
     case 'replicate':
@@ -96,10 +98,8 @@ function RegionDialog({ d }: { d: Extract<Dialog, { kind: 'region' }> }) {
   const [stories, setStories] = useState<string[]>([active]);
   const save = () => {
     const u = useUnderlay.getState();
-    const rect = { minX: Math.min(d.rect.a.x, d.rect.b.x), minY: Math.min(d.rect.a.y, d.rect.b.y), maxX: Math.max(d.rect.a.x, d.rect.b.x), maxY: Math.max(d.rect.a.y, d.rect.b.y) };
     // a story can belong to one region only
-    const regions = u.regions.map((r) => ({ ...r, stories: r.stories.filter((s) => !stories.includes(s)) })).filter((r) => r.stories.length);
-    u.set({ regions: [...regions, { id: uid(), stories, rect, ref: d.ref }], setupMode: false });
+    u.set({ regions: withStories(u.regions, stories, { id: uid(), stories, rect: rectOf(d.rect.a, d.rect.b), ref: d.ref }), setupMode: false });
     saveUnderlayMeta();
     closeDialog();
     setTool('select');
@@ -110,6 +110,28 @@ function RegionDialog({ d }: { d: Extract<Dialog, { kind: 'region' }> }) {
     <Modal title="Assign region to stories" footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" disabled={!stories.length} onClick={save}>Assign</button></>}>
       <div className="small muted">The boxed plan will be shown on these stories, with the picked reference point placed at the model origin (0,0). Tick all typical floors that share this plan.</div>
       <StoryChecks value={stories} onChange={setStories} />
+    </Modal>
+  );
+}
+
+/** Change which stories an existing region is shown on, keeping its box and reference point. */
+function RegionStoriesDialog({ id }: { id: string }) {
+  const reg = useUnderlay((u) => u.regions.find((r) => r.id === id));
+  const [stories, setStories] = useState<string[]>(reg?.stories ?? []);
+  if (!reg) return null;
+  const taken = useUnderlay.getState().regions.filter((r) => r.id !== id).flatMap((r) => r.stories.filter((s) => stories.includes(s)));
+  const save = () => {
+    const u = useUnderlay.getState();
+    u.set({ regions: withStories(u.regions, stories, reg) });
+    saveUnderlayMeta();
+    closeDialog();
+    toast(`Region now shown on ${stories.join(', ')}.`);
+  };
+  return (
+    <Modal title="Region stories" footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" disabled={!stories.length} onClick={save}>Save</button></>}>
+      <div className="small muted">The region keeps its box and reference point. A story can be in one region only, so ticking a story here takes it out of its current region.</div>
+      <StoryChecks value={stories} onChange={setStories} />
+      {taken.length > 0 && <div className="small muted">Moves from another region: {taken.join(', ')}</div>}
     </Modal>
   );
 }
@@ -500,6 +522,8 @@ function UnderlayDialog() {
         {u.regions.map((r) => (
           <div key={r.id} className="row small">
             <span style={{ width: 'auto', flex: 1 }}>{r.stories.join(', ')}</span>
+            <button onClick={() => openDialog({ kind: 'regionStories', regionId: r.id })} title="Change which stories use this region">Stories…</button>
+            <button onClick={() => (closeDialog(), redrawRegion(r.id))} title="Pick a new box and reference point, keeping its stories">Redraw</button>
             <button className="danger" onClick={() => (u.set({ regions: u.regions.filter((x) => x.id !== r.id) }), saveUnderlayMeta())}>✕</button>
           </div>
         ))}

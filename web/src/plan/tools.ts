@@ -7,7 +7,7 @@ import { uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
 import { viewport } from './viewport';
-import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf } from '../underlay/store';
+import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf, rectOf } from '../underlay/store';
 import { openDialog } from '../ui/dialogState';
 import { fitAll } from './PlanView';
 
@@ -37,6 +37,7 @@ const DRAW_TOOLS: ToolName[] = ['grid', 'column', 'beam', 'slabDraw'];
 
 // tool-local state
 let regionRect: { a: Pt; b: Pt } | null = null;
+let redrawId: string | null = null; // region tool is re-picking this region's box and reference point
 let calibPts: Pt[] = [];
 let calibStage: 'dist' | 'ref' = 'dist';
 let offsetSrc: [Pt, Pt] | null = null;
@@ -47,10 +48,12 @@ export function resetTool() {
   calibPts = [];
   calibStage = 'dist';
   offsetSrc = null;
-  P().set({ rubber: [], rubberClosed: false, box: null, measure: null, panel: null, offsetLine: null, input: '', track: null, hint: hints[A().tool] });
+  const hint = redrawId && A().tool === 'region' ? `Redraw region (${useUnderlay.getState().regions.find((r) => r.id === redrawId)?.stories.join(', ')}): click two corners around its plan.` : hints[A().tool];
+  P().set({ rubber: [], rubberClosed: false, box: null, measure: null, panel: null, offsetLine: null, input: '', track: null, hint });
 }
 
 export function setTool(t: ToolName) {
+  redrawId = null;
   A().setTool(t);
   if (t === 'region' || t === 'calibrate') {
     const u = useUnderlay.getState();
@@ -153,7 +156,7 @@ export function doSnap(screen: Pt): Snap {
   return snapPoint(t === 'region' ? { ...m, grids: [], columns: [], beams: [], slabs: [] } : m, w, SNAP_PX / viewport.k, {
     story: A().activeStory,
     from,
-    ortho: A().ortho,
+    ortho: A().ortho && t !== 'region', // a box's opposite corner must not be locked level with the first
     underlay: A().show.underlay,
     only: snapKindsFor(t),
   });
@@ -319,7 +322,14 @@ export function onClick(pt: Pt) {
       const rect = regionRect;
       regionRect = null;
       p.set({ box: null });
-      openDialog({ kind: 'region', rect, ref: pt });
+      if (!redrawId) return openDialog({ kind: 'region', rect, ref: pt });
+      const u = useUnderlay.getState();
+      const id = redrawId;
+      u.set({ regions: u.regions.map((r) => (r.id === id ? { ...r, rect: rectOf(rect.a, rect.b), ref: pt } : r)), setupMode: false });
+      saveUnderlayMeta();
+      setTool('select');
+      requestAnimationFrame(() => fitAll());
+      toast(`Region redrawn for ${u.regions.find((r) => r.id === id)?.stories.join(', ')}. Its new reference point is the model origin (0,0).`);
       return;
     }
     case 'calibrate': {
@@ -467,6 +477,14 @@ export function onInput(text: string) {
   const rel = parseRelative(text, dir);
   if (!rel) return toast('Use dx,dy  or  @dist<angle  or  a length.');
   onClick(add(last, rel));
+}
+
+/** Re-pick an existing region's box and reference point, keeping its stories. */
+export function redrawRegion(id: string) {
+  setTool('region');
+  if (useUnderlay.getState().kind !== 'dxf') return;
+  redrawId = id;
+  resetTool();
 }
 
 export function onCancel() {

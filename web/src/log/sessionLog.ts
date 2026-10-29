@@ -211,6 +211,7 @@ const TOOL_NAMES: Record<ToolName, string> = {
 };
 const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   region: 'Story region',
+  regionStories: 'Region stories',
   grids: 'Grids',
   replicate: 'Replicate',
   move: 'Move',

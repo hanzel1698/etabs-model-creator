@@ -211,6 +211,14 @@ export async function removeUnderlay() {
 
 // ---------- per-story placement ----------
 
+export const rectOf = (a: Pt, b: Pt): Region['rect'] => ({ minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y), maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y) });
+
+/** Give `stories` to `reg` (added if new), taking them out of every other region; regions left empty are dropped. */
+export function withStories(regions: Region[], stories: string[], reg: Region): Region[] {
+  const next = regions.some((r) => r.id === reg.id) ? regions : [...regions, reg];
+  return next.map((r) => (r.id === reg.id ? { ...reg, stories } : { ...r, stories: r.stories.filter((s) => !stories.includes(s)) })).filter((r) => r.stories.length);
+}
+
 /** Region for a story, or null (with no regions defined, the whole DXF is shown untransformed). */
 export function regionFor(story: string): Region | null {
   return useUnderlay.getState().regions.find((r) => r.stories.includes(story)) ?? null;

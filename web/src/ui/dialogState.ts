@@ -3,6 +3,7 @@ import type { Pt } from '../model/types';
 
 export type Dialog =
   | { kind: 'region'; rect: { a: Pt; b: Pt }; ref: Pt }
+  | { kind: 'regionStories'; regionId: string }
   | { kind: 'grids' }
   | { kind: 'replicate' }
   | { kind: 'move' }
