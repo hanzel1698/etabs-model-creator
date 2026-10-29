@@ -7,7 +7,7 @@ import { viewport } from './viewport';
 import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer } from './layers';
 import { onMove, onClick, onCancel, finishPolygon, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, type Grip } from './tools';
 import { columnOutline } from './snap';
-import { useUnderlay } from '../underlay/store';
+import { useUnderlay, regionFor } from '../underlay/store';
 import { UnderlayCanvas } from './UnderlayCanvas';
 
 export function fitAll(w?: number, h?: number) {
@@ -37,6 +37,39 @@ export function fitAll(w?: number, h?: number) {
   }
   // leave room for grid bubbles and the dimension chains outside the grid lines
   const pad = m.grids.length ? useApp.getState().gridBubble * 3 : 0;
+  viewport.fit(Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad, W, H);
+}
+
+/**
+ * Zoom extents for the active story: its DXF region with the story name drawn above it, plus the
+ * story's own members and grids. Falls back to fitAll when the story has no region (or in setup view).
+ */
+export function fitStory() {
+  const el = document.getElementById('plan-host');
+  const W = el?.clientWidth ?? 800,
+    H = el?.clientHeight ?? 600;
+  const st = useApp.getState();
+  const u = useUnderlay.getState();
+  const story = st.activeStory;
+  const reg = u.kind === 'dxf' && u.dxf && !u.setupMode ? regionFor(story) : null;
+  if (!reg) return fitAll(W, H);
+  const m = st.model;
+  const xs = [reg.rect.minX - reg.ref.x, reg.rect.maxX - reg.ref.x],
+    ys = [reg.rect.minY - reg.ref.y, reg.rect.maxY - reg.ref.y];
+  m.grids.forEach((g) => (xs.push(g.x1, g.x2), ys.push(g.y1, g.y2)));
+  m.columns.forEach((c) => c.story === story && (xs.push(c.x), ys.push(c.y)));
+  m.beams.forEach((b) => b.story === story && (xs.push(b.x1, b.x2), ys.push(b.y1, b.y2)));
+  m.slabs.forEach((s) => s.story === story && s.pts.forEach((p) => (xs.push(p.x), ys.push(p.y))));
+  // the story name (UnderlayLayer) sits above the region's top edge, upright on screen: include its box
+  const fs = Math.max(400, (reg.rect.maxX - reg.rect.minX) / 30);
+  const t = (viewport.rot * Math.PI) / 180;
+  const up = { x: Math.sin(t), y: Math.cos(t) },
+    right = { x: Math.cos(t), y: -Math.sin(t) };
+  const ax = (reg.rect.minX + reg.rect.maxX) / 2 - reg.ref.x,
+    ay = reg.rect.maxY - reg.ref.y;
+  const half = story.length * fs * 0.35;
+  for (const [r, h] of [[-half, 0], [half, 0], [-half, fs * 1.6], [half, fs * 1.6]]) xs.push(ax + right.x * r + up.x * h), ys.push(ay + right.y * r + up.y * h);
+  const pad = m.grids.length ? st.gridBubble * 3 : 0;
   viewport.fit(Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad, W, H);
 }
 
@@ -255,6 +288,12 @@ export function PlanView() {
         <Overlay />
       </svg>
       <Compass rot={viewRot} />
+      <button className="zoom-ext" title="Zoom extents: the whole story region with its name" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={fitStory}>
+        <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6}>
+          <path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4" />
+          <rect x={5} y={5} width={6} height={6} strokeWidth={1.2} />
+        </svg>
+      </button>
     </div>
   );
 }
