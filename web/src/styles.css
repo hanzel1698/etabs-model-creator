@@ -279,14 +279,15 @@ label {
   z-index: 2;
 }
 
-/* section-by-elevation slider (3D view) */
+/* section-by-elevation slider (3D view): a narrow translucent strip hugging the canvas's right edge;
+   story names sit outside it, on the canvas */
 .view3d .sec-btn {
   position: absolute;
   top: 8px;
-  right: 8px;
+  right: 3px;
   z-index: 3;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border-radius: 50%;
   display: grid;
@@ -313,14 +314,14 @@ label {
 .view3d .sec-panel {
   position: absolute;
   top: 8px;
-  right: 8px;
+  right: 3px;
   bottom: 8px;
   z-index: 3;
-  width: 140px;
+  width: 30px;
   display: flex;
   flex-direction: column;
-  padding: 6px 8px 14px;
-  border-radius: 10px;
+  padding: 4px 0 12px;
+  border-radius: 15px;
   background: rgba(28, 32, 39, 0.5);
   border: 1px solid rgba(138, 148, 163, 0.25);
   backdrop-filter: blur(6px);
@@ -338,15 +339,17 @@ label {
 }
 .sec-head {
   display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  margin-bottom: 14px;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 12px;
 }
 .sec-head button {
   width: 22px;
   height: 22px;
   padding: 0;
   line-height: 1;
+  border-radius: 50%;
   background: transparent;
   border-color: transparent;
 }
@@ -356,13 +359,12 @@ label {
 .sec-track {
   position: relative;
   flex: 1;
-  margin-left: 56px;
   cursor: pointer;
   touch-action: none;
 }
 .sec-rail {
   position: absolute;
-  left: 14px;
+  left: calc(50% - 1.5px);
   top: 0;
   bottom: 0;
   width: 3px;
@@ -371,7 +373,7 @@ label {
 }
 .sec-range {
   position: absolute;
-  left: 14px;
+  left: calc(50% - 1.5px);
   width: 3px;
   background: var(--accent);
 }
@@ -384,21 +386,21 @@ label {
 }
 .sec-tick {
   position: absolute;
-  left: 9px;
-  width: 13px;
+  left: calc(50% - 7px);
+  width: 14px;
   top: -0.5px;
   height: 1px;
   background: var(--muted);
 }
 .sec-name {
   position: absolute;
-  right: calc(100% - 4px);
+  right: calc(100% + 5px);
   top: -7px;
   font-size: 11px;
   line-height: 14px;
   white-space: nowrap;
   color: var(--text);
-  text-shadow: 0 0 3px #000;
+  text-shadow: 0 0 3px #000, 0 0 2px #000;
   pointer-events: auto;
   cursor: pointer;
   padding: 0 3px;
@@ -414,8 +416,8 @@ label {
 }
 .sec-handle {
   position: absolute;
-  left: 4px;
-  width: 23px;
+  left: calc(50% - 11px);
+  width: 22px;
   height: 10px;
   margin-top: -5px;
   border-radius: 5px;
@@ -427,13 +429,18 @@ label {
 .sec-handle:hover {
   filter: brightness(1.15);
 }
+/* elevation readout: left of the strip, covering the story name while shown */
 .sec-val {
   position: absolute;
-  left: 27px;
-  top: -3px;
+  right: calc(100% + 9px);
+  top: -4px;
+  padding: 0 4px;
+  border-radius: 3px;
   font-size: 10px;
   line-height: 14px;
   color: var(--accent2);
+  background: var(--panel);
+  border: 1px solid rgba(255, 200, 80, 0.4);
   white-space: nowrap;
   pointer-events: none;
   display: none;
