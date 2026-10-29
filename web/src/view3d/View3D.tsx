@@ -1,12 +1,82 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
 import { storyElevations, type Model } from '../model/types';
 import SectionSlider, { type Mark } from './SectionSlider';
 
 const S = 0.001; // mm → m in the scene
 const OPEN = 1e9; // clip-plane constant that clips nothing
+
+export type LabelKind = 'column' | 'beam' | 'slab';
+const LABEL_KINDS: { kind: LabelKind; name: string }[] = [
+  { kind: 'column', name: 'Columns' },
+  { kind: 'beam', name: 'Beams' },
+  { kind: 'slab', name: 'Slabs' },
+];
+
+function label(text: string, color: string, x: number, y: number, z: number): CSS2DObject {
+  const div = document.createElement('div');
+  div.className = 'sec-label';
+  div.textContent = text;
+  div.style.borderColor = color;
+  const o = new CSS2DObject(div);
+  o.position.set(x, y, z);
+  return o;
+}
+
+// wireframe draws every member as its centreline (slabs as their outline) instead of solids
+function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE.Plane[], labels: Set<LabelKind>): THREE.Group {
+  const g = new THREE.Group();
+  const el = storyElevations(m);
+  const mats = new Map<string, THREE.LineBasicMaterial>();
+  const mat = (key: string, color: string) => {
+    if (!mats.has(key)) mats.set(key, new THREE.LineBasicMaterial({ color: new THREE.Color(color), clippingPlanes: clip }));
+    return mats.get(key)!;
+  };
+  const selMat = mat('__sel', '#39ff9a');
+  const vis = (story: string) => !onlyStory || story === onlyStory;
+  const line = (pts: THREE.Vector3[], m: THREE.Material, id: string, loop = false) => {
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const o = loop ? new THREE.LineLoop(geo, m) : new THREE.Line(geo, m);
+    o.userData.id = id;
+    g.add(o);
+  };
+
+  for (const c of m.columns) {
+    const e = el[c.story];
+    if (!e || !vis(c.story)) continue;
+    const x = c.x * S,
+      z = -c.y * S;
+    line([new THREE.Vector3(x, e.bottom * S, z), new THREE.Vector3(x, e.top * S, z)], sel.has(c.id) ? selMat : mat('c' + c.section, sectionColor(c.section)), c.id);
+    if (labels.has('column')) g.add(label(c.section, sectionColor(c.section), x, (e.bottom + e.top) * 0.5 * S, z));
+  }
+  for (const b of m.beams) {
+    const e = el[b.story];
+    if (!e || !vis(b.story)) continue;
+    const y = e.top * S;
+    line([new THREE.Vector3(b.x1 * S, y, -b.y1 * S), new THREE.Vector3(b.x2 * S, y, -b.y2 * S)], sel.has(b.id) ? selMat : mat('b' + b.section, sectionColor(b.section)), b.id);
+    if (labels.has('beam')) g.add(label(b.section, sectionColor(b.section), ((b.x1 + b.x2) / 2) * S, y, (-(b.y1 + b.y2) / 2) * S));
+  }
+  for (const sl of m.slabs) {
+    const e = el[sl.story];
+    if (!e || !vis(sl.story) || !sl.pts.length) continue;
+    const y = e.top * S;
+    line(
+      sl.pts.map((p) => new THREE.Vector3(p.x * S, y, -p.y * S)),
+      sel.has(sl.id) ? selMat : mat('s' + sl.section, sectionColor(sl.section)),
+      sl.id,
+      true,
+    );
+    if (labels.has('slab')) {
+      const cx = sl.pts.reduce((a, p) => a + p.x, 0) / sl.pts.length,
+        cy = sl.pts.reduce((a, p) => a + p.y, 0) / sl.pts.length;
+      g.add(label(sl.section, sectionColor(sl.section), cx * S, y, -cy * S));
+    }
+  }
+  return g;
+}
 
 function build(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE.Plane[]): THREE.Group {
   const g = new THREE.Group();
@@ -89,6 +159,14 @@ export default function View3D() {
   const selection = useApp((s) => s.selection);
   const activeStory = useApp((s) => s.activeStory);
   const [onlyStory, setOnlyStory] = useState(false);
+  const [wire, setWire] = useState(false);
+  const [labels, setLabels] = useState<Set<LabelKind>>(new Set());
+  const toggleLabel = (k: LabelKind) =>
+    setLabels((cur) => {
+      const n = new Set(cur);
+      if (!n.delete(k)) n.add(k);
+      return n;
+    });
   const fitted = useRef(false);
   // section cuts: by elevation, by X grids and by Y grids
   const zCut = useCut(
@@ -131,6 +209,10 @@ export default function View3D() {
       new THREE.Vector3(0, 0, 1),
     ].map((n) => new THREE.Plane(n, OPEN));
     el.appendChild(renderer.domElement);
+    // section-name labels (wireframe) are DOM overlays positioned by this renderer
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.domElement.className = 'label-layer';
+    el.appendChild(labelRenderer.domElement);
     const scene = new THREE.Scene();
     scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 1.1));
     const dl = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -150,6 +232,11 @@ export default function View3D() {
         raf = 0;
         if (controls.update()) render();
         renderer.render(scene, camera);
+        // hide labels of members cut away by the section planes
+        ctx.current?.group?.children.forEach((o) => {
+          if (o instanceof CSS2DObject) o.visible = clip.every((p) => p.distanceToPoint(o.position) >= -1e-6);
+        });
+        labelRenderer.render(scene, camera);
       });
     };
     controls.addEventListener('change', render);
@@ -157,6 +244,7 @@ export default function View3D() {
       const w = el.clientWidth,
         h = el.clientHeight;
       renderer.setSize(w, h);
+      labelRenderer.setSize(w, h);
       camera.aspect = w / Math.max(1, h);
       camera.updateProjectionMatrix();
       render();
@@ -164,6 +252,7 @@ export default function View3D() {
     ro.observe(el);
     // click to select
     const ray = new THREE.Raycaster();
+    ray.params.Line.threshold = 0.15; // m: how close a click must be to a wireframe line
     let downAt = { x: 0, y: 0 };
     const pd = (e: PointerEvent) => (downAt = { x: e.clientX, y: e.clientY });
     const pu = (e: PointerEvent) => {
@@ -186,6 +275,7 @@ export default function View3D() {
       ro.disconnect();
       renderer.dispose();
       el.removeChild(renderer.domElement);
+      el.removeChild(labelRenderer.domElement);
       ctx.current = null;
     };
   }, []);
@@ -195,16 +285,21 @@ export default function View3D() {
     if (!c) return;
     if (c.group) {
       c.scene.remove(c.group);
-      c.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      c.group.traverse((o) => {
+        (o as THREE.Mesh).geometry?.dispose();
+        // removing the group doesn't fire 'removed' on its labels, so drop their DOM nodes here
+        if (o instanceof CSS2DObject) o.element.remove();
+      });
     }
-    c.group = build(model, new Set(selection), onlyStory ? activeStory : null, c.clip);
+    const story = onlyStory ? activeStory : null;
+    c.group = wire ? buildWire(model, new Set(selection), story, c.clip, labels) : build(model, new Set(selection), story, c.clip);
     c.scene.add(c.group);
     if (!fitted.current && c.group.children.length) {
       fitView();
       fitted.current = true;
     }
     c.render();
-  }, [model, selection, onlyStory, activeStory]);
+  }, [model, selection, onlyStory, activeStory, wire, labels]);
 
   useEffect(() => {
     const c = ctx.current;
@@ -251,6 +346,19 @@ export default function View3D() {
         >
           Reset 3D view
         </button>
+        <button className={wire ? 'on' : ''} title="Show members as centrelines and slabs as outlines" onClick={() => setWire(!wire)}>
+          Wireframe
+        </button>
+        {wire && (
+          <span className="label-picks" title="Show section names">
+            Names:
+            {LABEL_KINDS.map(({ kind, name }) => (
+              <button key={kind} className={labels.has(kind) ? 'on' : ''} onClick={() => toggleLabel(kind)}>
+                {name}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
       <SectionSlider side="right" title="Section by elevation" marks={zCut.marks} lo={zCut.lo} hi={zCut.hi} onChange={zCut.set} />
       {xCut.marks.length > 1 && <SectionSlider side="bottom" title="Section along X grids" marks={xCut.marks} lo={xCut.lo} hi={xCut.hi} onChange={xCut.set} />}

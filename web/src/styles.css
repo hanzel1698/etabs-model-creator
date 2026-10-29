@@ -274,9 +274,40 @@ label {
   position: absolute;
   top: 6px;
   left: 6px;
+  right: 44px; /* clear of the elevation slider's corner button; the bar wraps instead */
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   z-index: 2;
+  pointer-events: none; /* the empty part of the bar must not swallow orbit drags */
+}
+.view3d .bar > * {
+  pointer-events: auto;
+}
+.view3d .label-picks {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  color: var(--text);
+  font-size: 12px;
+}
+/* section-name labels drawn over the wireframe */
+.view3d .label-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.view3d .sec-label {
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+  color: #e6ebf2;
+  background: rgba(21, 24, 29, 0.78);
+  border: 1px solid;
+  border-radius: 3px;
 }
 
 /* section sliders (3D view): narrow translucent strips docked to the canvas's right (elevation),
