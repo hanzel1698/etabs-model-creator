@@ -1,4 +1,4 @@
-import type { FrameLoad, LoadDir, Model, PatternType, ShellLoad } from '../model/types';
+import type { Beam, Column, FrameLoad, LoadDir, Model, PatternType, ShellLoad, Slab } from '../model/types';
 import { columnSpan, storyElevations } from '../model/types';
 import type { AreaLoadOut, FrameLoadOut, ImportResult, JointLoadOut, PushPayload, Supports } from './bridgeClient';
 import { uid } from '../model/types';
@@ -71,6 +71,104 @@ export function frameLoadOut(l: FrameLoad): FrameLoadOut {
 
 /** App shell load (kN/m²) → kN/mm². */
 export const areaLoadOut = (l: ShellLoad): AreaLoadOut => ({ pattern: l.pattern, dir: DIR_CODE[l.dir], value: l.value * 1e-6 });
+
+const CODE_DIR = Object.fromEntries(Object.entries(DIR_CODE).map(([k, v]) => [v, k])) as Record<number, LoadDir>;
+
+/** ETABS frame load (kN-mm) → app (kN, m); the inverse of frameLoadOut. Null for a direction the app lacks. */
+export function frameLoadIn(l: FrameLoadOut): FrameLoad | null {
+  const dir = CODE_DIR[l.dir];
+  if (!dir) return null;
+  const force = l.type === 1 ? 'F' : 'M';
+  const k = l.kind === 'dist' ? (force === 'F' ? 1e3 : 1) : force === 'F' ? 1 : 1e-3;
+  return { pattern: l.pattern, kind: l.kind, force, dir, rel: l.rel, d1: l.d1, d2: l.d2, v1: l.v1 * k, v2: l.v2 * k };
+}
+
+/** ETABS uniform area load (kN/mm²) → kN/m². */
+export const areaLoadIn = (l: AreaLoadOut): ShellLoad | null => (CODE_DIR[l.dir] ? { pattern: l.pattern, dir: CODE_DIR[l.dir], value: l.value * 1e6 } : null);
+
+const near = (a: number, b: number) => Math.abs(a - b) <= 1;
+
+/**
+ * Add the frame and area objects of an ETABS import as columns, beams and slabs. Each keeps its ETABS GUID as
+ * its id and counts as pushed, so pushes update it and deleting it in the app deletes it in ETABS. Objects the
+ * app already has (same id, or same place on the same story) are left as they are. Elements must sit on the
+ * model's story levels; braces, walls and anything between levels are skipped and counted in `skipped`.
+ * Loads come along in the patterns the model has (the ones a push with loads rewrites).
+ */
+export function importElements(m: Model, r: Pick<ImportResult, 'frames' | 'areas'>) {
+  const el = storyElevations(m);
+  const byTop = (z: number) => m.stories.find((s) => near(el[s.name].top, z))?.name;
+  const byBottom = (z: number) => m.stories.find((s) => near(el[s.name].bottom, z))?.name;
+  const pats = new Set(m.loadPatterns.map((p) => p.name));
+  const ids = new Set([...m.columns, ...m.beams, ...m.slabs].map((x) => x.id));
+  const skipped: Record<string, number> = {};
+  const skip = (why: string) => (skipped[why] = (skipped[why] ?? 0) + 1);
+  const columns: Column[] = [],
+    beams: Beam[] = [],
+    slabs: Slab[] = [];
+  const keep = <I extends { pattern: string }, O>(ls: I[], conv: (l: I) => O | null) => {
+    const out = ls.filter((l) => pats.has(l.pattern)).map(conv).filter((x): x is O => !!x);
+    return out.length ? out : undefined;
+  };
+
+  for (const f of r.frames ?? []) {
+    if (ids.has(f.guid)) {
+      skip('already in the app');
+      continue;
+    }
+    const [a, b] = f.pts;
+    const loads = keep(f.loads, frameLoadIn);
+    if (near(a.x, b.x) && near(a.y, b.y)) {
+      const story = byTop(Math.max(a.z, b.z)),
+        base = byBottom(Math.min(a.z, b.z));
+      if (!story || !base || el[base].index > el[story].index) {
+        skip('not between story levels');
+        continue;
+      }
+      const c: Column = { id: f.guid, story, x: a.x, y: a.y, section: f.section, angle: f.angle, ...(base !== story ? { base } : {}), ...(loads ? { loads } : {}) };
+      if ([...m.columns, ...columns].some((o) => o.story === story && (o.base ?? o.story) === base && near(o.x, c.x) && near(o.y, c.y))) skip('already in the app');
+      else columns.push(c);
+    } else if (near(a.z, b.z)) {
+      const story = byTop(a.z);
+      if (!story) {
+        skip('not at a story level');
+        continue;
+      }
+      const same = (o: Beam) => o.story === story && ((near(o.x1, a.x) && near(o.y1, a.y) && near(o.x2, b.x) && near(o.y2, b.y)) || (near(o.x1, b.x) && near(o.y1, b.y) && near(o.x2, a.x) && near(o.y2, a.y)));
+      if ([...m.beams, ...beams].some(same)) skip('already in the app');
+      else beams.push({ id: f.guid, story, x1: a.x, y1: a.y, x2: b.x, y2: b.y, section: f.section, ...(loads ? { loads } : {}) });
+    } else skip('braces (the app has none)');
+  }
+
+  for (const s of r.areas ?? []) {
+    if (ids.has(s.guid)) {
+      skip('already in the app');
+      continue;
+    }
+    const zs = s.pts.map((p) => p.z);
+    if (Math.max(...zs) - Math.min(...zs) > 1) {
+      skip('walls (the app has none)');
+      continue;
+    }
+    const story = byTop(zs[0]);
+    if (!story) {
+      skip('not at a story level');
+      continue;
+    }
+    const pts = s.pts.map((p) => ({ x: p.x, y: p.y }));
+    const same = (o: Slab) => o.story === story && o.pts.length === pts.length && pts.every((p) => o.pts.some((q) => near(p.x, q.x) && near(p.y, q.y)));
+    if ([...m.slabs, ...slabs].some(same)) {
+      skip('already in the app');
+      continue;
+    }
+    const loads = keep(s.loads, areaLoadIn);
+    slabs.push({ id: s.guid, story, pts, section: s.section, ...(loads ? { loads } : {}) });
+  }
+
+  const added = [...columns, ...beams, ...slabs].map((x) => x.id);
+  const model: Model = { ...m, columns: [...m.columns, ...columns], beams: [...m.beams, ...beams], slabs: [...m.slabs, ...slabs], pushedIds: [...new Set([...m.pushedIds, ...added])] };
+  return { model, columns: columns.length, beams: beams.length, slabs: slabs.length, skipped };
+}
 
 /** `story|x|y` (mm, rounded) of every joint that carries a joint load. */
 export const jointKeys = (m: Model) => [...new Set(m.jointLoads.map((j) => `${j.story}|${Math.round(j.x)}|${Math.round(j.y)}`))];

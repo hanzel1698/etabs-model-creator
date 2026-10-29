@@ -49,8 +49,13 @@ export interface ImportResult {
   frameSections: FrameSection[];
   slabSections: SlabSection[];
   patterns: LoadPattern[];
+  /** every frame and area object (not openings), by its ETABS GUID; loads in the push form */
+  frames: { name: string; guid: string; section: string; angle: number; pts: P3[]; loads: FrameLoadOut[] }[];
+  areas: { name: string; guid: string; section: string; pts: P3[]; loads: AreaLoadOut[] }[];
   warnings: string[];
 }
+
+type P3 = { x: number; y: number; z: number };
 
 /** Frame load in ETABS terms (kN, mm): MyType 1 force / 2 moment, Dir code, distances relative or mm. */
 export interface FrameLoadOut {

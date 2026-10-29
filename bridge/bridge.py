@@ -258,10 +258,48 @@ def do_import():
             "frameSections": get_frame_sections(m, warnings),
             "slabSections": get_slab_sections(m, warnings),
             "patterns": get_patterns(m),
+            **get_elements(m, warnings),
             "warnings": warnings,
         }
     finally:
         m.SetPresentUnits(units)
+
+
+def get_elements(m, warnings):
+    """
+    Frame and area objects with their GUIDs, which become the app element ids (so pushes update them in
+    place). An object without a GUID is given one in ETABS. Openings are left out. Frame and uniform area
+    loads come along in the push form (kN-mm, relative distances), so a push with loads keeps them.
+    """
+    pats = {x["name"] for x in get_patterns(m)}
+    cur_f = current_frame_loads(m, pats)
+    cur_a = current_area_loads(m, pats)
+    frames, areas = [], []
+    for is_frame, out in ((True, frames), (False, areas)):
+        obj = m.FrameObj if is_frame else m.AreaObj
+        for name, g, geom in geom_index(m, is_frame):
+            try:
+                if not is_frame and m.AreaObj.GetOpening(name, False)[0]:
+                    continue
+                if not g:
+                    if m.GetModelIsLocked():
+                        m.SetModelIsLocked(False)
+                    g = str(uuid.uuid4())
+                    ok(obj.SetGUID(name, g), "SetGUID")
+                if is_frame:
+                    a, b = geom
+                    out.append({"name": name, "guid": g, "section": m.FrameObj.GetSection(name, "", "")[0],
+                                "angle": m.FrameObj.GetLocalAxes(name, 0.0, False)[0],
+                                "pts": [{"x": a[0], "y": a[1], "z": a[2]}, {"x": b[0], "y": b[1], "z": b[2]}],
+                                "loads": [{"pattern": l["pattern"], "kind": l["kind"], "type": l["type"], "dir": l["dir"], "rel": True,
+                                           "d1": l["rd"][0], "d2": l["rd"][1], "v1": l["v1"], "v2": l["v2"]} for l in cur_f.get(name, [])]})
+                else:
+                    out.append({"name": name, "guid": g, "section": m.AreaObj.GetProperty(name, "")[0],
+                                "pts": [{"x": p[0], "y": p[1], "z": p[2]} for p in geom],
+                                "loads": [{"pattern": pt, "dir": d, "value": v} for pt, d, v in cur_a.get(name, [])]})
+            except Exception as e:
+                warnings.append(f"{'Frame' if is_frame else 'Area'} {name} not read: {e}")
+    return {"frames": frames, "areas": areas}
 
 # ---------------------------------------------------------------- loads
 #
@@ -766,7 +804,7 @@ def guid_map(obj, m):
         try:
             g = obj.GetGUID(n, "")
             if g[-1] == 0 and g[0]:
-                out[g[0]] = n
+                out[to_guid(g[0])] = n
         except Exception:
             pass
     return out
@@ -808,6 +846,7 @@ def geom_index(m, is_frame):
     for n in lst(ok(obj.GetNameList(0, []), "GetNameList")[1]):
         try:
             g = obj.GetGUID(n, "")[0] or ""
+            g = to_guid(g) if g else ""  # GUIDs ETABS made may differ in case/braces from the form the app uses
             out.append((n, g, frame_geom(m, n) if is_frame else area_geom(m, n)))
         except Exception:
             pass
@@ -1116,7 +1155,7 @@ def do_delete(p):
     for key, obj in (("frames", m.FrameObj), ("areas", m.AreaObj)):
         for name in p.get(key, []):
             try:
-                if obj.GetGUID(name, "")[0] in keep:
+                if to_guid(obj.GetGUID(name, "")[0]) in keep:
                     log.append(f"Skipped {name}: an app element owns it")
                     continue
                 ok(obj.Delete(name, 0), "Delete")

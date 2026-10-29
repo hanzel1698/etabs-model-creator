@@ -10,7 +10,7 @@ import { columnStories, uid, storyElevations, type Column, type FrameSection, ty
 import { useUnderlay, saveUnderlayMeta, rescaleDxf, rectOf, withStories } from '../underlay/store';
 import { setTool, redrawRegion } from '../plan/tools';
 import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports, type Unowned } from '../etabs/bridgeClient';
-import { toPayload, applyImport, jointKeys } from '../etabs/mapping';
+import { toPayload, applyImport, importElements, jointKeys } from '../etabs/mapping';
 import { fitAll } from '../plan/PlanView';
 import { log as sessionLog } from '../log/sessionLog';
 import { modelIssues } from '../model/checks';
@@ -597,7 +597,7 @@ function EtabsDialog() {
   const [busy, setBusy] = useState('');
   const [log, setLog] = useState<string[]>([]);
   const [url, setUrl] = useState(bridgeUrl());
-  const [imp, setImp] = useState({ sections: true, stories: true, grids: true, patterns: true });
+  const [imp, setImp] = useState({ sections: true, stories: true, grids: true, patterns: true, elements: true });
   const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; supports: Supports; loads: boolean }>({ updateStories: false, pushGrids: false, supports: 'none', loads: true });
   const [unowned, setUnowned] = useState<Unowned[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -630,10 +630,23 @@ function EtabsDialog() {
   const doImport = () =>
     run('Importing…', async () => {
       const r = await bridge.import();
-      useApp.getState().commit((m) => applyImport(m, r, imp));
+      let el: ReturnType<typeof importElements> | null = null;
+      useApp.getState().commit((m) => {
+        const out = applyImport(m, r, imp);
+        if (!imp.elements) return out;
+        el = importElements(out, r);
+        return el.model;
+      });
       const st = useApp.getState();
       if (!st.model.stories.some((s) => s.name === st.activeStory)) st.setActiveStory(st.model.stories[0]?.name ?? '');
-      add(`✔ Imported ${r.stories.length} stories, ${r.grids.length} grids, ${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections, ${r.patterns?.length ?? 0} load patterns`, ...r.warnings.map((w) => '⚠ ' + w));
+      const e = el as ReturnType<typeof importElements> | null;
+      const skipped = e ? Object.entries(e.skipped).map(([why, n]) => `${n} skipped: ${why}`) : [];
+      add(
+        `✔ Imported ${r.stories.length} stories, ${r.grids.length} grids, ${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections, ${r.patterns?.length ?? 0} load patterns` +
+          (e ? `, ${e.columns} columns, ${e.beams} beams, ${e.slabs} slabs` : ''),
+        ...skipped,
+        ...r.warnings.map((w) => '⚠ ' + w),
+      );
       requestAnimationFrame(() => fitAll());
     });
 
@@ -705,9 +718,14 @@ function EtabsDialog() {
       <div className="section">
         <h4>Import from ETABS</h4>
         <div className="chips">
-          {(['sections', 'stories', 'grids', 'patterns'] as const).map((k) => (
-            <label key={k} className="small">
-              <input type="checkbox" checked={imp[k]} onChange={() => setImp({ ...imp, [k]: !imp[k] })} /> {k === 'sections' ? 'Materials + sections' : k === 'patterns' ? 'Load patterns' : k[0].toUpperCase() + k.slice(1)}
+          {(['sections', 'stories', 'grids', 'patterns', 'elements'] as const).map((k) => (
+            <label
+              key={k}
+              className="small"
+              title={k === 'elements' ? 'Columns, beams and slabs on the story levels, with their frame and slab loads in the app’s patterns. They are then managed by the app: pushes update them and deleting them here deletes them in ETABS.' : undefined}
+            >
+              <input type="checkbox" checked={imp[k]} onChange={() => setImp({ ...imp, [k]: !imp[k] })} />{' '}
+              {k === 'sections' ? 'Materials + sections' : k === 'patterns' ? 'Load patterns' : k === 'elements' ? 'Columns, beams, slabs' : k[0].toUpperCase() + k.slice(1)}
             </label>
           ))}
           <button onClick={doImport} disabled={!!busy}>Import</button>

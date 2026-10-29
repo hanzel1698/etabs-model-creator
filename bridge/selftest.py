@@ -98,6 +98,19 @@ def main():
         imp = B.do_import()
         print("import:", len(imp["stories"]), "stories", [s["name"] for s in imp["stories"]], len(imp["grids"]), "grids",
               [s["name"] for s in imp["frameSections"]], [s["name"] for s in imp["slabSections"]], imp["warnings"])
+        fr = {f["guid"]: f for f in imp["frames"]}
+        print("import elements:", len(imp["frames"]), "frames,", len(imp["areas"]), "areas")
+        assert len(imp["frames"]) == 16 and len(imp["areas"]) == 2, imp["warnings"]
+        assert {B.to_guid(f["guid"]) for f in p["frames"]} == set(fr), "imported frames should carry the pushed GUIDs"
+        assert abs(fr[B.to_guid("col-Story1-0-0")]["angle"] - 30) < 1e-6, fr[B.to_guid("col-Story1-0-0")]
+
+        # an object drawn in ETABS comes in with a GUID that a push finds it by
+        B.ok(m.SetPresentUnits(B.KN_MM_C), "SetPresentUnits")
+        drawn = m.FrameObj.AddByCoord(0, 0, 3000, 6000, 5000, 3000, "", "B300x500", "", "Global")[0]
+        new = [f for f in B.do_import()["frames"] if f["name"] == drawn]
+        print("drawn in ETABS:", new)
+        assert len(new) == 1 and new[0]["guid"] in B.guid_map(m.FrameObj, m), new
+        B.ok(m.FrameObj.Delete(drawn, 0), "FrameObj.Delete")
 
         print("verify 1:", B.do_verify(p)["log"][0])
 
@@ -136,6 +149,12 @@ def main():
         v = B.do_verify(p4)
         print("verify 4:", v["log"][0])
         assert v["ok"], v
+        loaded = {f["guid"]: f["loads"] for f in B.do_import()["frames"]}[B.to_guid("beam-Story1-1")]
+        print("imported loads on beam-Story1-1:", loaded)
+        assert len(loaded) == 1 and loaded[0]["rel"] and abs(loaded[0]["v1"] - 0.01) < 1e-9 and loaded[0]["dir"] == 10, loaded
+        # pushing the loads as imported changes nothing
+        same = dict(p4, frames=[dict(f, loads=loaded if f["guid"] == "beam-Story1-1" else f["loads"]) for f in p4["frames"]])
+        assert B.do_verify(same)["ok"], "imported loads should match ETABS"
         r = B.do_push(p4)
         print("push 5 (same loads):", r["loads"])
         assert r["loads"]["frames"] == r["loads"]["areas"] == r["loads"]["joints"] == 0, r["loads"]
