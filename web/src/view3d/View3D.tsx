@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
-import { storyElevations, type Model } from '../model/types';
+import { columnOn, columnSpan, storyElevations, type Column, type Model } from '../model/types';
 import SectionSlider, { type Mark } from './SectionSlider';
 
 const S = 0.001; // mm → m in the scene
@@ -39,6 +39,7 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
   const selMat = mat('__sel', '#39ff9a');
   const fills = new Map<string, THREE.MeshBasicMaterial>();
   const vis = (story: string) => !onlyStory || story === onlyStory;
+  const colVis = (c: Column) => !onlyStory || columnOn(m, c, onlyStory);
   const line =(pts: THREE.Vector3[], m: THREE.Material, id: string, loop = false) => {
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
     const o = loop ? new THREE.LineLoop(geo, m) : new THREE.Line(geo, m);
@@ -48,8 +49,8 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
   };
 
   for (const c of m.columns) {
-    const e = el[c.story];
-    if (!e || !vis(c.story)) continue;
+    const e = columnSpan(el, c);
+    if (!e || !colVis(c)) continue;
     const x = c.x * S,
       z = -c.y * S;
     line([new THREE.Vector3(x, e.bottom * S, z), new THREE.Vector3(x, e.top * S, z)], sel.has(c.id) ? selMat : mat('c' + c.section, sectionColor(c.section)), c.id);
@@ -103,10 +104,11 @@ function build(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE
   };
   const selMat = mat('__sel', '#39ff9a');
   const vis = (story: string) => !onlyStory || story === onlyStory;
+  const colVis = (c: Column) => !onlyStory || columnOn(m, c, onlyStory);
 
   for (const c of m.columns) {
-    const e = el[c.story];
-    if (!e || !vis(c.story)) continue;
+    const e = columnSpan(el, c);
+    if (!e || !colVis(c)) continue;
     const s = secs.get(c.section);
     const h = (e.top - e.bottom) * S;
     let geo: THREE.BufferGeometry;

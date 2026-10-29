@@ -74,9 +74,10 @@ function moved(pa: Pt[], pb: Pt[]): string | null {
 const field = (label: string, a: unknown, b: unknown, unit = '') => (a !== b ? [`${label} ${a}${unit} → ${b}${unit}`] : []);
 
 const columnWords: Words<Column> = {
-  describe: (c) => `column ${c.section} on ${c.story} at ${pt(c.x, c.y)}${c.angle ? `, rotated ${c.angle}°` : ''}`,
+  describe: (c) => `column ${c.section} on ${c.base ? `${c.base}–${c.story}` : c.story} at ${pt(c.x, c.y)}${c.angle ? `, rotated ${c.angle}°` : ''}`,
   compare: (a, b) => [
     ...field('story', a.story, b.story),
+    ...field('base story', a.base ?? a.story, b.base ?? b.story),
     ...field('section', a.section, b.section),
     ...(a.x !== b.x || a.y !== b.y ? [`moved ${pt(a.x, a.y)} → ${pt(b.x, b.y)}`] : []),
     ...field('angle', a.angle, b.angle, '°'),
@@ -149,9 +150,9 @@ function diffList<T extends Keyed>(a: T[], b: T[], word: string, key: (x: T) => 
   const out: string[] = [];
   const list = (l: T[]) => (l.length <= DETAIL ? ': ' + l.map(w.describe).join(' | ') : where(l));
 
-  // one edit that both removes and adds beams or slabs is a split, a join or a replacement
-  if (added.length && removed.length && (word === 'beam' || word === 'slab')) {
-    const verb = removed.length === 1 && added.length > 1 ? 'Split' : added.length === 1 && removed.length > 1 ? (word === 'beam' ? 'Joined' : 'Merged') : 'Replaced';
+  // one edit that both removes and adds columns, beams or slabs is a split, a join or a replacement
+  if (added.length && removed.length && (word === 'column' || word === 'beam' || word === 'slab')) {
+    const verb = removed.length === 1 && added.length > 1 ? 'Split' : added.length < removed.length ? (word === 'slab' ? 'Merged' : 'Joined') : 'Replaced';
     out.push(`${verb} ${plural(removed.length, word)}${list(removed)} → into ${plural(added.length, word)}${list(added)}`);
   } else {
     if (added.length) out.push(`Added ${plural(added.length, word)}${list(added)}`);

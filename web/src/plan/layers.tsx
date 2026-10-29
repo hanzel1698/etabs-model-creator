@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo } from 'react';
 import { useApp, sectionColor } from '../model/store';
-import type { Beam, Column, FrameSection, Grid, Model, Slab } from '../model/types';
+import { columnOn, type Beam, type Column, type FrameSection, type Grid, type Model, type Slab } from '../model/types';
 import { angleDeg, fmt, polyArea } from '../model/geom';
 import { gridDimensions } from '../model/ops';
 import { columnOutline } from './snap';
@@ -193,7 +193,7 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, show
         );
       })}
       {m.columns.map((c) => {
-        if (c.story !== story) return null;
+        if (!columnOn(m, c, story)) return null;
         const sec = secs.get(c.section);
         const off = Math.max(sec?.t3 || 400, sec?.t2 || 400) / 2 + h * 0.3;
         return (

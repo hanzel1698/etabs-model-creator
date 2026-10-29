@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { useApp, usePreview, visibleModel } from '../model/store';
 import { cachedStoryNodes, isNodeId, type PanelSize } from '../model/ops';
 import { fmt } from '../model/geom';
-import type { Beam, Pt } from '../model/types';
+import { columnOn, type Beam, type Pt } from '../model/types';
 import { viewport } from './viewport';
 import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer } from './layers';
 import { onMove, onClick, onCancel, finishPolygon, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, type Grip } from './tools';
@@ -58,7 +58,7 @@ export function fitStory() {
   const xs = [reg.rect.minX - reg.ref.x, reg.rect.maxX - reg.ref.x],
     ys = [reg.rect.minY - reg.ref.y, reg.rect.maxY - reg.ref.y];
   m.grids.forEach((g) => (xs.push(g.x1, g.x2), ys.push(g.y1, g.y2)));
-  m.columns.forEach((c) => c.story === story && (xs.push(c.x), ys.push(c.y)));
+  m.columns.forEach((c) => columnOn(m, c, story) && (xs.push(c.x), ys.push(c.y)));
   m.beams.forEach((b) => b.story === story && (xs.push(b.x1, b.x2), ys.push(b.y1, b.y2)));
   m.slabs.forEach((s) => s.story === story && s.pts.forEach((p) => (xs.push(p.x), ys.push(p.y))));
   const pad = m.grids.length ? st.gridBubble * 3 : 0;
@@ -113,10 +113,10 @@ export function PlanView() {
     return i > 0 ? model.stories[i - 1].name : null;
   }, [model.stories, story]);
 
-  const cols = useMemo(() => model.columns.filter((c) => c.story === story), [model.columns, story]);
+  const cols = useMemo(() => model.columns.filter((c) => columnOn(model, c, story)), [model, story]);
   const beams = useMemo(() => model.beams.filter((b) => b.story === story), [model.beams, story]);
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
-  const gCols = useMemo(() => (below && show.ghostBelow ? model.columns.filter((c) => c.story === below) : []), [model.columns, below, show.ghostBelow]);
+  const gCols = useMemo(() => (below && show.ghostBelow ? model.columns.filter((c) => columnOn(model, c, below)) : []), [model, below, show.ghostBelow]);
   const gBeams = useMemo(() => (below && show.ghostBelow ? model.beams.filter((b) => b.story === below) : []), [model.beams, below, show.ghostBelow]);
   const empty = useMemo(() => new Set<string>(), []);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, joinBeams, matchElements, mergeSlabs, moveIds, nextGridLabel, oppositeLabelStart, panelSize, addSlab, patchIds, replicate, setBeamEnd, slabsUnderBeams, splitSlabsByBeams, storyAtOffset, storyNodes } from './ops';
+import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, joinBeams, joinColumns, matchElements, mergeSlabs, moveIds, nextGridLabel, oppositeLabelStart, panelSize, addSlab, patchIds, replicate, setBeamEnd, slabsUnderBeams, splitSlabsByBeams, storyAtOffset, storyNodes } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
 import { emptyModel, type Model } from './types';
 import { toPayload } from '../etabs/mapping';
@@ -320,5 +320,35 @@ describe('joining beams', () => {
     expect(joinBeams(m, m.beams.map((b) => b.id)).joined).toBe(0);
     m = addBeams(m, [[{ x: 3000, y: 0 }, { x: 4000, y: 0 }]], ['Story2'], B);
     expect(joinBeams(m, m.beams.map((b) => b.id)).model).toBe(m);
+  });
+});
+
+describe('joinColumns', () => {
+  const at = (m: Model, x: number) => m.columns.filter((c) => c.x === x);
+  it('joins columns stacked on consecutive stories into one spanning column', () => {
+    let m = addColumns(emptyModel(), [{ x: 0, y: 0 }], ['Story1', 'Story2', 'Story3'], 'C400x400', 0);
+    m = addColumns(m, [{ x: 6000, y: 0 }], ['Story1'], 'C400x400', 0);
+    const r = joinColumns(m, m.columns.map((c) => c.id));
+    expect(r).toMatchObject({ joined: 1, from: 3, mixed: 0 });
+    expect(at(r.model, 0)).toEqual([expect.objectContaining({ base: 'Story1', story: 'Story3' })]);
+    expect(at(r.model, 6000)).toHaveLength(1);
+    // one frame in ETABS from the base to the top of Story3
+    const f = toPayload(r.model, { updateStories: false, pushGrids: false }).frames.find((x) => x.guid === r.ids[0])!;
+    expect([f.z1, f.z2]).toEqual([0, 9000]);
+    // it still stands on every story it passes through
+    expect(storyNodes(r.model, 'Story2').some((n) => n.from.includes('column'))).toBe(true);
+    expect(addColumns(r.model, [{ x: 0, y: 0 }], ['Story2'], 'C400x400', 0)).toBe(r.model);
+  });
+  it('leaves a gap story and columns at other points apart', () => {
+    let m = addColumns(emptyModel(), [{ x: 0, y: 0 }], ['Story1', 'Story3'], 'C400x400', 0);
+    m = addColumns(m, [{ x: 500, y: 0 }], ['Story2'], 'C400x400', 0);
+    expect(joinColumns(m, m.columns.map((c) => c.id)).model).toBe(m);
+  });
+  it('moves a joined column up a story with both ends', () => {
+    const m = addColumns(emptyModel(), [{ x: 0, y: 0 }], ['Story1', 'Story2'], 'C400x400', 0);
+    const r = joinColumns(m, m.columns.map((c) => c.id));
+    const up = moveIds(r.model, r.ids, 0, 0, 3000);
+    expect(up.columns[0]).toMatchObject({ base: 'Story2', story: 'Story3' });
+    expect(moveIds(r.model, r.ids, 0, 0, 6000).columns[0]).toMatchObject({ base: 'Story1', story: 'Story2' });
   });
 });

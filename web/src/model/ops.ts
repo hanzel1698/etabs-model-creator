@@ -1,5 +1,5 @@
 import type { Beam, Column, Grid, Model, Pt, Slab } from './types';
-import { uid, storyElevations } from './types';
+import { columnOn, columnStories, uid, storyElevations } from './types';
 import { alphaLabel, dist, distToSeg, lineIntersect, polyArea, pointInPoly, segIntersect, sub, cross } from './geom';
 
 const TOL = 1; // mm, coincidence tolerance
@@ -131,7 +131,7 @@ export function addColumns(m: Model, pts: Pt[], stories: string[], section: stri
   const cols = [...m.columns];
   for (const story of stories)
     for (const p of pts) {
-      if (cols.some((c) => c.story === story && Math.abs(c.x - p.x) < TOL && Math.abs(c.y - p.y) < TOL)) continue;
+      if (cols.some((c) => columnOn(m, c, story) && Math.abs(c.x - p.x) < TOL && Math.abs(c.y - p.y) < TOL)) continue;
       cols.push({ id: uid(), story, x: p.x, y: p.y, section, angle });
     }
   return cols.length === m.columns.length ? m : { ...m, columns: cols };
@@ -160,7 +160,7 @@ export function addSlab(m: Model, pts: Pt[], story: string, section: string): Mo
 
 /** Beams along grid lines between consecutive columns on the given story. */
 export function autoBeamsOnGrids(m: Model, story: string, section: string): Model {
-  const cols = m.columns.filter((c) => c.story === story);
+  const cols = m.columns.filter((c) => columnOn(m, c, story));
   const segs: [Pt, Pt][] = [];
   for (const g of m.grids) {
     const a = { x: g.x1, y: g.y1 },
@@ -198,7 +198,7 @@ export function storyNodes(m: Model, story: string): PlanNode[] {
     } else out.push({ id: '', x: p.x, y: p.y, from: [src] });
   };
   gridIntersections(m.grids).forEach((p) => add(p, 'grid'));
-  m.columns.forEach((c) => c.story === story && add(c, 'column'));
+  m.columns.forEach((c) => columnOn(m, c, story) && add(c, 'column'));
   const beams = m.beams.filter((b) => b.story === story);
   for (let i = 0; i < beams.length; i++)
     for (let j = i + 1; j < beams.length; j++) {
@@ -251,7 +251,15 @@ export function moveIds(m: Model, ids: string[], dx: number, dy: number, dz = 0)
   return {
     ...m,
     grids: m.grids.map((x) => (s.has(x.id) ? mvGrid(x, dx, dy) : x)),
-    columns: m.columns.map((x) => (s.has(x.id) ? st(mvCol(x, dx, dy)) : x)),
+    columns: m.columns.map((x) => {
+      if (!s.has(x.id)) return x;
+      const c = mvCol(x, dx, dy);
+      // a joined column moves only when both its ends land on a story
+      if (!dz || !c.base) return st(c);
+      const top = storyAtOffset(m, c.story, dz),
+        base = storyAtOffset(m, c.base, dz);
+      return top && base ? { ...c, story: top, base } : c;
+    }),
     beams: m.beams.map((x) => (s.has(x.id) ? st(mvBeam(x, dx, dy)) : x)),
     slabs: m.slabs.map((x) => (s.has(x.id) ? st(mvSlab(x, dx, dy)) : x)),
   };
@@ -289,7 +297,11 @@ export function replicate(m: Model, ids: string[], opts: { dx: number; dy: numbe
       for (const st of colTargets(c.story)) {
         const before = out.columns.length;
         out = addColumns(out, [{ x: c.x + dx, y: c.y + dy }], [st], c.section, c.angle);
-        if (out.columns.length > before) created.push(out.columns[out.columns.length - 1].id);
+        if (out.columns.length === before) continue;
+        const copy = out.columns[out.columns.length - 1];
+        // a joined column copied on its own story keeps its span
+        if (c.base && st === c.story) out = { ...out, columns: [...out.columns.slice(0, -1), { ...copy, base: c.base }] };
+        created.push(copy.id);
       }
     for (const b of beams)
       for (const st of targets(b.story)) {
@@ -325,7 +337,10 @@ export function patchIds(m: Model, ids: string[], patch: { section?: string; sto
   const p = (o: any) => {
     if (!s.has(o.id)) return o;
     const n = { ...o };
-    if (patch.story !== undefined) n.story = patch.story;
+    if (patch.story !== undefined) {
+      n.story = patch.story;
+      delete n.base;
+    }
     if (patch.section !== undefined) n.section = patch.section;
     if (patch.angle !== undefined && 'angle' in o) n.angle = patch.angle;
     return n;
@@ -637,6 +652,49 @@ export function joinBeams(m: Model, beamIds: string[]): { model: Model; joined: 
   return { model: { ...m, beams: [...m.beams.filter((b) => !gone.has(b.id)), ...added] }, joined: added.length, from: gone.size, ids: added.map((b) => b.id) };
 }
 
+/**
+ * Join selected columns stacked at one point on consecutive (or overlapping) stories into one column each, spanning
+ * from the bottom of the lowest piece to the top of the highest. It takes the section and angle of its lowest piece;
+ * `mixed` counts joined columns whose pieces had different sections.
+ */
+export function joinColumns(m: Model, colIds: string[]): { model: Model; joined: number; from: number; ids: string[]; mixed: number } {
+  const ids = new Set(colIds);
+  const idx = new Map(m.stories.map((s, i) => [s.name, i]));
+  const lo = (c: Column) => idx.get(c.base ?? c.story)!,
+    hi = (c: Column) => idx.get(c.story)!;
+  const stacks: Column[][] = [];
+  for (const c of m.columns) {
+    if (!ids.has(c.id) || !idx.has(c.story) || !idx.has(c.base ?? c.story)) continue;
+    const s = stacks.find((s) => dist(s[0], c) < TOL);
+    if (s) s.push(c);
+    else stacks.push([c]);
+  }
+  const gone = new Set<string>();
+  const added: Column[] = [];
+  let mixed = 0;
+  for (const stack of stacks) {
+    stack.sort((a, b) => lo(a) - lo(b));
+    let run: Column[] = [];
+    const flush = () => {
+      if (run.length > 1) {
+        const first = run[0];
+        const top = run.reduce((a, b) => (hi(b) > hi(a) ? b : a));
+        run.forEach((c) => gone.add(c.id));
+        added.push({ id: uid(), story: top.story, base: first.base ?? first.story, x: first.x, y: first.y, section: first.section, angle: first.angle });
+        if (run.some((c) => c.section !== first.section)) mixed++;
+      }
+      run = [];
+    };
+    for (const c of stack) {
+      if (run.length && lo(c) > Math.max(...run.map(hi)) + 1) flush(); // a story between them is missing
+      run.push(c);
+    }
+    flush();
+  }
+  if (!added.length) return { model: m, joined: 0, from: 0, ids: [], mixed: 0 };
+  return { model: { ...m, columns: [...m.columns.filter((c) => !gone.has(c.id)), ...added] }, joined: added.length, from: gone.size, ids: added.map((c) => c.id), mixed };
+}
+
 /** Ids of slabs that any of the given beams runs across or into (same story). */
 export function slabsUnderBeams(m: Model, beamIds: string[]): string[] {
   const ids = new Set(beamIds);
@@ -809,7 +867,7 @@ export function matchElements(m: Model, f: ElementFilter): string[] {
     return inRange(s?.thickness, f.t3);
   };
   const ids: string[] = [];
-  if (f.kinds.column) for (const c of m.columns) if (story(c.story) && sect(c.section) && frameOk(c.section)) ids.push(c.id);
+  if (f.kinds.column) for (const c of m.columns) if (columnStories(m, c).some(story) && sect(c.section) && frameOk(c.section)) ids.push(c.id);
   if (f.kinds.beam) for (const b of m.beams) if (story(b.story) && sect(b.section) && frameOk(b.section)) ids.push(b.id);
   if (f.kinds.slab) for (const s of m.slabs) if (story(s.story) && sect(s.section) && slabOk(s.section)) ids.push(s.id);
   return ids;

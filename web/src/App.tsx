@@ -9,7 +9,7 @@ import { openDialog } from './ui/dialogState';
 import { deleteIds } from './model/ops';
 import { restoreModel, startAutosave, downloadProject, openProject } from './model/persist';
 import { loadDxfFile, loadPdfFile, restoreUnderlay } from './underlay/store';
-import { emptyModel } from './model/types';
+import { columnOn, emptyModel } from './model/types';
 import { fmt } from './model/geom';
 import { startSessionLog, log, toggleLog, useLog } from './log/sessionLog';
 import { LogPanel } from './ui/LogPanel';
@@ -195,7 +195,7 @@ function MeasureBox() {
 const Counts = memo(function Counts({ story }: { story: string }) {
   const m = useApp((s) => s.model);
   const n = (arr: { story: string }[]) => [arr.filter((x) => x.story === story).length, arr.length];
-  const [c, ct] = n(m.columns),
+  const [c, ct] = [m.columns.filter((x) => columnOn(m, x, story)).length, m.columns.length],
     [b, bt] = n(m.beams),
     [s, st] = n(m.slabs);
   return (

@@ -3,7 +3,7 @@ import type { Beam, Model, Pt } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
 import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, panelSize, setBeamEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
-import { uid } from '../model/types';
+import { columnOn, uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
 import { viewport } from './viewport';
@@ -580,7 +580,7 @@ export function hitTest(m: Model, screen: Pt, story: string): string | null {
   }
   const secs = new Map(m.frameSections.map((s) => [s.name, s]));
   for (const c of m.columns)
-    if (c.story === story) {
+    if (columnOn(m, c, story)) {
       const ol = columnOutline(c, secs.get(c.section));
       if (dist(c, w) < tol || insidePoly(w, ol)) return c.id;
     }
@@ -637,7 +637,7 @@ export function boxSelect(m: Model, a: Pt, b: Pt, story: string, crossing: boole
     return s.length === 1 && inB(s[0]);
   };
   const ids: string[] = [];
-  for (const c of m.columns) if (c.story === story && test([c], false)) ids.push(c.id);
+  for (const c of m.columns) if (columnOn(m, c, story) && test([c], false)) ids.push(c.id);
   for (const bm of m.beams) if (bm.story === story && test([{ x: bm.x1, y: bm.y1 }, { x: bm.x2, y: bm.y2 }], false)) ids.push(bm.id);
   for (const s of m.slabs) if (s.story === story && test(s.pts, true)) ids.push(s.id);
   for (const g of m.grids) if (test([{ x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 }], false)) ids.push(g.id);

@@ -23,6 +23,8 @@ export interface Grid {
 export interface Column {
   id: string; // also the GUID written to ETABS
   story: string; // spans from story below to this story
+  /** lowest story of a joined column that spans several stories (from below `base` up to `story`); absent = `story` */
+  base?: string;
   x: number;
   y: number;
   section: string;
@@ -124,4 +126,24 @@ export function storyElevations(m: Model): Record<string, { bottom: number; top:
     z += s.height;
   });
   return out;
+}
+
+/** Stories a column passes through, bottom → top (one story unless it was joined). */
+export function columnStories(m: Model, c: Column): string[] {
+  if (!c.base || c.base === c.story) return [c.story];
+  const names = m.stories.map((s) => s.name);
+  const lo = names.indexOf(c.base),
+    hi = names.indexOf(c.story);
+  return lo < 0 || hi < lo ? [c.story] : names.slice(lo, hi + 1);
+}
+
+/** The column stands on `story` (a joined column stands on every story it spans). */
+export const columnOn = (m: Model, c: Column, story: string): boolean => c.story === story || (!!c.base && columnStories(m, c).includes(story));
+
+/** Bottom and top elevation of a column, or null if its story is missing. */
+export function columnSpan(el: ReturnType<typeof storyElevations>, c: Column): { bottom: number; top: number } | null {
+  const top = el[c.story];
+  if (!top) return null;
+  const bot = c.base && el[c.base] && el[c.base].index <= top.index ? el[c.base] : top;
+  return { bottom: bot.bottom, top: top.top };
 }

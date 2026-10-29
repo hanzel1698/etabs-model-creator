@@ -5,7 +5,7 @@ import { SelectByDialog } from './SelectByDialog';
 import { useApp, toast } from '../model/store';
 import { generateGrids, moveIds, oppositeLabelStart, replicate, storyAtOffset } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
-import { uid, storyElevations, type FrameSection, type Model, type SlabSection, type Story } from '../model/types';
+import { columnStories, uid, storyElevations, type Column, type FrameSection, type Model, type SlabSection, type Story } from '../model/types';
 import { useUnderlay, saveUnderlayMeta, rescaleDxf, rectOf, withStories } from '../underlay/store';
 import { setTool, redrawRegion } from '../plan/tools';
 import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports, type Unowned } from '../etabs/bridgeClient';
@@ -217,7 +217,7 @@ function MoveDialog() {
     const st = useApp.getState();
     if (dz) {
       const s = new Set(sel);
-      const stuck = [...st.model.columns, ...st.model.beams, ...st.model.slabs].filter((x) => s.has(x.id) && !storyAtOffset(st.model, x.story, dz));
+      const stuck = [...st.model.columns, ...st.model.beams, ...st.model.slabs].filter((x) => s.has(x.id) && (!storyAtOffset(st.model, x.story, dz) || ('base' in x && x.base && !storyAtOffset(st.model, x.base, dz))));
       if (stuck.length) return toast(`No story level ${fmt(dz)} mm from ${[...new Set(stuck.map((x) => x.story))].join(', ')}. dz must land exactly on a story level.`);
     }
     st.commit((m) => moveIds(m, sel, dx, dy, dz));
@@ -373,12 +373,21 @@ function StoriesDialog() {
     const keep = new Set(rows.map((r) => r.orig));
     useApp.getState().commit((m): Model => {
       const fix = <T extends { story: string }>(arr: T[]) => arr.filter((x) => keep.has(x.story)).map((x) => ({ ...x, story: rename.get(x.story)! }));
+      // a joined column keeps the stories of its span that are left (still by their old names; fix renames the top)
+      const span = (c: Column): Column => {
+        if (!c.base) return c;
+        const left = columnStories(m, c).filter((n) => keep.has(n));
+        const { base, ...one } = c;
+        if (!left.length) return one;
+        const top = left[left.length - 1];
+        return left.length > 1 ? { ...c, story: top, base: rename.get(left[0])! } : { ...one, story: top };
+      };
       return {
         ...m,
         baseElevation: base,
         foundation: fndNums() ?? m.foundation,
         stories: rows.map(({ orig, ...s }) => ({ ...s, name: s.name.trim(), similarTo: s.similarTo ? rename.get(s.similarTo) ?? '' : '' })),
-        columns: fix(m.columns),
+        columns: fix(m.columns.map(span)),
         beams: fix(m.beams),
         slabs: fix(m.slabs),
       };

@@ -1,6 +1,6 @@
 import { toast, useApp } from '../model/store';
-import { cachedStoryNodes, deleteIds, joinBeams, mergeSlabs, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
-import type { Beam } from '../model/types';
+import { cachedStoryNodes, deleteIds, joinBeams, joinColumns, mergeSlabs, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
+import { columnOn, type Beam } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
 import { useEffect, useState } from 'react';
 import { openDialog } from './dialogState';
@@ -57,7 +57,7 @@ function Properties() {
     const keys = new Set([...cols.map((c) => 'c|' + c.section), ...beams.map((b) => 'b|' + b.section), ...slabs.map((x) => 's|' + x.section)]);
     const on = (x: { story: string }) => allStories || x.story === story;
     const ids = [
-      ...model.columns.filter((c) => on(c) && keys.has('c|' + c.section)),
+      ...model.columns.filter((c) => (allStories || columnOn(model, c, story)) && keys.has('c|' + c.section)),
       ...model.beams.filter((b) => on(b) && keys.has('b|' + b.section)),
       ...model.slabs.filter((x) => on(x) && keys.has('s|' + x.section)),
     ].map((x) => x.id);
@@ -109,6 +109,7 @@ function Properties() {
           </select>
         </div>
       )}
+      {cols.length === 1 && cols[0].base && <div className="small muted">Joined column: {cols[0].base} – {cols[0].story}. Changing its story makes it a one-story column there.</div>}
       {beams.length === 1 && <BeamEnds b={beams[0]} />}
       {beams.length === 1 && <div className="small muted">Length {fmt(dist({ x: beams[0].x1, y: beams[0].y1 }, { x: beams[0].x2, y: beams[0].y2 }))} mm</div>}
       {nodes.length > 0 && <NodeCoords nodes={nodes} />}
@@ -146,6 +147,11 @@ function Properties() {
           <>
             <button onClick={() => openDialog({ kind: 'replicate' })} title="E">Replicate…</button>
             <button onClick={() => openDialog({ kind: 'move' })}>Move…</button>
+            {cols.length > 1 && (
+              <button onClick={joinSelectedColumns} title="Join the selected columns stacked at one point on consecutive stories into one column spanning those stories">
+                Join columns
+              </button>
+            )}
             {beams.length > 1 && (
               <button onClick={joinSelectedBeams} title="Join the selected beams that lie end to end on one line into one beam, auto-sized for its new length">
                 Join beams
@@ -187,6 +193,23 @@ export function joinSelectedBeams() {
   const left = ids.length - r.from;
   toast(`${r.from} beams joined into ${r.joined} (auto-sized: ${secs}).` + (left ? ` ${left} left as they were.` : '') + noFitNote(sized.sizes, s.active.beam));
   logAutoSizes(sized.model, r.ids, s.active.beam);
+}
+
+export function joinSelectedColumns() {
+  const s = useApp.getState();
+  const sel = new Set(s.selection);
+  const ids = s.model.columns.filter((x) => sel.has(x.id)).map((x) => x.id);
+  if (ids.length < 2) return toast('Select two or more columns to join (stacked on consecutive stories: pick them in 3D, or Shift+click Select similar).');
+  const r = joinColumns(s.model, ids);
+  if (!r.joined) return toast('Nothing joined: the columns must stand at the same point on consecutive stories.');
+  s.commit(() => r.model);
+  s.setSelection(r.ids);
+  const left = ids.length - r.from;
+  toast(
+    `${r.from} columns joined into ${r.joined}.` +
+      (r.mixed ? ` ${r.mixed} had pieces of different sections and took the lowest piece's.` : '') +
+      (left ? ` ${left} left as they were.` : ''),
+  );
 }
 
 export function mergeSelectedSlabs() {

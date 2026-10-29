@@ -1,4 +1,4 @@
-import type { Model, Pt, Grid, FrameSection } from '../model/types';
+import { columnOn, type Model, type Pt, type Grid, type FrameSection } from '../model/types';
 import { dist, distToSeg, mid, projectOnSeg, projectOnLine, rot, segIntersect, sub, add } from '../model/geom';
 import { gridIntersections } from '../model/ops';
 import { underlayGeom } from '../underlay/store';
@@ -52,7 +52,7 @@ export function snapPoint(m: Model, w: Pt, tol: number, o: SnapOpts): Snap {
   // --- point snaps ---
   for (const p of cachedIntersections(m.grids)) tryPt(p, 'intersection', tol * 0.15);
   const secs = new Map(m.frameSections.map((s) => [s.name, s]));
-  const cols = m.columns.filter((c) => c.story === o.story);
+  const cols = m.columns.filter((c) => columnOn(m, c, o.story));
   for (const c of cols) tryPt(c, 'column', tol * 0.2);
   const beams = m.beams.filter((b) => b.story === o.story);
   for (const b of beams) {

@@ -1,4 +1,4 @@
-import type { Beam, Column, FrameSection, Model, Pt } from './types';
+import { columnOn, type Beam, type Column, type FrameSection, type Model, type Pt } from './types';
 import { cross, dist, distToSeg, dot, norm, sub } from './geom';
 
 // Auto beam sizing (beam tool "Auto" mode).
@@ -45,7 +45,7 @@ const parallel = (a: Beam, b: Beam) => Math.abs(cross(dir(a), dir(b))) < PAR;
 function columnAt(m: Model, story: string, p: Pt): Column | undefined {
   const secs = new Map(m.frameSections.map((s) => [s.name, s]));
   return m.columns.find((c) => {
-    if (c.story !== story) return false;
+    if (!columnOn(m, c, story)) return false;
     const s = secs.get(c.section);
     const r = s ? Math.max(s.t2, s.t3) / 2 : 200;
     return dist(c, p) <= r + TOL;
@@ -117,7 +117,7 @@ export function isPeriphery(m: Model, b: Beam): boolean {
     if (sq) has[sq] = true;
   }
   for (const col of m.columns) {
-    if (col.story !== b.story) continue;
+    if (!columnOn(m, col, b.story)) continue;
     const tc = t(col);
     const s = sideOf(col);
     if (s && tc > eps && tc < 1 - eps) has[s] = true;
@@ -198,7 +198,7 @@ function nearMiss(m: Model, b: Beam, p: Pt): string {
   if (off) words.push(`beam ${off.o.section} is ${Math.round(off.d)} mm away (it must be within ${TOL} mm)`);
   const secs = new Map(m.frameSections.map((s) => [s.name, s]));
   const col = m.columns
-    .filter((x) => x.story === b.story)
+    .filter((x) => columnOn(m, x, b.story))
     .map((x) => {
       const s = secs.get(x.section);
       return { x, gap: dist(x, p) - (s ? Math.max(s.t2, s.t3) / 2 : 200) };

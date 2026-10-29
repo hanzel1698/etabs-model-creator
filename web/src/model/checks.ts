@@ -1,4 +1,4 @@
-import type { Beam, Column, FrameSection, Model, Pt, Slab } from './types';
+import { columnOn, type Beam, type Column, type FrameSection, type Model, type Pt, type Slab } from './types';
 import { add, cross, dist, distToSeg, dot, fmt, len, mid, pointInPoly, polyArea, rot, segIntersect, sub } from './geom';
 
 /** Points closer than this (mm) are the same point; overlaps thinner than this are touching, not overlapping. */
@@ -260,17 +260,16 @@ function checkSlabs(story: string, slabs: Slab[], out: Issue[]) {
 /** Duplicates, overlaps, zero-size elements, undefined sections and missing stories, bottom story first. */
 export function checkModel(m: Model): Issue[] {
   const out: Issue[] = [];
-  const cols = byStory(m.columns),
-    beams = byStory(m.beams),
+  const beams = byStory(m.beams),
     slabs = byStory(m.slabs);
   for (const st of m.stories) {
-    checkColumns(m, st.name, cols.get(st.name) ?? [], out);
+    checkColumns(m, st.name, m.columns.filter((c) => columnOn(m, c, st.name)), out);
     checkBeams(st.name, beams.get(st.name) ?? [], out);
     checkSlabs(st.name, slabs.get(st.name) ?? [], out);
   }
 
   const stories = new Set(m.stories.map((s) => s.name));
-  const lost = [...m.columns, ...m.beams, ...m.slabs].filter((x) => !stories.has(x.story));
+  const lost = [...m.columns.map((c) => (c.base && !stories.has(c.base) ? { ...c, story: c.base } : c)), ...m.beams, ...m.slabs].filter((x) => !stories.has(x.story));
   for (const [story, els] of byStory(lost)) {
     const first = els[0] as any;
     out.push({ kind: 'story', story: '', ids: els.map((x) => x.id), at: first.pts?.[0] ?? { x: first.x ?? first.x1, y: first.y ?? first.y1 }, text: `${els.length} elements on story “${story}”, which doesn't exist` });
