@@ -41,8 +41,8 @@ export function fitAll(w?: number, h?: number) {
 }
 
 /**
- * Zoom extents for the active story: its DXF region with the story name drawn above it, plus the
- * story's own members and grids. Falls back to fitAll when the story has no region (or in setup view).
+ * Zoom extents for the active story: its DXF region plus the story's own members and grids.
+ * Falls back to fitAll when the story has no region (or in setup view).
  */
 export function fitStory() {
   const el = document.getElementById('plan-host');
@@ -60,15 +60,6 @@ export function fitStory() {
   m.columns.forEach((c) => c.story === story && (xs.push(c.x), ys.push(c.y)));
   m.beams.forEach((b) => b.story === story && (xs.push(b.x1, b.x2), ys.push(b.y1, b.y2)));
   m.slabs.forEach((s) => s.story === story && s.pts.forEach((p) => (xs.push(p.x), ys.push(p.y))));
-  // the story name (UnderlayLayer) sits above the region's top edge, upright on screen: include its box
-  const fs = Math.max(400, (reg.rect.maxX - reg.rect.minX) / 30);
-  const t = (viewport.rot * Math.PI) / 180;
-  const up = { x: Math.sin(t), y: Math.cos(t) },
-    right = { x: Math.cos(t), y: -Math.sin(t) };
-  const ax = (reg.rect.minX + reg.rect.maxX) / 2 - reg.ref.x,
-    ay = reg.rect.maxY - reg.ref.y;
-  const half = story.length * fs * 0.35;
-  for (const [r, h] of [[-half, 0], [half, 0], [-half, fs * 1.6], [half, fs * 1.6]]) xs.push(ax + right.x * r + up.x * h), ys.push(ay + right.y * r + up.y * h);
   const pad = m.grids.length ? st.gridBubble * 3 : 0;
   viewport.fit(Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad, W, H);
 }
@@ -90,6 +81,8 @@ export function PlanView() {
   const colorBy = useApp((s) => s.colorBySection);
   // the setup view shows the raw DXF: place this story's model on its region (reference point = model 0,0)
   const setupRef = useUnderlay((u) => (u.kind === 'dxf' && u.setupMode ? u.regions.find((r) => r.stories.includes(story))?.ref ?? null : null));
+  // the cropped view names the story in a fixed banner at the top of the canvas, so it stays put while zooming
+  const hasRegion = useUnderlay((u) => u.kind === 'dxf' && !!u.dxf && !u.setupMode && u.regions.some((r) => r.stories.includes(story)));
 
   // keep the world transform in sync without re-rendering React
   useEffect(() => {
@@ -288,7 +281,8 @@ export function PlanView() {
         <Overlay />
       </svg>
       <Compass rot={viewRot} />
-      <button className="zoom-ext" title="Zoom extents: the whole story region with its name" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={fitStory}>
+      {show.underlay && hasRegion && <div className="story-banner nosel">{story}</div>}
+      <button className="zoom-ext" title="Zoom extents: the whole story region" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={fitStory}>
         <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6}>
           <path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4" />
           <rect x={5} y={5} width={6} height={6} strokeWidth={1.2} />

@@ -266,6 +266,21 @@ label {
   line-height: 0;
   z-index: 2;
 }
+.story-banner {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 96px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 18px;
+  font-weight: 700;
+  color: #4aa3ff;
+  pointer-events: none;
+  z-index: 1;
+}
 .compass {
   position: absolute;
   left: 10px;
