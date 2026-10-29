@@ -29,6 +29,7 @@ export interface Column {
   y: number;
   section: string;
   angle: number; // degrees, local-2 axis from global X
+  loads?: FrameLoad[];
 }
 
 export interface Beam {
@@ -39,6 +40,7 @@ export interface Beam {
   x2: number;
   y2: number;
   section: string;
+  loads?: FrameLoad[];
 }
 
 export interface Slab {
@@ -46,6 +48,53 @@ export interface Slab {
   story: string;
   pts: Pt[];
   section: string;
+  loads?: ShellLoad[];
+}
+
+// ---------- loads (values in kN, kN/m, kN/m², kN·m; absolute distances in mm) ----------
+
+export const PATTERN_TYPES = ['Dead', 'SuperDead', 'Live', 'ReduceLive', 'Rooflive', 'Snow', 'Wind', 'Quake', 'Notional', 'Other'] as const;
+export type PatternType = (typeof PATTERN_TYPES)[number];
+
+export interface LoadPattern {
+  name: string;
+  type: PatternType;
+  selfWeight: number; // self-weight multiplier
+  fromEtabs?: boolean;
+}
+
+/** Gravity acts down (positive value = downward); X/Y/Z global; 1/2/3 local axes; P* projected. */
+export const LOAD_DIRS = ['Gravity', 'X', 'Y', 'Z', '1', '2', '3', 'PX', 'PY', 'PZ', 'PGravity'] as const;
+export type LoadDir = (typeof LOAD_DIRS)[number];
+
+export interface FrameLoad {
+  pattern: string;
+  kind: 'dist' | 'point';
+  force: 'F' | 'M'; // force or moment
+  dir: LoadDir;
+  rel: boolean; // distances relative (0–1) or absolute (mm from the start)
+  d1: number;
+  d2: number; // dist only
+  v1: number; // kN/m (dist) or kN (point); moments kN·m/m or kN·m
+  v2: number; // dist only: value at d2
+}
+
+export interface ShellLoad {
+  pattern: string;
+  dir: LoadDir;
+  value: number; // kN/m², uniform on the shell (ETABS spreads it to beams through the slab's modelling, not the load)
+}
+
+export type Vec6 = [number, number, number, number, number, number];
+
+/** Force at a plan node of a story (joints are derived from columns, beams and grids, not stored). */
+export interface JointLoad {
+  id: string;
+  story: string;
+  x: number;
+  y: number;
+  pattern: string;
+  f: Vec6; // Fx, Fy, Fz (kN), Mx, My, Mz (kN·m), global
 }
 
 export type FrameShape = 'Rectangle' | 'Circle' | 'Other';
@@ -82,6 +131,10 @@ export interface Model {
   slabSections: SlabSection[];
   materials: Material[];
   pushedIds: string[]; // ids that exist in ETABS from previous pushes (for delete sync)
+  loadPatterns: LoadPattern[];
+  jointLoads: JointLoad[];
+  /** `story|x|y` of joints that carried app loads at the last push (so removed joint loads are cleared in ETABS) */
+  pushedJointKeys: string[];
   /** inputs the bottom story (footing top → ground floor level) was computed from (height = foundingDepth - footingThickness + plinthHeight) */
   foundation?: { foundingDepth: number; footingThickness: number; plinthHeight: number };
 }
@@ -107,7 +160,16 @@ export const emptyModel = (): Model => ({
   slabSections: [{ name: 'S150', thickness: 150, material: '4000Psi', fromEtabs: false }],
   materials: [{ name: '4000Psi', type: 'Concrete' }],
   pushedIds: [],
+  loadPatterns: defaultPatterns(),
+  jointLoads: [],
+  pushedJointKeys: [],
 });
+
+export const defaultPatterns = (): LoadPattern[] => [
+  { name: 'Dead', type: 'Dead', selfWeight: 1 },
+  { name: 'SDL', type: 'SuperDead', selfWeight: 0 },
+  { name: 'Live', type: 'Live', selfWeight: 0 },
+];
 
 // Ids double as ETABS GUIDs, so they must be RFC-4122 shaped (randomUUID is missing on plain-http origins).
 export const uid = (): string =>

@@ -46,6 +46,21 @@ def payload(beam_section="B300x500", move_beam=False, drop=None):
             "frames": frames, "areas": areas, "deleteGuids": [], "supports": "fixed"}
 
 
+def with_loads(p, beam_udl=10.0, joint=True):
+    """`p` plus load patterns and loads in the kN-mm form the web app sends (see web/src/etabs/mapping.ts)."""
+    q = dict(p, loads=True, loadPatterns=["Dead", "SDL", "Live"],
+             patterns=[{"name": "Dead", "type": 1, "selfWeight": 1}, {"name": "SDL", "type": 2, "selfWeight": 0}, {"name": "Live", "type": 3, "selfWeight": 0}])
+    udl = {"pattern": "SDL", "kind": "dist", "type": 1, "dir": 10, "rel": True, "d1": 0, "d2": 1, "v1": beam_udl / 1000, "v2": beam_udl / 1000}
+    pt = {"pattern": "Live", "kind": "point", "type": 1, "dir": 10, "rel": False, "d1": 2000, "d2": 2000, "v1": 20, "v2": 20}
+    loads = {"beam-Story1-1": [udl], "beam-Story2-1": [udl, pt]}
+    q["frames"] = [dict(f, loads=loads.get(f["guid"], [])) for f in p["frames"]]
+    q["areas"] = [dict(a, loads=[{"pattern": "SDL", "dir": 10, "value": 1.5e-6 if a["story"] == "Story1" else 2.0e-6}]) for a in p["areas"]]
+    jl = {"x": 0, "y": 0, "z": 6000, "pattern": "Dead", "f": [0, 0, -50, 0, 0, 0]}
+    q["jointLoads"] = [jl] if joint else []
+    q["clearJoints"] = [] if joint else [{"x": 0, "y": 0, "z": 6000}]
+    return q
+
+
 def base_restraints(m):
     """Distinct restraint tuples of all joints at z = 0."""
     names = B.lst(m.PointObj.GetNameList(0, [])[1])
@@ -105,6 +120,35 @@ def main():
         n = m.FrameObj.Count(), m.AreaObj.Count()
         print("ETABS counts (frames, areas):", n)
         assert n == (15, 2), n
+
+        # loads: patterns, a 10 kN/m beam load, a point load, slab loads and a joint load
+        p4 = with_loads(p2)
+        r = B.do_push(p4)
+        print("push 4 (loads):", r["loads"], [x for x in r["log"] if "ERROR" in x or "WARNING" in x or "pattern" in x])
+        assert r["loads"]["frames"] == 2 and r["loads"]["areas"] == 2 and r["loads"]["joints"] == 1, r["loads"]
+        names = {x["name"]: x for x in B.get_patterns(m)}
+        assert names["SDL"]["type"] == "SuperDead" and names["Dead"]["selfWeight"] == 1, names
+        B.ok(m.SetPresentUnits(B.KN_MM_C), "SetPresentUnits")
+        beam = B.guid_map(m.FrameObj, m)[B.to_guid("beam-Story1-1")]
+        d = m.FrameObj.GetLoadDistributed(beam, 0, [], [], [], [], [], [], [], [], [], [], [], 0)
+        print("beam-Story1-1 distributed:", B.lst(d[2]), B.lst(d[11]))
+        assert abs(B.lst(d[11])[0] - 0.01) < 1e-9, "10 kN/m should read back as 0.01 kN/mm"
+        v = B.do_verify(p4)
+        print("verify 4:", v["log"][0])
+        assert v["ok"], v
+        r = B.do_push(p4)
+        print("push 5 (same loads):", r["loads"])
+        assert r["loads"]["frames"] == r["loads"]["areas"] == r["loads"]["joints"] == 0, r["loads"]
+
+        # change one beam load, remove the joint load (cleared by position)
+        p6 = with_loads(p2, beam_udl=12.5, joint=False)
+        r = B.do_push(p6)
+        print("push 6 (load edits):", r["loads"])
+        assert r["loads"]["frames"] == 2 and r["loads"]["areas"] == 0 and r["loads"]["joints"] == 1, r["loads"]  # both beams carry the edited UDL
+        assert B.current_joint_loads(m, {"Dead"}) == {}, "joint load should be cleared"
+        v = B.do_verify(p6)
+        print("verify 6:", v["log"][0])
+        assert v["ok"], v
         print("SELFTEST OK")
     finally:
         if not KEEP:

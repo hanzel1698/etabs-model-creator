@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useDialog, openDialog, closeDialog, type Dialog } from './dialogState';
 import { bySize, sectionGroup } from './sectionGroups';
 import { SelectByDialog } from './SelectByDialog';
+import { FrameLoadDialog, JointLoadDialog, LoadPatternsDialog, ShellLoadDialog } from './LoadDialogs';
 import { useApp, toast } from '../model/store';
 import { generateGrids, moveIds, oppositeLabelStart, replicate, storyAtOffset } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
@@ -9,7 +10,7 @@ import { columnStories, uid, storyElevations, type Column, type FrameSection, ty
 import { useUnderlay, saveUnderlayMeta, rescaleDxf, rectOf, withStories } from '../underlay/store';
 import { setTool, redrawRegion } from '../plan/tools';
 import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports, type Unowned } from '../etabs/bridgeClient';
-import { toPayload, applyImport } from '../etabs/mapping';
+import { toPayload, applyImport, jointKeys } from '../etabs/mapping';
 import { fitAll } from '../plan/PlanView';
 import { log as sessionLog } from '../log/sessionLog';
 import { modelIssues } from '../model/checks';
@@ -53,6 +54,14 @@ export function Dialogs() {
       return <UnderlayDialog />;
     case 'etabs':
       return <EtabsDialog />;
+    case 'loadPatterns':
+      return <LoadPatternsDialog />;
+    case 'frameLoad':
+      return <FrameLoadDialog />;
+    case 'shellLoad':
+      return <ShellLoadDialog />;
+    case 'jointLoad':
+      return <JointLoadDialog />;
     default:
       return null;
   }
@@ -390,6 +399,7 @@ function StoriesDialog() {
         columns: fix(m.columns.map(span)),
         beams: fix(m.beams),
         slabs: fix(m.slabs),
+        jointLoads: fix(m.jointLoads),
       };
     });
     const st = useApp.getState();
@@ -587,8 +597,8 @@ function EtabsDialog() {
   const [busy, setBusy] = useState('');
   const [log, setLog] = useState<string[]>([]);
   const [url, setUrl] = useState(bridgeUrl());
-  const [imp, setImp] = useState({ sections: true, stories: true, grids: true });
-  const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; supports: Supports }>({ updateStories: false, pushGrids: false, supports: 'none' });
+  const [imp, setImp] = useState({ sections: true, stories: true, grids: true, patterns: true });
+  const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; supports: Supports; loads: boolean }>({ updateStories: false, pushGrids: false, supports: 'none', loads: true });
   const [unowned, setUnowned] = useState<Unowned[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const model = useApp((s) => s.model);
@@ -623,17 +633,19 @@ function EtabsDialog() {
       useApp.getState().commit((m) => applyImport(m, r, imp));
       const st = useApp.getState();
       if (!st.model.stories.some((s) => s.name === st.activeStory)) st.setActiveStory(st.model.stories[0]?.name ?? '');
-      add(`✔ Imported ${r.stories.length} stories, ${r.grids.length} grids, ${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections`, ...r.warnings.map((w) => '⚠ ' + w));
+      add(`✔ Imported ${r.stories.length} stories, ${r.grids.length} grids, ${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections, ${r.patterns?.length ?? 0} load patterns`, ...r.warnings.map((w) => '⚠ ' + w));
       requestAnimationFrame(() => fitAll());
     });
 
   const doPush = () =>
     run('Pushing…', async () => {
-      const p = toPayload(useApp.getState().model, push);
-      add(`→ Pushing ${p.frames.length} frames, ${p.areas.length} slabs, ${p.deleteGuids.length} deletions…`);
+      const sent = useApp.getState().model;
+      const p = toPayload(sent, push);
+      add(`→ Pushing ${p.frames.length} frames, ${p.areas.length} slabs, ${p.deleteGuids.length} deletions${p.loads ? `, ${p.patterns.length} load patterns, loads` : ''}…`);
       const r = await bridge.push(p);
-      useApp.getState().commit((m) => ({ ...m, pushedIds: r.pushedGuids }));
-      add(`✔ added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}, deleted ${r.deleted}, failed ${r.failed}` + (r.restrained !== undefined ? `, ${r.restrained} base joints ${p.supports}` : ''), ...r.log);
+      useApp.getState().commit((m) => ({ ...m, pushedIds: r.pushedGuids, ...(p.loads ? { pushedJointKeys: jointKeys(sent) } : {}) }));
+      const ld = r.loads ? `; loads rewritten on ${r.loads.frames} frames, ${r.loads.areas} slabs, ${r.loads.joints} joints (${r.loads.unchanged} unchanged)` : '';
+      add(`✔ added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}, deleted ${r.deleted}, failed ${r.failed}` + (r.restrained !== undefined ? `, ${r.restrained} base joints ${p.supports}` : '') + ld, ...r.log);
     });
 
   const doVerify = () =>
@@ -693,9 +705,9 @@ function EtabsDialog() {
       <div className="section">
         <h4>Import from ETABS</h4>
         <div className="chips">
-          {(['sections', 'stories', 'grids'] as const).map((k) => (
+          {(['sections', 'stories', 'grids', 'patterns'] as const).map((k) => (
             <label key={k} className="small">
-              <input type="checkbox" checked={imp[k]} onChange={() => setImp({ ...imp, [k]: !imp[k] })} /> {k === 'sections' ? 'Materials + sections' : k[0].toUpperCase() + k.slice(1)}
+              <input type="checkbox" checked={imp[k]} onChange={() => setImp({ ...imp, [k]: !imp[k] })} /> {k === 'sections' ? 'Materials + sections' : k === 'patterns' ? 'Load patterns' : k[0].toUpperCase() + k.slice(1)}
             </label>
           ))}
           <button onClick={doImport} disabled={!!busy}>Import</button>
@@ -715,6 +727,9 @@ function EtabsDialog() {
         <div className="chips">
           <label className="small"><input type="checkbox" checked={push.updateStories} onChange={() => setPush({ ...push, updateStories: !push.updateStories })} /> Replace ETABS stories</label>
           <label className="small"><input type="checkbox" checked={push.pushGrids} onChange={() => setPush({ ...push, pushGrids: !push.pushGrids })} /> Replace grids</label>
+          <label className="small" title="Create the load patterns and write the frame, slab and joint loads. In the app's patterns, the app's loads replace what ETABS has on the app's elements.">
+            <input type="checkbox" checked={push.loads} onChange={() => setPush({ ...push, loads: !push.loads })} /> Loads
+          </label>
           <label className="small" title="Restraint assigned to the bottom joint of every column at the base elevation">
             Supports
             <select value={push.supports} onChange={(e) => setPush({ ...push, supports: e.target.value as Supports })}>

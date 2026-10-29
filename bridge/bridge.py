@@ -257,10 +257,301 @@ def do_import():
             "materials": get_materials(m),
             "frameSections": get_frame_sections(m, warnings),
             "slabSections": get_slab_sections(m, warnings),
+            "patterns": get_patterns(m),
             "warnings": warnings,
         }
     finally:
         m.SetPresentUnits(units)
+
+# ---------------------------------------------------------------- loads
+#
+# Values arrive in kN-mm: frame loads with MyType 1 (force) / 2 (moment), ETABS Dir codes (1-3 local,
+# 4-6 global X/Y/Z, 7-9 projected, 10 gravity, 11 projected gravity) and distances relative (0-1) or in mm;
+# uniform area loads in kN/mm2 (ETABS 22 answers -100, not supported, to AreaObj.*LoadUniformToFrame);
+# joint forces [F1, F2, F3, M1, M2, M3] in Global. Only loads in the app's patterns are read, compared and
+# rewritten; loads in other patterns (e.g. ones defined only in ETABS) are left as they are.
+
+PATTERN_TYPES = {1: "Dead", 2: "SuperDead", 3: "Live", 4: "ReduceLive", 5: "Quake", 6: "Wind", 7: "Snow", 8: "Other",
+                 11: "Rooflive", 12: "Notional"}
+GROUP = 1  # eItemType.Group: Name "All" reads the loads of every object in one call
+
+
+def get_patterns(m):
+    """Load patterns in ETABS as app patterns (types the app doesn't know come in as Other)."""
+    if m.LoadPatterns.Count() == 0:
+        return []
+    out = []
+    for n in lst(ok(m.LoadPatterns.GetNameList(0, []), "LoadPatterns.GetNameList")[1]):
+        t = m.LoadPatterns.GetLoadType(n, 0)
+        sw = m.LoadPatterns.GetSelfWTMultiplier(n, 0.0)
+        out.append({"name": n, "type": PATTERN_TYPES.get(int(t[0]), "Other"), "selfWeight": float(sw[0])})
+    return out
+
+
+def push_patterns(m, pats, log):
+    """Create the app's patterns (each with its linear static case) and bring type and self-weight up to date."""
+    have = {x["name"]: x for x in get_patterns(m)}
+    for pt in pats:
+        cur = have.get(pt["name"])
+        try:
+            if cur is None:
+                ok(m.LoadPatterns.Add(pt["name"], int(pt["type"]), float(pt["selfWeight"]), True), f"LoadPatterns.Add {pt['name']}")
+                log.append(f"Created load pattern {pt['name']} (with its linear static load case)")
+                continue
+            if PATTERN_TYPES.get(int(pt["type"])) != cur["type"]:
+                ok(m.LoadPatterns.SetLoadType(pt["name"], int(pt["type"])), "SetLoadType")
+            if abs(cur["selfWeight"] - pt["selfWeight"]) > 1e-9:
+                ok(m.LoadPatterns.SetSelfWTMultiplier(pt["name"], float(pt["selfWeight"])), "SetSelfWTMultiplier")
+        except Exception as e:
+            log.append(f"ERROR load pattern {pt['name']}: {e}")
+
+
+def sig(v):
+    """A load value rounded to 6 significant digits, so ETABS' stored floats compare equal to what was sent."""
+    return float(f"{float(v):.6g}")
+
+
+def csys_for(d):
+    return "Local" if int(d) <= 3 else "Global"
+
+
+def read_all(call, n_arrays):
+    """Call a GetLoad* method for every object; returns its arrays (empty when there are no loads)."""
+    try:
+        r = call()
+    except Exception:
+        return [[] for _ in range(n_arrays)]
+    if r[-1] != 0 or not r[0]:
+        return [[] for _ in range(n_arrays)]
+    return [lst(a) for a in r[1:1 + n_arrays]]
+
+
+def frame_load_key(l):
+    rel = bool(l["rel"])
+    return (l["pattern"], l["kind"], int(l["type"]), int(l["dir"]), rel, sig(l["d1"]), sig(l["d2"]), sig(l["v1"]), sig(l["v2"]))
+
+
+def current_frame_loads(m, managed):
+    """{frame name: sorted keys} of distributed and point loads in the managed patterns."""
+    out = {}
+    names, pats, types, _cs, dirs, rd1, rd2, d1, d2, v1, v2 = read_all(
+        lambda: m.FrameObj.GetLoadDistributed("All", 0, [], [], [], [], [], [], [], [], [], [], [], GROUP), 11)
+    for i, n in enumerate(names):
+        if pats[i] not in managed:
+            continue
+        # compare by whichever distance the app would send: relative when it spans 0-1, else both work
+        out.setdefault(n, []).append({"pattern": pats[i], "kind": "dist", "type": types[i], "dir": dirs[i],
+                                      "rd": (rd1[i], rd2[i]), "ad": (d1[i], d2[i]), "v1": v1[i], "v2": v2[i]})
+    names, pats, types, _cs, dirs, rd, d, v = read_all(
+        lambda: m.FrameObj.GetLoadPoint("All", 0, [], [], [], [], [], [], [], [], GROUP), 8)
+    for i, n in enumerate(names):
+        if pats[i] not in managed:
+            continue
+        out.setdefault(n, []).append({"pattern": pats[i], "kind": "point", "type": types[i], "dir": dirs[i],
+                                      "rd": (rd[i], rd[i]), "ad": (d[i], d[i]), "v1": v[i], "v2": v[i]})
+    return out
+
+
+def frame_loads_match(cur, want):
+    """ETABS reports both relative and absolute distances; match each wanted load in the form it was sent."""
+    if len(cur) != len(want):
+        return False
+    left = list(cur)
+    for w in want:
+        k = frame_load_key(w)
+        hit = None
+        for c in left:
+            dd = c["rd"] if w["rel"] else c["ad"]
+            ck = (c["pattern"], c["kind"], int(c["type"]), int(c["dir"]), bool(w["rel"]), sig(dd[0]), sig(dd[1]), sig(c["v1"]), sig(c["v2"]))
+            if ck == k:
+                hit = c
+                break
+        if hit is None:
+            return False
+        left.remove(hit)
+    return True
+
+
+def area_load_key(l):
+    return (l["pattern"], int(l["dir"]), sig(l["value"]))
+
+
+def current_area_loads(m, managed):
+    out = {}
+    names, pats, _cs, dirs, vals = read_all(lambda: m.AreaObj.GetLoadUniform("All", 0, [], [], [], [], [], GROUP), 5)
+    for i, n in enumerate(names):
+        if pats[i] in managed:
+            out.setdefault(n, []).append((pats[i], int(dirs[i]), sig(vals[i])))
+    return out
+
+
+def current_joint_loads(m, managed):
+    """{point name: {pattern: [6 summed components]}} in the managed patterns."""
+    out = {}
+    names, pats, _step, _cs, f1, f2, f3, m1, m2, m3 = read_all(
+        lambda: m.PointObj.GetLoadForce("All", 0, [], [], [], [], [], [], [], [], [], [], GROUP), 10)
+    for i, n in enumerate(names):
+        if pats[i] not in managed:
+            continue
+        acc = out.setdefault(n, {}).setdefault(pats[i], [0.0] * 6)
+        for k, v in enumerate((f1[i], f2[i], f3[i], m1[i], m2[i], m3[i])):
+            acc[k] += v
+    return out
+
+
+def point_finder(m):
+    """Look up the ETABS point at (x, y, z) mm, within TOL."""
+    r = m.PointObj.GetAllPoints(0, [], [], [], [], "Global")
+    grid = {}
+    if r[-1] == 0:
+        for n, x, y, z in zip(lst(r[1]), lst(r[2]), lst(r[3]), lst(r[4])):
+            grid.setdefault((round(x), round(y), round(z)), []).append((n, x, y, z))
+
+    def find(x, y, z):
+        kx, ky, kz = round(x), round(y), round(z)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for n, px, py, pz in grid.get((kx + dx, ky + dy, kz + dz), []):
+                        if abs(px - x) <= TOL and abs(py - y) <= TOL and abs(pz - z) <= TOL:
+                            return n
+        return None
+    return find
+
+
+def wanted_joints(p, find, log=None):
+    """{point name: {pattern: [6]}} from the payload, plus the names of joints to clear."""
+    want = {}
+    for j in p.get("jointLoads", []):
+        n = find(j["x"], j["y"], j["z"])
+        if n is None:
+            if log is not None:
+                log.append(f"WARNING joint load {j['pattern']} at ({j['x']:.0f}, {j['y']:.0f}, {j['z']:.0f}): no ETABS joint there")
+            continue
+        acc = want.setdefault(n, {}).setdefault(j["pattern"], [0.0] * 6)
+        for k in range(6):
+            acc[k] += j["f"][k]
+    clear = set()
+    for c in p.get("clearJoints", []):
+        n = find(c["x"], c["y"], c["z"])
+        if n is not None and n not in want:
+            clear.add(n)
+    return want, clear
+
+
+def joints_match(cur, want):
+    pats = set(cur) | set(want)
+    return all([sig(v) for v in cur.get(pt, [0.0] * 6)] == [sig(v) for v in want.get(pt, [0.0] * 6)] for pt in pats)
+
+
+def write_frame_loads(m, name, want, cur_pats):
+    for pt in cur_pats | {l["pattern"] for l in want}:
+        m.FrameObj.DeleteLoadDistributed(name, pt, 0)
+        m.FrameObj.DeleteLoadPoint(name, pt, 0)
+    for l in want:
+        if l["kind"] == "dist":
+            ok(m.FrameObj.SetLoadDistributed(name, l["pattern"], int(l["type"]), int(l["dir"]), float(l["d1"]), float(l["d2"]),
+                                             float(l["v1"]), float(l["v2"]), csys_for(l["dir"]), bool(l["rel"]), False, 0), "SetLoadDistributed")
+        else:
+            ok(m.FrameObj.SetLoadPoint(name, l["pattern"], int(l["type"]), int(l["dir"]), float(l["d1"]), float(l["v1"]),
+                                       csys_for(l["dir"]), bool(l["rel"]), False, 0), "SetLoadPoint")
+
+
+def write_area_loads(m, name, want, cur_pats):
+    for pt in cur_pats | {l["pattern"] for l in want}:
+        m.AreaObj.DeleteLoadUniform(name, pt, 0)
+    for l in want:
+        ok(m.AreaObj.SetLoadUniform(name, l["pattern"], float(l["value"]), int(l["dir"]), False, csys_for(l["dir"]), 0), "SetLoadUniform")
+
+
+def write_joint_loads(m, name, want, cur):
+    for pt in set(cur) | set(want):
+        m.PointObj.DeleteLoadForce(name, pt, 0)
+    for pt, f in want.items():
+        if any(abs(v) > 0 for v in f):
+            ok(m.PointObj.SetLoadForce(name, pt, [float(v) for v in f], False, "Global", 0), "SetLoadForce")
+
+
+def push_loads(m, p, frame_names, area_names, log):
+    """
+    Write the app's loads onto the objects it owns (`frame_names` / `area_names`: payload guid -> ETABS name) and
+    its joints. An object whose loads in the app's patterns already match is left alone.
+    """
+    managed = set(p.get("loadPatterns", []))
+    res = {"frames": 0, "areas": 0, "joints": 0, "unchanged": 0}
+    cur_f = current_frame_loads(m, managed)
+    for f in p["frames"]:
+        name = frame_names.get(f["guid"])
+        if not name:
+            continue
+        cur = cur_f.get(name, [])
+        if frame_loads_match(cur, f.get("loads", [])):
+            res["unchanged"] += bool(cur)
+            continue
+        try:
+            write_frame_loads(m, name, f.get("loads", []), {c["pattern"] for c in cur})
+            res["frames"] += 1
+        except Exception as e:
+            log.append(f"ERROR loads on {f['kind']} {name}: {e}")
+    cur_a = current_area_loads(m, managed)
+    for a in p["areas"]:
+        name = area_names.get(a["guid"])
+        if not name:
+            continue
+        cur = cur_a.get(name, [])
+        want = a.get("loads", [])
+        if sorted(cur) == sorted(area_load_key(l) for l in want):
+            res["unchanged"] += bool(cur)
+            continue
+        try:
+            write_area_loads(m, name, want, {c[0] for c in cur})
+            res["areas"] += 1
+        except Exception as e:
+            log.append(f"ERROR loads on slab {name}: {e}")
+    cur_j = current_joint_loads(m, managed)
+    want, clear = wanted_joints(p, point_finder(m), log)
+    for name in set(want) | clear:
+        cur = cur_j.get(name, {})
+        w = want.get(name, {})
+        if joints_match(cur, w):
+            res["unchanged"] += bool(cur)
+            continue
+        try:
+            write_joint_loads(m, name, w, cur)
+            res["joints"] += 1
+        except Exception as e:
+            log.append(f"ERROR joint load at point {name}: {e}")
+    return res
+
+
+def verify_loads(m, p, fmap, amap, log):
+    """Count app objects whose loads in the app's patterns differ from ETABS (and log the first few)."""
+    managed = set(p.get("loadPatterns", []))
+    diff = 0
+    cur_f = current_frame_loads(m, managed)
+    for f in p["frames"]:
+        n = fmap.get(f["guid"])
+        if n and not frame_loads_match(cur_f.get(n, []), f.get("loads", [])):
+            diff += 1
+            log.append(f"Loads differ on {f['kind']} {n}")
+    cur_a = current_area_loads(m, managed)
+    for a in p["areas"]:
+        n = amap.get(a["guid"])
+        if n and sorted(cur_a.get(n, [])) != sorted(area_load_key(l) for l in a.get("loads", [])):
+            diff += 1
+            log.append(f"Loads differ on slab {n}")
+    cur_j = current_joint_loads(m, managed)
+    want, clear = wanted_joints(p, point_finder(m), log)
+    for n in set(want) | clear:
+        if not joints_match(cur_j.get(n, {}), want.get(n, {})):
+            diff += 1
+            log.append(f"Joint loads differ at point {n}")
+    have = {x["name"] for x in get_patterns(m)}
+    missing = [pt["name"] for pt in p.get("patterns", []) if pt["name"] not in have]
+    if missing:
+        log.append(f"Load patterns missing in ETABS: {', '.join(missing)}")
+    return diff + len(missing)
+
 
 
 # ---------------------------------------------------------------- push
@@ -595,6 +886,9 @@ def do_push(p):
                 log.append(f"WARNING grids not pushed: {e}")
         trace("sections")
         push_sections(m, p, log)
+        if p.get("loads"):
+            trace("load patterns")
+            push_patterns(m, p.get("patterns", []), log)
         trace("guid maps")
 
         fmap = guid_map(m.FrameObj, m)
@@ -614,9 +908,11 @@ def do_push(p):
 
         claimed = {f["guid"] for f in p["frames"]} | {a["guid"] for a in p["areas"]}
         base_cols = []  # names of columns that start at the base elevation (for supports)
+        frame_names, area_names = {}, {}  # guid -> ETABS name of everything pushed, for the loads
 
         def frame_done(f, name):
             pushed.append(f["appId"])
+            frame_names[f["guid"]] = name
             if f["kind"] == "column" and abs(min(f["z1"], f["z2"]) - p["baseElevation"]) <= TOL:
                 base_cols.append(name)
 
@@ -688,16 +984,18 @@ def do_push(p):
                         else:
                             res["unchanged"] += 1
                         pushed.append(a["appId"])
+                        area_names[a["guid"]] = name
                         continue
                     ok(m.AreaObj.Delete(name, 0), "AreaObj.Delete")
                     key = "updated"
                 try:
-                    add_area(m, a)
+                    name = add_area(m, a)
                 except Refused:
                     refused.append((a, key))
                     continue
                 res[key] += 1
                 pushed.append(a["appId"])
+                area_names[a["guid"]] = name
             except Exception as e:
                 res["failed"] += 1
                 log.append(f"ERROR slab {a['story']} {a['section']}: {e}")
@@ -707,12 +1005,13 @@ def do_push(p):
         for a, key in refused:
             try:
                 try:
-                    add_area(m, a)
+                    name = add_area(m, a)
                 except Refused:
-                    take_over(m, a, False, index, claimed, taken)
+                    name = take_over(m, a, False, index, claimed, taken)
                     taken_over += 1
                 res[key] += 1
                 pushed.append(a["appId"])
+                area_names[a["guid"]] = name
             except Exception as e:
                 res["failed"] += 1
                 log.append(f"ERROR slab {a['story']} {a['section']}: {e}")
@@ -723,6 +1022,10 @@ def do_push(p):
 
         if p.get("supports", "none") in SUPPORTS:
             res["restrained"] = set_supports(m, base_cols, p["supports"], p["baseElevation"], log)
+
+        if p.get("loads"):
+            trace("loads")
+            res["loads"] = push_loads(m, p, frame_names, area_names, log)
 
         try:
             m.View.RefreshView(0, False)
@@ -762,8 +1065,10 @@ def do_verify(p):
             if not same_area(area_geom(m, n), a) or m.AreaObj.GetProperty(n, "")[0] != a["section"]:
                 wrong += 1
                 log.append(f"Mismatch slab {n}")
-        log.insert(0, f"Checked {len(p['frames'])} frames and {len(p['areas'])} slabs: {missing} missing, {wrong} different.")
-        return {"ok": missing == 0 and wrong == 0, "log": log, "unowned": unowned(m, owned_guids(p))}
+        loads = verify_loads(m, p, fmap, amap, log) if p.get("loads") else 0
+        log.insert(0, f"Checked {len(p['frames'])} frames and {len(p['areas'])} slabs: {missing} missing, {wrong} different"
+                      + (f", loads differ on {loads}" if p.get("loads") else "") + ".")
+        return {"ok": missing == 0 and wrong == 0 and loads == 0, "log": log, "unowned": unowned(m, owned_guids(p))}
     finally:
         m.SetPresentUnits(units)
 

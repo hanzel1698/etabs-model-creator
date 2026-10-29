@@ -26,6 +26,7 @@
   --label: #f3e3b0;
   --labelCol: #ffb3c4;
   --labelSlab: #8fe3f2;
+  --load: #ff9f43;
   color-scheme: dark;
 }
 
@@ -808,6 +809,19 @@ table.grid tr.group-row td {
   font-weight: 600;
   color: var(--accent);
   border-bottom-color: var(--accent);
+}
+
+.load-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--line);
+}
+.load-row button {
+  padding: 0 6px;
+  flex: none;
 }
 
 .node-list {

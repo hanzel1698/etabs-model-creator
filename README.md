@@ -34,10 +34,19 @@ The hosted Pages build works the same way: it calls the bridge on `127.0.0.1:876
 7. **Select** (V): a left-to-right window selects what's fully inside; right-to-left selects anything crossing. **Replicate** (E) copies linearly by dx/dy or onto other stories (tick boxes or a range such as `3-10`). **Move…** and Del are also available.
 8. Ticking stories in the left panel draws on all of them at once.
 9. The view controls rotate the plan (the model itself is unchanged), show the story below as a ghost, toggle section labels, colour by section, and set text size. **Split** or **3D** opens the three.js view.
-10. **ETABS…**:
-    - **Import** reads stories, grids, materials, frame sections and slab sections.
-    - **Push** sends sections, grids, stories (optional) and elements.
-    - **Verify** reads everything back and compares it with the app.
+10. **Loads** (top bar):
+    - **Load patterns…** defines patterns: name, type and self-weight multiplier. The defaults are Dead (×1), SDL and Live.
+    - The **pattern dropdown** sets the active pattern. The assign dialogs start with it, and **Loads (active pattern)** in the view toggles shows its values on the plan.
+    - **Frame load…** applies to the selected beams and columns. It takes uniform, trapezoidal (up to 4 stations) or point loads, as a force or a moment, in any direction. Distances are relative or in metres.
+    - **Shell load…** applies a uniform kN/m² load to the selected slabs.
+    - **Joint load…** applies Fx…Mz to the selected nodes (Alt+drag selects nodes), on one or more stories.
+    - Each dialog can **Add**, **Replace** or **Delete** the loads in its pattern, as ETABS does. The right panel lists the loads on the selection, and × removes one.
+    - Loads follow Replicate, Move, Split slabs and Undo. Joining or merging keeps a load only when every piece carried the same one; if the pieces differ, the toast says the loads were dropped.
+    - **Select by…** can pick elements that carry a load in a given pattern, or no loads at all.
+11. **ETABS…**:
+    - **Import** reads stories, grids, materials, frame sections, slab sections and load patterns.
+    - **Push** sends sections, grids, stories (optional), elements, and (with **Loads** ticked) load patterns and loads.
+    - **Verify** reads everything back and compares it with the app, loads included.
 
 ## How the app maps to ETABS
 
@@ -52,6 +61,14 @@ The hosted Pages build works the same way: it calls the bridge on `127.0.0.1:876
 - Supports: the push option (Fixed / Pinned / None) restrains the bottom joint of every column at the base elevation on each push; None leaves joint restraints untouched.
 - Sections created in the app are created in ETABS (rectangular, circular and slab). Sections imported from ETABS are left as they are.
 - ETABS only allows story replacement (`SetStories_2`) on a model with no objects. Otherwise, import the stories from ETABS first.
+- Loads:
+  - **Patterns.** Each app pattern is created with `LoadPatterns.Add`, which also creates its linear static case. Its type and self-weight are kept up to date. Patterns are never deleted in ETABS.
+  - **Frame loads** use `FrameObj.SetLoadDistributed` / `SetLoadPoint`.
+  - **Slab loads** use `AreaObj.SetLoadUniform`.
+  - **Joint loads** use `PointObj.SetLoadForce` on the ETABS joint at the node's position (story level).
+  - **Units.** The app works in kN, kN/m, kN/m² and kN·m. They are sent in kN‑mm, so 10 kN/m arrives as 0.01 kN/mm.
+  - **Re-pushing.** The bridge reads every load in the app's patterns with the `"All"` group and rewrites only the objects whose loads differ. Loads in patterns the app doesn't define, and loads on objects it doesn't own, are left alone. A joint load removed in the app is cleared at its joint on the next push.
+  - **Distributing slab loads to beams.** ETABS 22 does not support one-way or two-way distribution to beams as a load (`AreaObj.SetLoadUniformToFrame` returns -100). Slabs pass loads to their beams through their section's modelling, e.g. a membrane slab.
 
 The project autosaves in the browser (IndexedDB). **Save** downloads a `.emc.json` file.
 

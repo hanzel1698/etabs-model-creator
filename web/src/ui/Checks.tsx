@@ -5,7 +5,7 @@ import { log } from '../log/sessionLog';
 import { viewport } from '../plan/viewport';
 import type { Model, Pt } from '../model/types';
 
-const LABEL: Record<IssueKind, string> = { duplicate: 'Duplicate', overlap: 'Overlap', degenerate: 'Zero size', section: 'Section', story: 'Story' };
+const LABEL: Record<IssueKind, string> = { duplicate: 'Duplicate', overlap: 'Overlap', degenerate: 'Zero size', section: 'Section', story: 'Story', load: 'Load' };
 
 export const useIssues = () => useApp((s) => modelIssues(s.model));
 

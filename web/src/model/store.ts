@@ -36,6 +36,8 @@ export interface ShowFlags {
   beams: boolean;
   slabs: boolean;
   nodes: boolean;
+  /** load values of the active load pattern */
+  loads: boolean;
 }
 
 interface AppState {
@@ -59,6 +61,9 @@ interface AppState {
   colAlign: ColAlign;
   setColAlign: (p: Partial<ColAlign>) => void;
   setColumnAngle: (a: number) => void;
+  /** load pattern the assign dialogs default to and the views show */
+  loadPattern: string;
+  setLoadPattern: (p: string) => void;
   ortho: boolean;
   toggleOrtho: () => void;
   /** beam tool: size new beams from their supports and span instead of using the active beam section as is */
@@ -156,13 +161,13 @@ export const useApp = create<AppState>((set, get) => ({
     const { past, model, future } = get();
     if (!past.length) return;
     // what is in ETABS doesn't change by undoing, so keep the record of it
-    const m = { ...past[past.length - 1], pushedIds: model.pushedIds };
+    const m = { ...past[past.length - 1], pushedIds: model.pushedIds, pushedJointKeys: model.pushedJointKeys };
     set({ model: m, past: past.slice(0, -1), future: [model, ...future], selection: [], dirty: get().dirty + 1, active: validActive(get().active, m) });
   },
   redo: () => {
     const { past, model, future } = get();
     if (!future.length) return;
-    const m = { ...future[0], pushedIds: model.pushedIds };
+    const m = { ...future[0], pushedIds: model.pushedIds, pushedJointKeys: model.pushedJointKeys };
     set({ model: m, past: [...past, model], future: future.slice(1), selection: [], dirty: get().dirty + 1, active: validActive(get().active, m) });
   },
 
@@ -173,6 +178,8 @@ export const useApp = create<AppState>((set, get) => ({
   active: { column: 'C400x400', beam: 'B300x500', slab: 'S150' },
   setActive: (k, name) => set((s) => ({ active: { ...s.active, [k]: name } })),
   columnAngle: 0,
+  loadPattern: 'Dead',
+  setLoadPattern: (p) => set({ loadPattern: p }),
   colAlign: { mode: 'off', anchor: 'center', ref: null, picking: false },
   setColAlign: (p) => set((s) => ({ colAlign: { ...s.colAlign, ...p } })),
   setColumnAngle: (a) => set({ columnAngle: a }),
@@ -182,7 +189,7 @@ export const useApp = create<AppState>((set, get) => ({
   toggleAutoBeam: () => set((s) => ({ autoBeam: !s.autoBeam })),
   autoSplitSlabs: false,
   toggleAutoSplitSlabs: () => set((s) => ({ autoSplitSlabs: !s.autoSplitSlabs })),
-  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, slabs: true, nodes: false },
+  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, slabs: true, nodes: false, loads: false },
   toggleShow: (k) =>
     set((s) => {
       const show = { ...s.show, [k]: !s.show[k] };

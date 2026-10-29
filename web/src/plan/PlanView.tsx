@@ -4,7 +4,8 @@ import { cachedStoryNodes, isNodeId, type PanelSize } from '../model/ops';
 import { fmt } from '../model/geom';
 import { columnOn, type Beam, type Pt } from '../model/types';
 import { viewport } from './viewport';
-import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer } from './layers';
+import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer } from './layers';
+import { activePattern } from '../ui/LoadDialogs';
 import { onMove, onClick, onCancel, finishPolygon, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, type Grip } from './tools';
 import { columnOutline } from './snap';
 import { useUnderlay, regionFor } from '../underlay/store';
@@ -75,6 +76,7 @@ export function PlanView() {
   const story = useApp((s) => s.activeStory);
   const selection = useApp((s) => s.selection);
   const show = useApp((s) => s.show);
+  const pattern = useApp(activePattern);
   const viewRot = useApp((s) => s.viewRotation);
   const tool = useApp((s) => s.tool);
   const ts = useApp((s) => s.textScale);
@@ -275,6 +277,7 @@ export function PlanView() {
             <BeamLayer beams={beams} sel={sel} colorBy={colorBy} />
             <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} />
             {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} showSlabs={show.slabs} />}
+            {show.loads && <LoadLayer m={model} story={story} pattern={pattern} viewRot={viewRot} ts={ts} />}
           </g>
         </g>
         <IssueLayer story={story} offset={setupRef} />

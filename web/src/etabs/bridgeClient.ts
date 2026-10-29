@@ -1,4 +1,4 @@
-import type { FrameSection, Grid, Material, SlabSection, Story } from '../model/types';
+import type { FrameSection, Grid, LoadPattern, Material, SlabSection, Story } from '../model/types';
 
 export const DEFAULT_BRIDGE = 'http://127.0.0.1:8765';
 
@@ -48,7 +48,35 @@ export interface ImportResult {
   materials: Material[];
   frameSections: FrameSection[];
   slabSections: SlabSection[];
+  patterns: LoadPattern[];
   warnings: string[];
+}
+
+/** Frame load in ETABS terms (kN, mm): MyType 1 force / 2 moment, Dir code, distances relative or mm. */
+export interface FrameLoadOut {
+  pattern: string;
+  kind: 'dist' | 'point';
+  type: 1 | 2;
+  dir: number;
+  rel: boolean;
+  d1: number;
+  d2: number;
+  v1: number;
+  v2: number;
+}
+/** Uniform area load (kN/mm²). */
+export interface AreaLoadOut {
+  pattern: string;
+  dir: number;
+  value: number;
+}
+/** Joint force (kN, kN·mm, global) at a point found by its coordinates. */
+export interface JointLoadOut {
+  x: number;
+  y: number;
+  z: number;
+  pattern: string;
+  f: number[];
 }
 
 export interface PushPayload {
@@ -58,11 +86,20 @@ export interface PushPayload {
   grids: Omit<Grid, 'id'>[] | null;
   frameSections: FrameSection[]; // app-defined sections to create
   slabSections: SlabSection[];
-  frames: { guid: string; kind: 'column' | 'beam'; x1: number; y1: number; z1: number; x2: number; y2: number; z2: number; section: string; angle: number; story: string }[];
-  areas: { guid: string; pts: { x: number; y: number; z: number }[]; section: string; story: string }[];
+  frames: { guid: string; kind: 'column' | 'beam'; x1: number; y1: number; z1: number; x2: number; y2: number; z2: number; section: string; angle: number; story: string; loads: FrameLoadOut[] }[];
+  areas: { guid: string; pts: { x: number; y: number; z: number }[]; section: string; story: string; loads: AreaLoadOut[] }[];
   deleteGuids: string[];
   /** restraint for the bottom joints of columns at the base elevation; 'none' leaves joints untouched */
   supports: Supports;
+  /** push load patterns and loads */
+  loads: boolean;
+  /** patterns to create or update in ETABS (ETABS load pattern type codes) */
+  patterns: { name: string; type: number; selfWeight: number }[];
+  /** every pattern whose loads the app manages (app and imported patterns); loads in others are left alone */
+  loadPatterns: string[];
+  jointLoads: JointLoadOut[];
+  /** joints that carried app loads at the last push and carry none now */
+  clearJoints: { x: number; y: number; z: number }[];
 }
 
 export type Supports = 'fixed' | 'pinned' | 'none';
@@ -76,6 +113,8 @@ export interface PushResult {
   failed: number;
   log: string[];
   pushedGuids: string[];
+  /** objects whose loads were rewritten; joints loaded */
+  loads?: { frames: number; areas: number; joints: number; unchanged: number };
 }
 
 /** A frame or area object in ETABS that no element of the app owns */

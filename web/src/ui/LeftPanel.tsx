@@ -273,6 +273,7 @@ function ViewControls() {
     ['beams', 'Beams'],
     ['slabs', 'Slabs'],
     ['nodes', 'Nodes'],
+    ['loads', 'Loads (active pattern)'],
   ];
   return (
     <>

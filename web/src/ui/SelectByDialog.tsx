@@ -114,6 +114,16 @@ export function SelectByDialog() {
         ))}
       </div>
       {storyMode === 'pick' && <StoryChecks value={picked} onChange={setPicked} />}
+      <div className="chips">
+        <b className="small" style={{ width: 70 }}>Loads</b>
+        <select value={f.load ?? ''} onChange={(e) => setF({ ...f, load: e.target.value })}>
+          <option value="">Any</option>
+          {model.loadPatterns.map((p) => (
+            <option key={p.name} value={p.name}>Has a {p.name} load</option>
+          ))}
+          <option value="-">No loads</option>
+        </select>
+      </div>
 
       <div className="small">
         <b>Sections</b> <span className="muted">(tick to limit to these; none ticked means any)</span>

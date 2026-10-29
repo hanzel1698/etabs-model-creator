@@ -1,4 +1,5 @@
 import { columnOn, type Beam, type Column, type FrameSection, type Model, type Pt, type Slab } from './types';
+import { cachedStoryNodes } from './ops';
 import { add, cross, dist, distToSeg, dot, fmt, len, mid, pointInPoly, polyArea, rot, segIntersect, sub } from './geom';
 
 /** Points closer than this (mm) are the same point; overlaps thinner than this are touching, not overlapping. */
@@ -6,7 +7,7 @@ export const TOL = 1;
 /** Slabs smaller than this (mm²) are treated as degenerate. */
 const MIN_SLAB_AREA = 10_000;
 
-export type IssueKind = 'duplicate' | 'overlap' | 'degenerate' | 'section' | 'story';
+export type IssueKind = 'duplicate' | 'overlap' | 'degenerate' | 'section' | 'story' | 'load';
 export interface Issue {
   kind: IssueKind;
   story: string; // '' when the issue spans stories
@@ -288,7 +289,38 @@ export function checkModel(m: Model): Issue[] {
   for (const s of m.slabs) if (!areas.has(s.section)) note(s.section, s.id, s.pts[0] ?? { x: 0, y: 0 }, s.story);
   for (const [sec, e] of missing) out.push({ kind: 'section', story: e.story, ids: e.ids, at: e.at, text: `Section “${sec}” is not defined (${e.ids.length} element${e.ids.length === 1 ? '' : 's'})` });
 
+  checkLoads(m, stories, out);
   return out;
+}
+
+/** Joint loads that sit on no joint, and loads in patterns that don't exist. */
+function checkLoads(m: Model, stories: Set<string>, out: Issue[]) {
+  for (const j of m.jointLoads) {
+    if (!stories.has(j.story)) continue; // reported with the story check's elements below
+    if (!cachedStoryNodes(m, j.story).some((n) => dist(n, j) < TOL))
+      out.push({ kind: 'load', story: j.story, ids: [j.id], at: j, text: `${j.pattern} joint load at ${xy(j)} sits on no column, grid or beam intersection` });
+  }
+  const orphanJ = m.jointLoads.filter((j) => !stories.has(j.story));
+  if (orphanJ.length) out.push({ kind: 'load', story: '', ids: orphanJ.map((j) => j.id), at: orphanJ[0], text: `${orphanJ.length} joint load${orphanJ.length === 1 ? '' : 's'} on stories that don't exist` });
+
+  const pats = new Set(m.loadPatterns.map((p) => p.name));
+  const at = (x: Column | Beam | Slab): Pt => ('pts' in x ? x.pts[0] : 'x1' in x ? { x: x.x1, y: x.y1 } : x);
+  const bad = new Map<string, { ids: string[]; at: Pt; story: string }>();
+  const els: (Column | Beam | Slab)[] = [...m.columns, ...m.beams, ...m.slabs];
+  for (const x of els)
+    for (const l of x.loads ?? [])
+      if (!pats.has(l.pattern)) {
+        const e = bad.get(l.pattern) ?? { ids: [], at: at(x), story: x.story };
+        if (!e.ids.includes(x.id)) e.ids.push(x.id);
+        bad.set(l.pattern, e);
+      }
+  for (const j of m.jointLoads)
+    if (!pats.has(j.pattern)) {
+      const e = bad.get(j.pattern) ?? { ids: [], at: j, story: j.story };
+      e.ids.push(j.id);
+      bad.set(j.pattern, e);
+    }
+  for (const [p, e] of bad) out.push({ kind: 'load', story: e.story, ids: e.ids, at: e.at, text: `Load pattern “${p}” is not defined (${e.ids.length} loaded item${e.ids.length === 1 ? '' : 's'})` });
 }
 
 let cache: { m: Model; issues: Issue[] } | null = null;

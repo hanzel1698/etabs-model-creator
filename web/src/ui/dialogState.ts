@@ -12,7 +12,11 @@ export type Dialog =
   | { kind: 'stories' }
   | { kind: 'underlay' }
   | { kind: 'etabs' }
-  | { kind: 'rotate' };
+  | { kind: 'rotate' }
+  | { kind: 'loadPatterns' }
+  | { kind: 'frameLoad' }
+  | { kind: 'shellLoad' }
+  | { kind: 'jointLoad' };
 
 export const useDialog = create<{ d: Dialog | null }>(() => ({ d: null }));
 export const openDialog = (d: Dialog) => useDialog.setState({ d });

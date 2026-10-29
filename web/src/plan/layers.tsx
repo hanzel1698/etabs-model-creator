@@ -3,6 +3,7 @@ import { useApp, sectionColor } from '../model/store';
 import { columnOn, type Beam, type Column, type FrameSection, type Grid, type Model, type Slab } from '../model/types';
 import { angleDeg, fmt, polyArea } from '../model/geom';
 import { gridDimensions } from '../model/ops';
+import { describeJointLoad, shortFrameLoad } from '../model/loads';
 import { columnOutline } from './snap';
 import { readableAngle, textTransform } from './viewport';
 import { useUnderlay, sheetFor, ensurePageRendered } from '../underlay/store';
@@ -212,6 +213,69 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, show
             </text>
           );
         })}
+    </g>
+  );
+});
+
+// ---------------- loads ----------------
+
+/**
+ * Values of the active pattern's loads on a story, in the load colour: under each beam (kN/m; P = point load in kN),
+ * beside columns, at slab centroids (kN/m²) and at loaded joints (↓ with components).
+ */
+export const LoadLayer = memo(function LoadLayer({ m, story, pattern, viewRot, ts }: { m: Model; story: string; pattern: string; viewRot: number; ts: number }) {
+  const h = 150 * ts;
+  const mine = <L extends { pattern: string }>(ls?: L[]) => (ls ?? []).filter((l) => l.pattern === pattern);
+  return (
+    <g className="loads nosel" fontSize={h} fill="var(--load)">
+      {m.beams.map((b) => {
+        const ls = mine(b.loads);
+        if (b.story !== story || !ls.length) return null;
+        const a = readableAngle(angleDeg({ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }), viewRot);
+        return (
+          <g key={b.id}>
+            <text transform={textTransform((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2, viewRot, a)} dy={h * 1.05} textAnchor="middle">
+              {ls.map(shortFrameLoad).join(' + ')}
+            </text>
+            {ls
+              .filter((l) => l.kind === 'point')
+              .map((l, i) => {
+                const L = Math.hypot(b.x2 - b.x1, b.y2 - b.y1) || 1;
+                const t = l.rel ? l.d1 : l.d1 / L;
+                const x = b.x1 + (b.x2 - b.x1) * t,
+                  y = b.y1 + (b.y2 - b.y1) * t;
+                return <circle key={i} cx={x} cy={y} r={h * 0.3} />;
+              })}
+          </g>
+        );
+      })}
+      {m.columns.map((c) => {
+        const ls = mine(c.loads);
+        if (!ls.length || !columnOn(m, c, story)) return null;
+        return (
+          <text key={c.id} transform={textTransform(c.x, c.y, viewRot)} dx={-h * 0.6} dy={h * 1.4} textAnchor="end">
+            {ls.map(shortFrameLoad).join(' + ')}
+          </text>
+        );
+      })}
+      {m.slabs.map((s) => {
+        const ls = mine(s.loads);
+        if (s.story !== story || !ls.length) return null;
+        const c = centroid(s.pts);
+        const txt = ls.map((l) => Math.round(l.value * 1000) / 1000).join(' + ');
+        return (
+          <text key={s.id} transform={textTransform(c.x, c.y, viewRot)} dy={h * 1.3} textAnchor="middle" dominantBaseline="central">
+            {txt} kN/m²
+          </text>
+        );
+      })}
+      {m.jointLoads.map((j) =>
+        j.story !== story || j.pattern !== pattern ? null : (
+          <text key={j.id} transform={textTransform(j.x, j.y, viewRot)} dx={h * 0.5} dy={-h * 0.5}>
+            ↓ {describeJointLoad(j.f)}
+          </text>
+        ),
+      )}
     </g>
   );
 });

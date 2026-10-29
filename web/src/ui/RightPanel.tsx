@@ -11,11 +11,13 @@ import { fitAll } from '../plan/PlanView';
 import { dist, fmt } from '../model/geom';
 import { autoSizeBeams, noFitNote } from '../model/autoBeam';
 import { ChecksSection } from './Checks';
+import { LoadsSection } from './LoadDialogs';
 
 export function RightPanel() {
   return (
     <div className="side right">
       <Properties />
+      <LoadsSection />
       <ChecksSection />
       <UnderlayPanel />
     </div>
@@ -191,7 +193,7 @@ export function joinSelectedBeams() {
   s.setSelection(r.ids);
   const secs = [...new Set([...sized.sizes.values()].map((x) => x.section))].join(', ');
   const left = ids.length - r.from;
-  toast(`${r.from} beams joined into ${r.joined} (auto-sized: ${secs}).` + (left ? ` ${left} left as they were.` : '') + noFitNote(sized.sizes, s.active.beam));
+  toast(`${r.from} beams joined into ${r.joined} (auto-sized: ${secs}).` + (left ? ` ${left} left as they were.` : '') + mixedNote(r.mixedLoads, 'beam') + noFitNote(sized.sizes, s.active.beam));
   logAutoSizes(sized.model, r.ids, s.active.beam);
 }
 
@@ -208,7 +210,8 @@ export function joinSelectedColumns() {
   toast(
     `${r.from} columns joined into ${r.joined}.` +
       (r.mixed ? ` ${r.mixed} had pieces of different sections and took the lowest piece's.` : '') +
-      (left ? ` ${left} left as they were.` : ''),
+      (left ? ` ${left} left as they were.` : '') +
+      mixedNote(r.mixedLoads, 'column'),
   );
 }
 
@@ -222,8 +225,11 @@ export function mergeSelectedSlabs() {
   s.commit(() => r.model);
   s.setSelection(r.model.slabs.slice(-r.merged).map((x) => x.id));
   const left = ids.length - r.from;
-  toast(`${r.from} slabs merged into ${r.merged}.` + (left ? ` ${left} left as they were.` : ''));
+  toast(`${r.from} slabs merged into ${r.merged}.` + (left ? ` ${left} left as they were.` : '') + mixedNote(r.mixedLoads, 'slab'));
 }
+
+/** Loads dropped by a join or merge whose pieces carried different (or partial) loads. */
+const mixedNote = (n: number, what: string) => (n ? ` ⚠ ${n} joined ${what}${n > 1 ? 's' : ''} lost their loads (the pieces differed): assign them again.` : '');
 
 /** Editable end coordinates of a single beam; a value applies on Enter or when the field loses focus. */
 function BeamEnds({ b }: { b: Beam }) {

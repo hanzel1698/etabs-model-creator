@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { useApp, type ShowFlags, type ToolName } from '../model/store';
 import { useDialog, type Dialog } from '../ui/dialogState';
 import { explainAutoSize } from '../model/autoBeam';
-import type { Beam, Column, FrameSection, Grid, Material, Model, Pt, Slab, SlabSection, Story } from '../model/types';
+import type { Beam, Column, FrameSection, Grid, JointLoad, LoadPattern, Material, Model, Pt, Slab, SlabSection, Story } from '../model/types';
+import { describeFrameLoad, describeJointLoad, describeShellLoad } from '../model/loads';
 
 export type LogLevel = 'info' | 'warn' | 'error';
 export interface LogEntry {
@@ -72,6 +73,11 @@ function moved(pa: Pt[], pb: Pt[]): string | null {
   return pa.every((q, i) => Math.abs(pb[i].x - q.x - dx) < 0.5 && Math.abs(pb[i].y - q.y - dy) < 0.5) ? `moved by ${pt(dx, dy)}` : null;
 }
 const field = (label: string, a: unknown, b: unknown, unit = '') => (a !== b ? [`${label} ${a}${unit} → ${b}${unit}`] : []);
+/** "loads now: …" when the loads an element carries changed */
+function loadsField<L extends { pattern: string }>(a: L[] | undefined, b: L[] | undefined, say: (l: L) => string): string[] {
+  if (JSON.stringify(a ?? []) === JSON.stringify(b ?? [])) return [];
+  return [b?.length ? `loads now ${b.map((l) => `${l.pattern} ${say(l)}`).join('; ')}` : 'loads removed'];
+}
 
 const columnWords: Words<Column> = {
   describe: (c) => `column ${c.section} on ${c.base ? `${c.base}–${c.story}` : c.story} at ${pt(c.x, c.y)}${c.angle ? `, rotated ${c.angle}°` : ''}`,
@@ -81,6 +87,7 @@ const columnWords: Words<Column> = {
     ...field('section', a.section, b.section),
     ...(a.x !== b.x || a.y !== b.y ? [`moved ${pt(a.x, a.y)} → ${pt(b.x, b.y)}`] : []),
     ...field('angle', a.angle, b.angle, '°'),
+    ...loadsField(a.loads, b.loads, describeFrameLoad),
   ],
 };
 const beamWords: Words<Beam> = {
@@ -92,6 +99,7 @@ const beamWords: Words<Beam> = {
       ...field('story', a.story, b.story),
       ...field('section', a.section, b.section),
       ...(geo ? [moved(ends(a), ends(b)) ?? `now ${pt(b.x1, b.y1)} to ${pt(b.x2, b.y2)}, length ${metres(beamLen(a))} → ${metres(beamLen(b))}`] : []),
+      ...loadsField(a.loads, b.loads, describeFrameLoad),
     ];
   },
 };
@@ -101,6 +109,7 @@ const slabWords: Words<Slab> = {
     ...field('story', a.story, b.story),
     ...field('section', a.section, b.section),
     ...(JSON.stringify(a.pts) !== JSON.stringify(b.pts) ? [moved(a.pts, b.pts) ?? `reshaped to ${b.pts.length} corners, area ${area(a.pts)} → ${area(b.pts)}`] : []),
+    ...loadsField(a.loads, b.loads, describeShellLoad),
   ],
 };
 const gridAt = (g: Grid) => (g.dir === 'X' ? `x = ${mm(g.x1)}` : g.dir === 'Y' ? `y = ${mm(g.y1)}` : `${pt(g.x1, g.y1)} to ${pt(g.x2, g.y2)}`);
@@ -128,6 +137,18 @@ const frameWords: Words<FrameSection> = {
 const slabSecWords: Words<SlabSection> = {
   describe: (s) => `slab section ${s.name} (${mm(s.thickness)} mm, ${s.material})`,
   compare: (a, b) => [...field('thickness', a.thickness, b.thickness, ' mm'), ...field('material', a.material, b.material)],
+};
+const patternWords: Words<LoadPattern> = {
+  describe: (p) => `load pattern ${p.name} (${p.type}, self-weight ×${p.selfWeight})`,
+  compare: (a, b) => [...field('type', a.type, b.type), ...field('self-weight', a.selfWeight, b.selfWeight)],
+};
+const jointLoadWords: Words<JointLoad> = {
+  describe: (j) => `joint load ${j.pattern} ${describeJointLoad(j.f)} on ${j.story} at ${pt(j.x, j.y)}`,
+  compare: (a, b) => [
+    ...field('pattern', a.pattern, b.pattern),
+    ...(JSON.stringify(a.f) !== JSON.stringify(b.f) ? [`now ${describeJointLoad(b.f)}`] : []),
+    ...(a.x !== b.x || a.y !== b.y || a.story !== b.story ? [`moved to ${b.story} ${pt(b.x, b.y)}`] : []),
+  ],
 };
 const materialWords: Words<Material> = {
   describe: (m) => `material ${m.name} (${m.type})`,
@@ -182,6 +203,8 @@ export function diffModel(a: Model, b: Model): string[] {
     ...diffList(a.frameSections, b.frameSections, 'frame section', name, frameWords),
     ...diffList(a.slabSections, b.slabSections, 'slab section', name, slabSecWords),
     ...diffList(a.materials, b.materials, 'material', name, materialWords),
+    ...diffList(a.loadPatterns ?? [], b.loadPatterns ?? [], 'load pattern', name, patternWords),
+    ...diffList(a.jointLoads ?? [], b.jointLoads ?? [], 'joint load', id, jointLoadWords),
   ];
   if (a.stories !== b.stories && a.stories.map(name).join() !== b.stories.map(name).join() && a.stories.length === b.stories.length && !out.some((s) => s.includes('stor')))
     out.push(`Reordered stories (bottom → top): ${b.stories.map(name).join(', ')}`);
@@ -222,6 +245,10 @@ const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   underlay: 'Underlay',
   etabs: 'ETABS',
   rotate: 'Rotate',
+  loadPatterns: 'Load patterns',
+  frameLoad: 'Frame load',
+  shellLoad: 'Shell load',
+  jointLoad: 'Joint load',
 };
 const SHOW_NAMES: Record<keyof ShowFlags, string> = {
   sectionLabels: 'section labels',
@@ -233,6 +260,7 @@ const SHOW_NAMES: Record<keyof ShowFlags, string> = {
   beams: 'beams',
   slabs: 'slabs',
   nodes: 'nodes',
+  loads: 'loads',
 };
 const PANEL_NAMES = { plan: 'plan view only', '3d': '3D view only', split: 'plan and 3D side by side', elev: 'elevation view' };
 
@@ -293,6 +321,7 @@ export function startSessionLog() {
     if (s.ortho !== p.ortho) log('setting', `Ortho ${s.ortho ? 'on: lines snap to horizontal/vertical' : 'off: lines at any angle'}`);
     if (s.autoBeam !== p.autoBeam) log('setting', `Auto beam size ${s.autoBeam ? 'on: new beams sized from span and supports' : `off: new beams use ${s.active.beam}`}`);
     if (s.autoSplitSlabs !== p.autoSplitSlabs) log('setting', `Split slabs at new beams ${s.autoSplitSlabs ? 'on' : 'off'}`);
+    if (s.loadPattern !== p.loadPattern) log('setting', `Active load pattern ${p.loadPattern} → ${s.loadPattern}`);
     if (s.colorBySection !== p.colorBySection) log('setting', `Colour by section ${s.colorBySection ? 'on' : 'off'}`);
     if (s.active !== p.active)
       for (const k of ['column', 'beam', 'slab'] as const) if (s.active[k] !== p.active[k]) log('setting', `Active ${k} section ${p.active[k]} → ${s.active[k]}`);
