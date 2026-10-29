@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
 import { storyElevations, type Model } from '../model/types';
 import SectionSlider, { type Mark } from './SectionSlider';
@@ -97,8 +98,7 @@ function build(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE
   const slabSecs = new Map(m.slabSections.map((s) => [s.name, s]));
   const mats = new Map<string, THREE.Material>();
   const mat = (key: string, color: string, opacity = 1) => {
-    // double-sided so members cut by the section planes show their insides instead of vanishing faces
-    if (!mats.has(key)) mats.set(key, new THREE.MeshLambertMaterial({ color: new THREE.Color(color), transparent: opacity < 1, opacity, clippingPlanes: clip, side: THREE.DoubleSide }));
+    if (!mats.has(key)) mats.set(key, new THREE.MeshLambertMaterial({ color: new THREE.Color(color), transparent: opacity < 1, opacity, clippingPlanes: clip }));
     return mats.get(key)!;
   };
   const selMat = mat('__sel', '#39ff9a');
@@ -148,6 +148,101 @@ function build(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE
   return g;
 }
 
+const stencilMat = (side: THREE.Side, op: THREE.StencilOp, transparent: boolean, plane: THREE.Plane) =>
+  new THREE.MeshBasicMaterial({
+    side,
+    transparent,
+    colorWrite: false,
+    depthWrite: false,
+    depthTest: false,
+    clippingPlanes: [plane],
+    stencilWrite: true,
+    stencilFunc: THREE.AlwaysStencilFunc,
+    stencilFail: op,
+    stencilZFail: op,
+    stencilZPass: op,
+  });
+
+// Solid section faces for members cut by the clip planes (stencil capping, as in three's
+// webgl_clipping_stencil example). Per plane and per material: the members' back faces add 1 to the
+// stencil and their front faces subtract 1, both clipped by that plane only, so the stencil is non-zero
+// exactly where the cut opened a member; a big plane lying on the cut then fills those pixels in the
+// member's colour. Members are merged per material to keep it to three draws per material and plane.
+// Plane groups are shown/positioned by syncCaps as the cuts move.
+function buildCaps(g: THREE.Group, clip: THREE.Plane[]): THREE.Group {
+  const caps = new THREE.Group();
+  const byMat = new Map<THREE.MeshLambertMaterial, THREE.BufferGeometry[]>();
+  for (const o of g.children) {
+    if (!(o instanceof THREE.Mesh)) continue;
+    o.updateMatrix();
+    const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    for (const k of Object.keys(geo.attributes)) if (k !== 'position') geo.deleteAttribute(k);
+    geo.clearGroups();
+    geo.applyMatrix4(o.matrix);
+    const m = o.material as THREE.MeshLambertMaterial;
+    if (!byMat.has(m)) byMat.set(m, []);
+    byMat.get(m)!.push(geo);
+  }
+  const merged = [...byMat].map(([m, geos]) => {
+    const geo = mergeGeometries(geos);
+    geos.forEach((x) => x.dispose());
+    return [m, geo] as const;
+  });
+  const box = new THREE.Box3().setFromObject(g);
+  if (box.isEmpty()) return caps;
+  caps.userData.center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3()).length() * 2 + 1;
+  let order = 1;
+  clip.forEach((plane, i) => {
+    const pg = new THREE.Group();
+    pg.userData.plane = i;
+    const others = clip.filter((p) => p !== plane);
+    for (const [m, geo] of merged) {
+      const back = new THREE.Mesh(geo, stencilMat(THREE.BackSide, THREE.IncrementWrapStencilOp, m.transparent, plane));
+      const front = new THREE.Mesh(geo, stencilMat(THREE.FrontSide, THREE.DecrementWrapStencilOp, m.transparent, plane));
+      const cap = new THREE.Mesh(
+        new THREE.PlaneGeometry(size, size),
+        new THREE.MeshLambertMaterial({
+          color: m.color.clone(),
+          transparent: m.transparent,
+          opacity: m.opacity,
+          side: THREE.DoubleSide,
+          clippingPlanes: others,
+          stencilWrite: true,
+          stencilRef: 0,
+          stencilFunc: THREE.NotEqualStencilFunc,
+          stencilFail: THREE.ReplaceStencilOp,
+          stencilZFail: THREE.ReplaceStencilOp,
+          stencilZPass: THREE.ReplaceStencilOp,
+        }),
+      );
+      cap.onAfterRender = (r) => r.clearStencil();
+      cap.userData.cap = true;
+      back.renderOrder = front.renderOrder = order;
+      cap.renderOrder = order + 1;
+      order += 2;
+      pg.add(back, front, cap);
+    }
+    caps.add(pg);
+  });
+  return caps;
+}
+
+// show the cap groups of the active planes and lay each cap on its plane, centred on the model
+function syncCaps(caps: THREE.Group | null, clip: THREE.Plane[]) {
+  const ctr = caps?.userData.center as THREE.Vector3 | undefined;
+  if (!caps || !ctr) return;
+  for (const pg of caps.children) {
+    const plane = clip[pg.userData.plane as number];
+    pg.visible = plane.constant !== OPEN;
+    for (const o of pg.children) {
+      if (!o.userData.cap) continue;
+      plane.projectPoint(ctr, o.position);
+      o.lookAt(o.position.clone().sub(plane.normal));
+    }
+  }
+}
+
 // one section range over a sorted list of marks (mm); the full range means no cut
 function useCut(marks: Mark[]) {
   const [cut, setCut] = useState<{ lo: number; hi: number } | null>(null);
@@ -166,7 +261,7 @@ const gridMarks = (m: Model, dir: 'X' | 'Y'): Mark[] =>
 
 export default function View3D() {
   const host = useRef<HTMLDivElement>(null);
-  const ctx = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; group: THREE.Group | null; clip: THREE.Plane[]; render: () => void } | null>(null);
+  const ctx = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; group: THREE.Group | null; caps: THREE.Group | null; clip: THREE.Plane[]; render: () => void } | null>(null);
   const model = useApp(visibleModel);
   const selection = useApp((s) => s.selection);
   const activeStory = useApp((s) => s.activeStory);
@@ -207,7 +302,7 @@ export default function View3D() {
 
   useEffect(() => {
     const el = host.current!;
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true }); // stencil: section caps
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x15181d);
     renderer.localClippingEnabled = true;
@@ -284,7 +379,7 @@ export default function View3D() {
     };
     renderer.domElement.addEventListener('pointerdown', pd);
     renderer.domElement.addEventListener('pointerup', pu);
-    ctx.current = { renderer, scene, camera, controls, group: null, clip, render };
+    ctx.current = { renderer, scene, camera, controls, group: null, caps: null, clip, render };
     return () => {
       ro.disconnect();
       renderer.dispose();
@@ -305,9 +400,23 @@ export default function View3D() {
         if (o instanceof CSS2DObject) o.element.remove();
       });
     }
+    if (c.caps) {
+      c.scene.remove(c.caps);
+      c.caps.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      });
+      c.caps = null;
+    }
     const story = onlyStory ? activeStory : null;
     c.group = wire ? buildWire(model, new Set(selection), story, c.clip, labels) : build(model, new Set(selection), story, c.clip);
     c.scene.add(c.group);
+    if (!wire) {
+      c.caps = buildCaps(c.group, c.clip);
+      syncCaps(c.caps, c.clip);
+      c.scene.add(c.caps);
+    }
     if (!fitted.current && c.group.children.length) {
       fitView();
       fitted.current = true;
@@ -325,6 +434,7 @@ export default function View3D() {
       c.clip[2 * i].constant = k.lo > k.min ? -(k.lo - slack(k.lo)) * S : OPEN;
       c.clip[2 * i + 1].constant = k.hi < k.max ? (k.hi + slack(k.hi)) * S : OPEN;
     });
+    syncCaps(c.caps, c.clip);
     c.render();
   }, [zCut.lo, zCut.hi, zCut.min, zCut.max, xCut.lo, xCut.hi, xCut.min, xCut.max, yCut.lo, yCut.hi, yCut.min, yCut.max, gridPad]);
 
