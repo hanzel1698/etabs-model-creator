@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, mergeSlabs, nextGridLabel, oppositeLabelStart, panelSize, addSlab, patchIds, replicate, setBeamEnd, slabsUnderBeams, splitSlabsByBeams, storyNodes } from './ops';
+import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, joinBeams, matchElements, mergeSlabs, nextGridLabel, oppositeLabelStart, panelSize, addSlab, patchIds, replicate, setBeamEnd, slabsUnderBeams, splitSlabsByBeams, storyNodes } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
 import { emptyModel, type Model } from './types';
 import { toPayload } from '../etabs/mapping';
@@ -281,5 +281,25 @@ describe('merging slabs', () => {
     m = addSlab(emptyModel(), rect(0, 0, 4000, 4000), 'Story1', 'S150');
     m = addSlab(m, rect(4000, 0, 8000, 4000), 'Story2', 'S150');
     expect(mergeSlabs(m, ids(m)).model).toBe(m);
+  });
+});
+
+describe('joining beams', () => {
+  const B = 'B300x500';
+  const len = (b: { x1: number; y1: number; x2: number; y2: number }) => Math.hypot(b.x2 - b.x1, b.y2 - b.y1);
+
+  it('joins a chain of beams on one line end to end', () => {
+    const m = addBeams(emptyModel(), [[{ x: 0, y: 0 }, { x: 3000, y: 0 }], [{ x: 6000, y: 0 }, { x: 3000, y: 0 }], [{ x: 6000, y: 0 }, { x: 9000, y: 0 }]], ['Story1'], B);
+    const r = joinBeams(m, m.beams.map((b) => b.id));
+    expect(r).toMatchObject({ joined: 1, from: 3 });
+    expect(r.model.beams).toHaveLength(1);
+    expect(len(r.model.beams[0])).toBeCloseTo(9000);
+    expect(r.ids).toEqual([r.model.beams[0].id]);
+  });
+  it('leaves beams that are off-line, apart, or on another story', () => {
+    let m = addBeams(emptyModel(), [[{ x: 0, y: 0 }, { x: 3000, y: 0 }], [{ x: 3000, y: 0 }, { x: 3000, y: 3000 }], [{ x: 4000, y: 0 }, { x: 6000, y: 0 }]], ['Story1'], B);
+    expect(joinBeams(m, m.beams.map((b) => b.id)).joined).toBe(0);
+    m = addBeams(m, [[{ x: 3000, y: 0 }, { x: 4000, y: 0 }]], ['Story2'], B);
+    expect(joinBeams(m, m.beams.map((b) => b.id)).model).toBe(m);
   });
 });

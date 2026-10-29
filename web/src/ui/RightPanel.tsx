@@ -1,5 +1,5 @@
 import { toast, useApp } from '../model/store';
-import { cachedStoryNodes, deleteIds, mergeSlabs, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
+import { cachedStoryNodes, deleteIds, joinBeams, mergeSlabs, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
 import type { Beam } from '../model/types';
 import { useEffect, useState } from 'react';
 import { openDialog } from './dialogState';
@@ -8,6 +8,7 @@ import { useUnderlay, saveUnderlayMeta, removeUnderlay } from '../underlay/store
 import { commitBeams, setTool } from '../plan/tools';
 import { fitAll } from '../plan/PlanView';
 import { dist, fmt } from '../model/geom';
+import { autoSizeBeams, noFitNote } from '../model/autoBeam';
 
 export function RightPanel() {
   return (
@@ -142,6 +143,11 @@ function Properties() {
           <>
             <button onClick={() => openDialog({ kind: 'replicate' })} title="E">Replicate…</button>
             <button onClick={() => openDialog({ kind: 'move' })}>Move…</button>
+            {beams.length > 1 && (
+              <button onClick={joinSelectedBeams} title="Join the selected beams that lie end to end on one line into one beam, auto-sized for its new length">
+                Join beams
+              </button>
+            )}
             {slabs.length > 1 && (
               <button onClick={mergeSelectedSlabs} title="Join the selected slabs that share an edge into one slab">
                 Merge slabs
@@ -162,6 +168,21 @@ function Properties() {
       </div>
     </div>
   );
+}
+
+export function joinSelectedBeams() {
+  const s = useApp.getState();
+  const sel = new Set(s.selection);
+  const ids = s.model.beams.filter((x) => sel.has(x.id)).map((x) => x.id);
+  if (ids.length < 2) return toast('Select two or more beams to join.');
+  const r = joinBeams(s.model, ids);
+  if (!r.joined) return toast('Nothing joined: the beams must lie on one line and touch end to end.');
+  const sized = autoSizeBeams(r.model, r.ids, s.active.beam);
+  s.commit(() => sized.model);
+  s.setSelection(r.ids);
+  const secs = [...new Set([...sized.sizes.values()].map((x) => x.section))].join(', ');
+  const left = ids.length - r.from;
+  toast(`${r.from} beams joined into ${r.joined} (auto-sized: ${secs}).` + (left ? ` ${left} left as they were.` : '') + noFitNote(sized.sizes, s.active.beam));
 }
 
 export function mergeSelectedSlabs() {

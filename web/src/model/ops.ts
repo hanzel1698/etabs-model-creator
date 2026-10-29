@@ -1,6 +1,6 @@
 import type { Beam, Column, Grid, Model, Pt, Slab } from './types';
 import { uid } from './types';
-import { alphaLabel, dist, lineIntersect, polyArea, pointInPoly, segIntersect, sub, cross } from './geom';
+import { alphaLabel, dist, distToSeg, lineIntersect, polyArea, pointInPoly, segIntersect, sub, cross } from './geom';
 
 const TOL = 1; // mm, coincidence tolerance
 
@@ -570,6 +570,46 @@ export function mergeSlabs(m: Model, slabIds: string[]): { model: Model; merged:
   }
   if (!added.length) return { model: m, merged: 0, from: 0 };
   return { model: { ...m, slabs: [...m.slabs.filter((s) => !gone.has(s.id)), ...added] }, merged: added.length, from: gone.size };
+}
+
+/**
+ * Join selected beams that lie on one line and touch or overlap (same story) into one beam each, end to end.
+ * The joined beam takes the section of its longest piece.
+ */
+export function joinBeams(m: Model, beamIds: string[]): { model: Model; joined: number; from: number; ids: string[] } {
+  const ids = new Set(beamIds);
+  const beams = m.beams.filter((b) => ids.has(b.id));
+  const ends = (b: Beam): [Pt, Pt] => [
+    { x: b.x1, y: b.y1 },
+    { x: b.x2, y: b.y2 },
+  ];
+  const len = (b: Beam) => dist(...ends(b));
+  const offLine = (p: Pt, [a, c]: [Pt, Pt]) => Math.abs(cross(sub(c, a), sub(p, a))) / (dist(a, c) || 1);
+  const collinear = (a: Beam, b: Beam) => ends(b).every((p) => offLine(p, ends(a)) < TOL) && ends(a).every((p) => offLine(p, ends(b)) < TOL);
+  const touch = (a: Beam, b: Beam) => [...ends(a).map((p) => distToSeg(p, ...ends(b))), ...ends(b).map((p) => distToSeg(p, ...ends(a)))].some((d) => d < TOL);
+  const parent = beams.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  for (let i = 0; i < beams.length; i++)
+    for (let j = i + 1; j < beams.length; j++)
+      if (beams[i].story === beams[j].story && len(beams[i]) >= TOL && len(beams[j]) >= TOL && collinear(beams[i], beams[j]) && touch(beams[i], beams[j])) parent[find(i)] = find(j);
+  const comps = new Map<number, Beam[]>();
+  beams.forEach((b, i) => comps.set(find(i), [...(comps.get(find(i)) ?? []), b]));
+  const gone = new Set<string>();
+  const added: Beam[] = [];
+  for (const group of comps.values()) {
+    if (group.length < 2) continue;
+    const longest = group.reduce((a, b) => (len(b) > len(a) ? b : a));
+    const [a, c] = ends(longest);
+    const d = sub(c, a);
+    const t = (p: Pt) => (p.x - a.x) * d.x + (p.y - a.y) * d.y;
+    const pts = group.flatMap(ends).sort((p, q) => t(p) - t(q));
+    const p1 = pts[0],
+      p2 = pts[pts.length - 1];
+    group.forEach((b) => gone.add(b.id));
+    added.push({ id: uid(), story: longest.story, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, section: longest.section });
+  }
+  if (!added.length) return { model: m, joined: 0, from: 0, ids: [] };
+  return { model: { ...m, beams: [...m.beams.filter((b) => !gone.has(b.id)), ...added] }, joined: added.length, from: gone.size, ids: added.map((b) => b.id) };
 }
 
 /** Ids of slabs that any of the given beams runs across or into (same story). */

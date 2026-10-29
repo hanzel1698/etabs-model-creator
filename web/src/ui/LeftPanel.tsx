@@ -4,7 +4,7 @@ import { storyElevations } from '../model/types';
 import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
 import { autoBeamsOnGrids, splitSlabsByBeams } from '../model/ops';
-import { mergeSelectedSlabs } from './RightPanel';
+import { joinSelectedBeams, mergeSelectedSlabs } from './RightPanel';
 import { fitAll } from '../plan/PlanView';
 import { commitBeams, setTool } from '../plan/tools';
 import { autoSizeBeams, noFitNote } from '../model/autoBeam';
@@ -130,6 +130,9 @@ export function LeftPanel() {
             }}
           >
             Auto-size beams
+          </button>
+          <button title="Join the selected beams that lie end to end on one line into one beam, auto-sized for its new length" onClick={joinSelectedBeams}>
+            Join selected beams
           </button>
           <button
             title="Divide the selected slabs (or every slab on the ticked stories) into the panels their story's beams make"
