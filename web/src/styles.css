@@ -275,9 +275,12 @@ label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding: 3px 12px;
+  border-radius: 4px;
+  background: #d32f2f;
   font-size: 18px;
   font-weight: 700;
-  color: #4aa3ff;
+  color: #fff;
   pointer-events: none;
   z-index: 1;
 }
