@@ -9,11 +9,13 @@ import { commitBeams, setTool } from '../plan/tools';
 import { fitAll } from '../plan/PlanView';
 import { dist, fmt } from '../model/geom';
 import { autoSizeBeams, noFitNote } from '../model/autoBeam';
+import { ChecksSection } from './Checks';
 
 export function RightPanel() {
   return (
     <div className="side right">
       <Properties />
+      <ChecksSection />
       <UnderlayPanel />
     </div>
   );

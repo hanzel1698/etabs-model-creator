@@ -9,6 +9,7 @@ import { onMove, onClick, onCancel, finishPolygon, hitTest, boxSelect, fillInter
 import { columnOutline } from './snap';
 import { useUnderlay, regionFor } from '../underlay/store';
 import { UnderlayCanvas } from './UnderlayCanvas';
+import { useIssues } from '../ui/Checks';
 
 export function fitAll(w?: number, h?: number) {
   const el = document.getElementById('plan-host');
@@ -276,6 +277,7 @@ export function PlanView() {
             {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} showSlabs={show.slabs} />}
           </g>
         </g>
+        <IssueLayer story={story} offset={setupRef} />
         {show.nodes && <NodeLayer story={story} sel={sel} offset={setupRef} />}
         {tool === 'select' && <GripLayer beams={beams} sel={sel} offset={setupRef} />}
         <Overlay />
@@ -306,6 +308,27 @@ function NodeLayer({ story, sel, offset }: { story: string; sel: Set<string>; of
         const p = viewport.toScreen({ x: n.x + ox, y: n.y + oy });
         const s = sel.has(n.id);
         return <rect key={n.id} x={p.x - (s ? 4 : 2.5)} y={p.y - (s ? 4 : 2.5)} width={s ? 8 : 5} height={s ? 8 : 5} fill={s ? 'var(--sel)' : 'var(--node)'} stroke={s ? 'var(--bg)' : 'none'} strokeWidth={1} />;
+      })}
+    </g>
+  );
+}
+
+/** Red rings where the model check found a problem on this story (screen space, fixed size). */
+function IssueLayer({ story, offset }: { story: string; offset: Pt | null }) {
+  useVp();
+  const issues = useIssues().filter((i) => i.story === story);
+  const ox = offset?.x ?? 0,
+    oy = offset?.y ?? 0;
+  return (
+    <g className="issue-marks">
+      {issues.map((i, k) => {
+        const p = viewport.toScreen({ x: i.at.x + ox, y: i.at.y + oy });
+        return (
+          <g key={k}>
+            <circle cx={p.x} cy={p.y} r={11} fill="none" stroke="var(--danger)" strokeWidth={2} />
+            <text x={p.x + 13} y={p.y - 9} fill="var(--danger)" fontSize={13} fontWeight={700}>!</text>
+          </g>
+        );
       })}
     </g>
   );

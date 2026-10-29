@@ -837,3 +837,52 @@ table.grid tr.group-row td {
 .log-line.error {
   color: var(--danger);
 }
+
+/* ---------- model check ---------- */
+.warn-count {
+  color: var(--danger);
+  font-weight: 700;
+}
+.issues {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+  max-height: 260px;
+  overflow: auto;
+}
+.issue {
+  text-align: left;
+  font-size: 11.5px;
+  line-height: 1.35;
+  padding: 4px 6px;
+  white-space: normal;
+}
+.issue b {
+  margin-right: 2px;
+}
+.issue-kind {
+  display: inline-block;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 0 4px;
+  margin-right: 5px;
+  border-radius: 3px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+.issue-kind.section,
+.issue-kind.story,
+.issue-kind.degenerate {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+.issue-badge {
+  color: var(--danger);
+  border-color: var(--danger);
+  font-weight: 700;
+}
+.issue-marks {
+  pointer-events: none;
+}

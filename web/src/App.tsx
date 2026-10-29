@@ -13,6 +13,7 @@ import { emptyModel } from './model/types';
 import { fmt } from './model/geom';
 import { startSessionLog, log, toggleLog, useLog } from './log/sessionLog';
 import { LogPanel } from './ui/LogPanel';
+import { IssueBadge, watchIssues } from './ui/Checks';
 
 const View3D = lazy(() => import('./view3d/View3D'));
 
@@ -42,12 +43,14 @@ export function App() {
 
   useEffect(() => {
     startSessionLog();
+    const unwatch = watchIssues();
     (async () => {
       await restoreModel();
       await restoreUnderlay();
       startAutosave();
       requestAnimationFrame(() => fitAll());
     })();
+    return unwatch;
   }, []);
 
   useEffect(() => {
@@ -242,6 +245,7 @@ function StatusBar({ ortho }: { ortho: boolean }) {
       </div>
       <span className="hint">{hint}</span>
       <button className={ortho ? 'on' : ''} onClick={() => useApp.getState().toggleOrtho()} title="F8">Ortho</button>
+      <IssueBadge />
       <Counts story={story} />
       <LogButton />
       <span className="coords">{cursor ? `X ${fmt(cursor.x)}  Y ${fmt(cursor.y)} mm` : ''}</span>

@@ -12,6 +12,7 @@ import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports } f
 import { toPayload, applyImport } from '../etabs/mapping';
 import { fitAll } from '../plan/PlanView';
 import { log as sessionLog } from '../log/sessionLog';
+import { modelIssues } from '../model/checks';
 
 export function Modal({ title, children, footer, wide }: { title: string; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   return (
@@ -606,6 +607,7 @@ function EtabsDialog() {
       add((r.ok ? '✔ ' : '⚠ ') + r.log[0], ...r.log.slice(1, 40));
     });
 
+  const issues = modelIssues(model).filter((i) => i.kind !== 'section');
   const missingSec = [...new Set([...model.columns, ...model.beams].map((x) => x.section))].filter((n) => !model.frameSections.some((s) => s.name === n));
 
   return (
@@ -644,6 +646,11 @@ function EtabsDialog() {
         <div className="small muted" style={{ marginBottom: 6 }}>
           {model.columns.length} columns, {model.beams.length} beams, {model.slabs.length} slabs. Elements are matched by GUID: re-pushing updates them in place; deleting in the app deletes them in ETABS. Objects drawn in ETABS are not touched.
         </div>
+        {issues.length > 0 && (
+          <div className="small" style={{ color: 'var(--accent2)' }}>
+            ⚠ Model check: {issues.length} warning{issues.length === 1 ? '' : 's'} ({[...new Set(issues.map((i) => i.kind))].join(', ')}). Duplicates and overlaps are pushed as they are; see Model check in the right panel.
+          </div>
+        )}
         {missingSec.length > 0 && <div className="small" style={{ color: 'var(--danger)' }}>Undefined sections used: {missingSec.join(', ')}</div>}
         <div className="chips">
           <label className="small"><input type="checkbox" checked={push.updateStories} onChange={() => setPush({ ...push, updateStories: !push.updateStories })} /> Replace ETABS stories</label>
