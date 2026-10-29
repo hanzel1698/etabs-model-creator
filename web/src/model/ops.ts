@@ -487,6 +487,91 @@ export function splitSlabsByBeams(m: Model, slabIds: string[]): { model: Model; 
   return { model: split ? { ...m, slabs } : m, split, pieces };
 }
 
+/**
+ * Join selected slabs that share an edge (same story) into one slab each. A group is only merged when its
+ * outline is a single loop with no hole or overlap; it takes the section of its largest slab.
+ */
+export function mergeSlabs(m: Model, slabIds: string[]): { model: Model; merged: number; from: number } {
+  const ids = new Set(slabIds);
+  const byStory = new Map<string, Slab[]>();
+  for (const sl of m.slabs) if (ids.has(sl.id)) byStory.set(sl.story, [...(byStory.get(sl.story) ?? []), sl]);
+  const gone = new Set<string>();
+  const added: Slab[] = [];
+  for (const group of byStory.values()) {
+    if (group.length < 2) continue;
+    // canonical vertices, so coincident corners within TOL share an index
+    const verts: Pt[] = [];
+    const vid = (p: Pt) => {
+      let i = verts.findIndex((v) => dist(v, p) < TOL);
+      if (i < 0) i = verts.push(p) - 1;
+      return i;
+    };
+    group.forEach((sl) => sl.pts.forEach(vid));
+    // directed edges, cut at any vertex lying on them so T-junctions line up
+    const edges: { a: number; b: number; owner: number }[] = [];
+    group.forEach((sl, k) => {
+      const pts = polyArea(sl.pts) < 0 ? [...sl.pts].reverse() : sl.pts;
+      pts.forEach((p, i) => {
+        const a = vid(p),
+          b = vid(pts[(i + 1) % pts.length]);
+        const d = sub(verts[b], verts[a]),
+          L = dist(verts[a], verts[b]);
+        if (L < TOL) return;
+        const on = verts
+          .map((v, j) => ({ j, t: ((v.x - verts[a].x) * d.x + (v.y - verts[a].y) * d.y) / (L * L), off: Math.abs(cross(d, sub(v, verts[a]))) / L }))
+          .filter((o) => o.j !== a && o.j !== b && o.off < TOL && o.t > 0 && o.t < 1)
+          .sort((p, q) => p.t - q.t)
+          .map((o) => o.j);
+        const chain = [a, ...on, b];
+        for (let c = 0; c + 1 < chain.length; c++) edges.push({ a: chain[c], b: chain[c + 1], owner: k });
+      });
+    });
+    // an edge walked both ways is interior: drop the pair and link the two slabs
+    const parent = group.map((_, i) => i);
+    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    const open = new Map<string, number>();
+    const dead = new Set<number>();
+    edges.forEach((e, i) => {
+      const twin = open.get(`${e.b}>${e.a}`);
+      if (twin !== undefined) {
+        open.delete(`${e.b}>${e.a}`);
+        dead.add(i).add(twin);
+        parent[find(e.owner)] = find(edges[twin].owner);
+      } else open.set(`${e.a}>${e.b}`, i);
+    });
+    const comps = new Map<number, number[]>();
+    group.forEach((_, i) => comps.set(find(i), [...(comps.get(find(i)) ?? []), i]));
+    for (const members of comps.values()) {
+      if (members.length < 2) continue;
+      const mine = new Set(members);
+      const next = new Map<number, number>();
+      let bad = false;
+      edges.forEach((e, i) => {
+        if (dead.has(i) || !mine.has(e.owner)) return;
+        if (next.has(e.a)) bad = true; // pinch point or overlap
+        next.set(e.a, e.b);
+      });
+      if (bad || !next.size) continue;
+      const start = next.keys().next().value as number;
+      const loop: Pt[] = [];
+      for (let v = start, n = 0; n <= next.size; n++) {
+        loop.push(verts[v]);
+        v = next.get(v)!;
+        if (v === start || v === undefined) break;
+      }
+      if (loop.length !== next.size) continue; // more than one loop: a hole or a gap
+      const area = members.reduce((s, i) => s + Math.abs(polyArea(group[i].pts)), 0);
+      if (Math.abs(polyArea(loop) - area) > Math.max(1, area * 1e-6)) continue;
+      const pts = simplify(loop);
+      const biggest = members.reduce((b, i) => (Math.abs(polyArea(group[i].pts)) > Math.abs(polyArea(group[b].pts)) ? i : b));
+      members.forEach((i) => gone.add(group[i].id));
+      added.push({ id: uid(), story: group[0].story, pts, section: group[biggest].section });
+    }
+  }
+  if (!added.length) return { model: m, merged: 0, from: 0 };
+  return { model: { ...m, slabs: [...m.slabs.filter((s) => !gone.has(s.id)), ...added] }, merged: added.length, from: gone.size };
+}
+
 /** Ids of slabs that any of the given beams runs across or into (same story). */
 export function slabsUnderBeams(m: Model, beamIds: string[]): string[] {
   const ids = new Set(beamIds);

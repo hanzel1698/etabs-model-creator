@@ -1,5 +1,5 @@
-import { useApp } from '../model/store';
-import { cachedStoryNodes, deleteIds, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
+import { toast, useApp } from '../model/store';
+import { cachedStoryNodes, deleteIds, mergeSlabs, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
 import type { Beam } from '../model/types';
 import { useEffect, useState } from 'react';
 import { openDialog } from './dialogState';
@@ -142,6 +142,11 @@ function Properties() {
           <>
             <button onClick={() => openDialog({ kind: 'replicate' })} title="E">Replicate…</button>
             <button onClick={() => openDialog({ kind: 'move' })}>Move…</button>
+            {slabs.length > 1 && (
+              <button onClick={mergeSelectedSlabs} title="Join the selected slabs that share an edge into one slab">
+                Merge slabs
+              </button>
+            )}
             <button
               className="danger"
               onClick={() => {
@@ -157,6 +162,19 @@ function Properties() {
       </div>
     </div>
   );
+}
+
+export function mergeSelectedSlabs() {
+  const s = useApp.getState();
+  const sel = new Set(s.selection);
+  const ids = s.model.slabs.filter((x) => sel.has(x.id)).map((x) => x.id);
+  if (ids.length < 2) return toast('Select two or more slabs to merge.');
+  const r = mergeSlabs(s.model, ids);
+  if (!r.merged) return toast('Nothing merged: the slabs must share edges and form one outline without holes.');
+  s.commit(() => r.model);
+  s.setSelection(r.model.slabs.slice(-r.merged).map((x) => x.id));
+  const left = ids.length - r.from;
+  toast(`${r.from} slabs merged into ${r.merged}.` + (left ? ` ${left} left as they were.` : ''));
 }
 
 /** Editable end coordinates of a single beam; a value applies on Enter or when the field loses focus. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, nextGridLabel, oppositeLabelStart, panelSize, addSlab, patchIds, replicate, setBeamEnd, slabsUnderBeams, splitSlabsByBeams, storyNodes } from './ops';
+import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, mergeSlabs, nextGridLabel, oppositeLabelStart, panelSize, addSlab, patchIds, replicate, setBeamEnd, slabsUnderBeams, splitSlabsByBeams, storyNodes } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
 import { emptyModel, type Model } from './types';
 import { toPayload } from '../etabs/mapping';
@@ -236,5 +236,50 @@ describe('splitting slabs by beams', () => {
     const [inside, outside] = m.beams.slice(-2).map((b) => b.id);
     expect(slabsUnderBeams(m, [inside])).toEqual([m.slabs[0].id]);
     expect(slabsUnderBeams(m, [outside])).toEqual([]);
+  });
+});
+
+describe('merging slabs', () => {
+  const rect = (x0: number, y0: number, x1: number, y1: number) => [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  const ids = (m: Model) => m.slabs.map((s) => s.id);
+  const areas = (m: Model) => m.slabs.map((s) => Math.round(polyArea(s.pts) / 1e6)).sort((a, b) => a - b);
+
+  it('joins the four panels of a split slab back into one rectangle', () => {
+    let m = emptyModel();
+    for (const [x, y] of [[0, 0], [6000, 0], [0, 4000], [6000, 4000]]) m = addSlab(m, rect(x, y, x + 6000, y + 4000), 'Story1', 'S150');
+    const r = mergeSlabs(m, ids(m));
+    expect(r).toMatchObject({ merged: 1, from: 4 });
+    expect(r.model.slabs).toHaveLength(1);
+    expect(r.model.slabs[0].pts).toHaveLength(4);
+    expect(areas(r.model)).toEqual([96]);
+  });
+  it('handles a T-junction and keeps the largest slab’s section', () => {
+    let m = addSlab(emptyModel(), rect(0, 0, 6000, 8000), 'Story1', 'S200');
+    m = addSlab(m, rect(6000, 0, 9000, 4000), 'Story1', 'S150');
+    m = addSlab(m, rect(6000, 4000, 9000, 8000), 'Story1', 'S150');
+    const r = mergeSlabs(m, ids(m));
+    expect(r.merged).toBe(1);
+    expect(r.model.slabs[0]).toMatchObject({ section: 'S200' });
+    expect(r.model.slabs[0].pts).toHaveLength(4);
+  });
+  it('makes an L-shape, and leaves apart slabs that touch nothing', () => {
+    let m = addSlab(emptyModel(), rect(0, 0, 4000, 4000), 'Story1', 'S150');
+    m = addSlab(m, rect(4000, 0, 8000, 4000), 'Story1', 'S150');
+    m = addSlab(m, rect(0, 4000, 4000, 8000), 'Story1', 'S150');
+    m = addSlab(m, rect(20000, 0, 24000, 4000), 'Story1', 'S150');
+    const r = mergeSlabs(m, ids(m));
+    expect(r).toMatchObject({ merged: 1, from: 3 });
+    expect(r.model.slabs.map((s) => s.pts.length).sort()).toEqual([4, 6]);
+  });
+  it('refuses a ring (hole), overlaps and slabs on different stories', () => {
+    let m = emptyModel();
+    for (const [x, y] of [[0, 0], [4000, 0], [8000, 0], [0, 4000], [8000, 4000], [0, 8000], [4000, 8000], [8000, 8000]]) m = addSlab(m, rect(x, y, x + 4000, y + 4000), 'Story1', 'S150');
+    expect(mergeSlabs(m, ids(m)).merged).toBe(0);
+    m = addSlab(emptyModel(), rect(0, 0, 4000, 4000), 'Story1', 'S150');
+    m = addSlab(m, rect(2000, 0, 6000, 4000), 'Story1', 'S150');
+    expect(mergeSlabs(m, ids(m)).merged).toBe(0);
+    m = addSlab(emptyModel(), rect(0, 0, 4000, 4000), 'Story1', 'S150');
+    m = addSlab(m, rect(4000, 0, 8000, 4000), 'Story2', 'S150');
+    expect(mergeSlabs(m, ids(m)).model).toBe(m);
   });
 });

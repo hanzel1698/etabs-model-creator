@@ -4,6 +4,7 @@ import { storyElevations } from '../model/types';
 import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
 import { autoBeamsOnGrids, splitSlabsByBeams } from '../model/ops';
+import { mergeSelectedSlabs } from './RightPanel';
 import { fitAll } from '../plan/PlanView';
 import { commitBeams, setTool } from '../plan/tools';
 import { autoSizeBeams, noFitNote } from '../model/autoBeam';
@@ -148,6 +149,9 @@ export function LeftPanel() {
             }}
           >
             Split slabs at beams
+          </button>
+          <button title="Join the selected slabs that share an edge into one slab (same story, no holes)" onClick={mergeSelectedSlabs}>
+            Merge selected slabs
           </button>
           <button
             title="Show bubbles at both ends of every grid line"
