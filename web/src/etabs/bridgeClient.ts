@@ -78,10 +78,28 @@ export interface PushResult {
   pushedGuids: string[];
 }
 
+/** A frame or area object in ETABS that no element of the app owns */
+export interface Unowned {
+  name: string;
+  obj: 'frame' | 'area';
+  kind: 'column' | 'beam' | 'brace' | 'slab' | 'wall';
+  story: string;
+  section: string;
+  pts: { x: number; y: number; z: number }[];
+}
+
+export interface VerifyResult {
+  ok: boolean;
+  log: string[];
+  unowned: Unowned[];
+}
+
 export const bridge = {
   status: () => call<BridgeStatus>('/status', undefined, 15000),
   attach: () => call<BridgeStatus>('/attach', {}, 30000),
   import: () => call<ImportResult>('/import'),
   push: (p: PushPayload) => call<PushResult>('/push', p),
-  verify: (p: PushPayload) => call<{ ok: boolean; log: string[] }>('/verify', p),
+  verify: (p: PushPayload) => call<VerifyResult>('/verify', p),
+  /** keepGuids: ids the app owns; the bridge skips any named object that has one of them */
+  remove: (b: { frames: string[]; areas: string[]; keepGuids: string[] }) => call<{ deleted: number; log: string[] }>('/delete', b),
 };

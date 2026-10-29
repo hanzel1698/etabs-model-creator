@@ -273,9 +273,34 @@ def ensure_material(m, name, log):
     log.append(f"Created concrete material {name} (default properties - review in ETABS)")
 
 
+def frame_section_matches(m, s):
+    """True when ETABS already has this section with the same shape, size and material."""
+    try:
+        t = int(m.PropFrame.GetTypeOAPI(s["name"], 0)[0])
+        if s["shape"] == "Circle":
+            g = m.PropFrame.GetCircle(s["name"], "", "", 0.0, 0, "", "")
+            return t == 9 and g[-1] == 0 and g[1] == s["material"] and abs(g[2] - s["t3"]) <= TOL
+        g = m.PropFrame.GetRectangle(s["name"], "", "", 0.0, 0.0, 0, "", "")
+        return t == 8 and g[-1] == 0 and g[1] == s["material"] and abs(g[2] - s["t3"]) <= TOL and abs(g[3] - s["t2"]) <= TOL
+    except Exception:
+        return False
+
+
+def slab_section_matches(m, s):
+    """True when ETABS already has this slab section with the same thickness and material."""
+    try:
+        g = m.PropArea.GetSlab(s["name"], 0, 0, "", 0.0, 0, "", "")
+        return g[-1] == 0 and g[2] == s["material"] and abs(g[3] - s["thickness"]) <= TOL
+    except Exception:
+        return False
+
+
 def push_sections(m, p, log):
+    """Create the app's sections, or rewrite them when they differ; ones that match are left alone so ETABS-side edits stay."""
     existing_f = set(lst(m.PropFrame.GetNameList(0, [])[1]))
     for s in p["frameSections"]:
+        if s["name"] in existing_f and frame_section_matches(m, s):
+            continue
         ensure_material(m, s["material"], log)
         if s["shape"] == "Circle":
             ok(m.PropFrame.SetCircle(s["name"], s["material"], s["t3"], -1, "", ""), f"SetCircle {s['name']}")
@@ -284,6 +309,8 @@ def push_sections(m, p, log):
         log.append(("Updated" if s["name"] in existing_f else "Created") + f" frame section {s['name']}")
     existing_a = set(lst(m.PropArea.GetNameList(0, [])[1]))
     for s in p["slabSections"]:
+        if s["name"] in existing_a and slab_section_matches(m, s):
+            continue
         ensure_material(m, s["material"], log)
         # eSlabType.Slab = 0, eShellType.ShellThin = 1
         ok(m.PropArea.SetSlab(s["name"], 0, 1, s["material"], s["thickness"], -1, "", ""), f"SetSlab {s['name']}")
@@ -736,9 +763,66 @@ def do_verify(p):
                 wrong += 1
                 log.append(f"Mismatch slab {n}")
         log.insert(0, f"Checked {len(p['frames'])} frames and {len(p['areas'])} slabs: {missing} missing, {wrong} different.")
-        return {"ok": missing == 0 and wrong == 0, "log": log}
+        return {"ok": missing == 0 and wrong == 0, "log": log, "unowned": unowned(m, owned_guids(p))}
     finally:
         m.SetPresentUnits(units)
+
+
+def owned_guids(p):
+    return {f["guid"] for f in p["frames"]} | {a["guid"] for a in p["areas"]}
+
+
+def story_of(obj, name):
+    try:
+        return obj.GetLabelFromName(name, "", "")[1]
+    except Exception:
+        return ""
+
+
+def unowned(m, owned):
+    """Frame and area objects in ETABS that no element of the app owns (in kN-mm units)."""
+    out = []
+    for name, g, (a, b) in geom_index(m, True):
+        if g in owned:
+            continue
+        plan = abs(a[0] - b[0]) <= TOL and abs(a[1] - b[1]) <= TOL
+        kind = "column" if plan else "beam" if abs(a[2] - b[2]) <= TOL else "brace"
+        out.append({"name": name, "obj": "frame", "kind": kind, "story": story_of(m.FrameObj, name),
+                    "section": m.FrameObj.GetSection(name, "", "")[0],
+                    "pts": [{"x": a[0], "y": a[1], "z": a[2]}, {"x": b[0], "y": b[1], "z": b[2]}]})
+    for name, g, pts in geom_index(m, False):
+        if g in owned:
+            continue
+        flat = max(p[2] for p in pts) - min(p[2] for p in pts) <= TOL
+        out.append({"name": name, "obj": "area", "kind": "slab" if flat else "wall", "story": story_of(m.AreaObj, name),
+                    "section": m.AreaObj.GetProperty(name, "")[0],
+                    "pts": [{"x": p[0], "y": p[1], "z": p[2]} for p in pts]})
+    return out
+
+
+def do_delete(p):
+    """Delete the named frame/area objects, skipping any that an app element owns by now."""
+    m = sm()
+    if m.GetModelIsLocked():
+        m.SetModelIsLocked(False)
+    keep = {to_guid(g) for g in p.get("keepGuids", [])}
+    log = []
+    deleted = 0
+    for key, obj in (("frames", m.FrameObj), ("areas", m.AreaObj)):
+        for name in p.get(key, []):
+            try:
+                if obj.GetGUID(name, "")[0] in keep:
+                    log.append(f"Skipped {name}: an app element owns it")
+                    continue
+                ok(obj.Delete(name, 0), "Delete")
+                deleted += 1
+            except Exception as e:
+                log.append(f"ERROR delete {name}: {e}")
+    try:
+        m.View.RefreshView(0, False)
+    except Exception:
+        pass
+    return {"deleted": deleted, "log": log}
 
 
 def do_status():
@@ -802,6 +886,8 @@ class Handler(BaseHTTPRequestHandler):
             self._run(lambda: (attach(), do_status())[1])
         elif u.path == "/push":
             self._run(do_push, body)
+        elif u.path == "/delete":
+            self._run(do_delete, body)
         elif u.path == "/verify":
             self._run(do_verify, body)
         else:

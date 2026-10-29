@@ -8,7 +8,7 @@ import { parseSpacing, fmt } from '../model/geom';
 import { uid, storyElevations, type FrameSection, type Model, type SlabSection, type Story } from '../model/types';
 import { useUnderlay, saveUnderlayMeta, rescaleDxf } from '../underlay/store';
 import { setTool } from '../plan/tools';
-import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports } from '../etabs/bridgeClient';
+import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports, type Unowned } from '../etabs/bridgeClient';
 import { toPayload, applyImport } from '../etabs/mapping';
 import { fitAll } from '../plan/PlanView';
 import { log as sessionLog } from '../log/sessionLog';
@@ -556,6 +556,8 @@ function EtabsDialog() {
   const [url, setUrl] = useState(bridgeUrl());
   const [imp, setImp] = useState({ sections: true, stories: true, grids: true });
   const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; supports: Supports }>({ updateStories: false, pushGrids: false, supports: 'none' });
+  const [unowned, setUnowned] = useState<Unowned[]>([]);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const model = useApp((s) => s.model);
 
   const add = (...l: string[]) => {
@@ -605,6 +607,31 @@ function EtabsDialog() {
     run('Verifying…', async () => {
       const r = await bridge.verify(toPayload(useApp.getState().model, push));
       add((r.ok ? '✔ ' : '⚠ ') + r.log[0], ...r.log.slice(1, 40));
+      if (r.unowned.length) add(`${r.unowned.length} object${r.unowned.length === 1 ? '' : 's'} in ETABS that no app element owns - listed below`);
+      setUnowned(r.unowned);
+      setPicked(new Set());
+    });
+
+  const doRemove = () => {
+    const list = unowned.filter((u) => picked.has(unownedKey(u)));
+    if (!list.length || !confirm(`Delete ${list.length} object${list.length === 1 ? '' : 's'} from ETABS? This can't be undone from the app.`)) return;
+    run('Deleting…', async () => {
+      const p = toPayload(useApp.getState().model, push);
+      const r = await bridge.remove({
+        frames: list.filter((u) => u.obj === 'frame').map((u) => u.name),
+        areas: list.filter((u) => u.obj === 'area').map((u) => u.name),
+        keepGuids: [...p.frames.map((f) => f.guid), ...p.areas.map((a) => a.guid)],
+      });
+      add(`✔ Deleted ${r.deleted} object${r.deleted === 1 ? '' : 's'} from ETABS: ${list.map(describeUnowned).join('; ')}`, ...r.log);
+      setUnowned((u) => u.filter((x) => !picked.has(unownedKey(x))));
+      setPicked(new Set());
+    });
+  };
+  const togglePick = (k: string) =>
+    setPicked((s) => {
+      const n = new Set(s);
+      n.has(k) ? n.delete(k) : n.add(k);
+      return n;
     });
 
   const issues = modelIssues(model).filter((i) => i.kind !== 'section');
@@ -667,8 +694,49 @@ function EtabsDialog() {
           <button onClick={doVerify} disabled={!!busy}>Verify</button>
         </div>
       </div>
+      {unowned.length > 0 && (
+        <div className="section">
+          <h4>In ETABS but not in the app ({unowned.length})</h4>
+          <div className="small muted" style={{ marginBottom: 6 }}>
+            Objects no app element owns: drawn in ETABS, or left behind by an undone push or an older project file. Tick the ones to delete.
+          </div>
+          <div className="chips">
+            <label className="small">
+              <input
+                type="checkbox"
+                checked={picked.size === unowned.length}
+                onChange={() => setPicked(picked.size === unowned.length ? new Set() : new Set(unowned.map(unownedKey)))}
+              />{' '}
+              All
+            </label>
+            <button className="danger" onClick={doRemove} disabled={!!busy || picked.size === 0}>
+              Delete {picked.size || ''} from ETABS
+            </button>
+          </div>
+          <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+            {unowned.map((u) => (
+              <label key={unownedKey(u)} className="small" style={{ display: 'block' }}>
+                <input type="checkbox" checked={picked.has(unownedKey(u))} onChange={() => togglePick(unownedKey(u))} /> {describeUnowned(u)}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
       {busy && <div className="small" style={{ color: 'var(--accent2)' }}>{busy}</div>}
       <div className="log">{log.join('\n') || '—'}</div>
     </Modal>
   );
+}
+
+const unownedKey = (u: Unowned) => `${u.obj}:${u.name}`;
+
+function describeUnowned(u: Unowned) {
+  const xy = (p: { x: number; y: number }) => `(${fmt(p.x, 0)}, ${fmt(p.y, 0)})`;
+  const where =
+    u.obj === 'frame'
+      ? u.kind === 'column'
+        ? `at ${xy(u.pts[0])}`
+        : `${xy(u.pts[0])} - ${xy(u.pts[1])}`
+      : `${u.pts.length} corners around ${xy({ x: u.pts.reduce((s, p) => s + p.x, 0) / u.pts.length, y: u.pts.reduce((s, p) => s + p.y, 0) / u.pts.length })}`;
+  return `${u.kind} ${u.name}, ${u.story || '?'} ${u.section} ${where}`;
 }
