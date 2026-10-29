@@ -152,13 +152,15 @@ export const useApp = create<AppState>((set, get) => ({
   undo: () => {
     const { past, model, future } = get();
     if (!past.length) return;
-    const m = past[past.length - 1];
+    // what is in ETABS doesn't change by undoing, so keep the record of it
+    const m = { ...past[past.length - 1], pushedIds: model.pushedIds };
     set({ model: m, past: past.slice(0, -1), future: [model, ...future], selection: [], dirty: get().dirty + 1, active: validActive(get().active, m) });
   },
   redo: () => {
     const { past, model, future } = get();
     if (!future.length) return;
-    set({ model: future[0], past: [...past, model], future: future.slice(1), selection: [], dirty: get().dirty + 1, active: validActive(get().active, future[0]) });
+    const m = { ...future[0], pushedIds: model.pushedIds };
+    set({ model: m, past: [...past, model], future: future.slice(1), selection: [], dirty: get().dirty + 1, active: validActive(get().active, m) });
   },
 
   activeStory: 'Story1',

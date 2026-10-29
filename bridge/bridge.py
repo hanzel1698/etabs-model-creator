@@ -454,10 +454,14 @@ def guid_map(obj, m):
     return out
 
 
+class Refused(EtabsError):
+    pass
+
+
 def add_frame(m, f):
     r = m.FrameObj.AddByCoord(f["x1"], f["y1"], f["z1"], f["x2"], f["y2"], f["z2"], "", f["section"], "", "Global")
     if r[-1] != 0:
-        raise EtabsError("ETABS refused the frame - an object probably already exists between these points")
+        raise Refused("ETABS refused the frame - an object probably already exists between these points")
     name = r[0]
     ok(m.FrameObj.SetGUID(name, f["guid"]), "FrameObj.SetGUID")
     if f["kind"] == "column" and abs(f["angle"]) > 1e-9:
@@ -471,10 +475,51 @@ def add_area(m, a):
     zs = [p["z"] for p in a["pts"]]
     r = m.AreaObj.AddByCoord(len(xs), xs, ys, zs, "", a["section"], "", "Global")
     if r[-1] != 0:
-        raise EtabsError("ETABS refused the slab - an area probably already exists on these points")
+        raise Refused("ETABS refused the slab - an area probably already exists on these points")
     name = r[-2]
     ok(m.AreaObj.SetGUID(name, a["guid"]), "AreaObj.SetGUID")
     return name
+
+
+def geom_index(m, is_frame):
+    """[(name, GUID or '', geometry)] for every frame or area object in the model."""
+    obj = m.FrameObj if is_frame else m.AreaObj
+    if obj.Count() == 0:
+        return []
+    out = []
+    for n in lst(ok(obj.GetNameList(0, []), "GetNameList")[1]):
+        try:
+            g = obj.GetGUID(n, "")[0] or ""
+            out.append((n, g, frame_geom(m, n) if is_frame else area_geom(m, n)))
+        except Exception:
+            pass
+    return out
+
+
+def take_over(m, el, is_frame, index, claimed, taken):
+    """
+    ETABS refused to add `el` because something already sits on its points. If that something is an
+    object no element of the app owns (left behind by an undone push or an older project file), give
+    it the element's GUID and section instead. Returns the object name, or raises with the reason.
+    """
+    obj = m.FrameObj if is_frame else m.AreaObj
+    for name, g, geom in index:
+        if name in taken:
+            continue
+        if not (same_frame(geom, el) if is_frame else same_area(geom, el)):
+            continue
+        if g in claimed:
+            raise EtabsError("another element of the app is already at these points (a duplicate) - delete one of them")
+        ok(obj.SetGUID(name, el["guid"]), "SetGUID")
+        if is_frame:
+            ok(m.FrameObj.SetSection(name, el["section"], 0, 0.0, 0.0), "SetSection")
+            if el["kind"] == "column":
+                ok(m.FrameObj.SetLocalAxes(name, float(el["angle"]), 0), "SetLocalAxes")
+        else:
+            ok(m.AreaObj.SetProperty(name, el["section"], 0), "SetProperty")
+        taken.add(name)
+        return name
+    raise EtabsError("ETABS refused it and nothing found at the same points to take over - check ETABS for overlapping objects")
 
 
 # U1 U2 U3 R1 R2 R3
@@ -540,11 +585,24 @@ def do_push(p):
                 res["failed"] += 1
                 log.append(f"ERROR delete {g}: {e}")
 
-        trace("frames")
+        claimed = {f["guid"] for f in p["frames"]} | {a["guid"] for a in p["areas"]}
         base_cols = []  # names of columns that start at the base elevation (for supports)
+
+        def frame_done(f, name):
+            pushed.append(f["appId"])
+            if f["kind"] == "column" and abs(min(f["z1"], f["z2"]) - p["baseElevation"]) <= TOL:
+                base_cols.append(name)
+
+        def frame_err(f, e):
+            res["failed"] += 1
+            log.append(f"ERROR {f['kind']} {f['story']} {f['section']} ({f['x1']:.0f},{f['y1']:.0f})-({f['x2']:.0f},{f['y2']:.0f}): {e}")
+
+        trace("frames")
+        refused = []  # (frame, result key) to retry once everything else is in place
         for f in p["frames"]:
             try:
                 name = fmap.get(f["guid"])
+                key = "added"
                 if name:
                     if same_frame(frame_geom(m, name), f):
                         changed = False
@@ -558,23 +616,42 @@ def do_push(p):
                                 ok(m.FrameObj.SetLocalAxes(name, float(f["angle"]), 0), "SetLocalAxes")
                                 changed = True
                         res["updated" if changed else "unchanged"] += 1
-                    else:
-                        ok(m.FrameObj.Delete(name, 0), "FrameObj.Delete")
-                        name = add_frame(m, f)
-                        res["updated"] += 1
-                else:
+                        frame_done(f, name)
+                        continue
+                    ok(m.FrameObj.Delete(name, 0), "FrameObj.Delete")
+                    key = "updated"
+                try:
                     name = add_frame(m, f)
-                    res["added"] += 1
-                pushed.append(f["appId"])
-                if f["kind"] == "column" and abs(min(f["z1"], f["z2"]) - p["baseElevation"]) <= TOL:
-                    base_cols.append(name)
+                except Refused:
+                    refused.append((f, key))
+                    continue
+                res[key] += 1
+                frame_done(f, name)
             except Exception as e:
-                res["failed"] += 1
-                log.append(f"ERROR {f['kind']} {f['story']} {f['section']} ({f['x1']:.0f},{f['y1']:.0f})-({f['x2']:.0f},{f['y2']:.0f}): {e}")
+                frame_err(f, e)
 
+        # an element refused in the first pass may have been blocked by another element that has since
+        # moved away; what is still in the way and owned by nobody in the app is taken over
+        taken_over = 0
+        index = geom_index(m, True) if refused else []
+        taken = set()
+        for f, key in refused:
+            try:
+                try:
+                    name = add_frame(m, f)
+                except Refused:
+                    name = take_over(m, f, True, index, claimed, taken)
+                    taken_over += 1
+                res[key] += 1
+                frame_done(f, name)
+            except Exception as e:
+                frame_err(f, e)
+
+        refused = []
         for a in p["areas"]:
             try:
                 name = amap.get(a["guid"])
+                key = "added"
                 if name:
                     if same_area(area_geom(m, name), a):
                         prop = m.AreaObj.GetProperty(name, "")[0]
@@ -583,17 +660,39 @@ def do_push(p):
                             res["updated"] += 1
                         else:
                             res["unchanged"] += 1
-                    else:
-                        ok(m.AreaObj.Delete(name, 0), "AreaObj.Delete")
-                        add_area(m, a)
-                        res["updated"] += 1
-                else:
+                        pushed.append(a["appId"])
+                        continue
+                    ok(m.AreaObj.Delete(name, 0), "AreaObj.Delete")
+                    key = "updated"
+                try:
                     add_area(m, a)
-                    res["added"] += 1
+                except Refused:
+                    refused.append((a, key))
+                    continue
+                res[key] += 1
                 pushed.append(a["appId"])
             except Exception as e:
                 res["failed"] += 1
                 log.append(f"ERROR slab {a['story']} {a['section']}: {e}")
+
+        index = geom_index(m, False) if refused else []
+        taken = set()
+        for a, key in refused:
+            try:
+                try:
+                    add_area(m, a)
+                except Refused:
+                    take_over(m, a, False, index, claimed, taken)
+                    taken_over += 1
+                res[key] += 1
+                pushed.append(a["appId"])
+            except Exception as e:
+                res["failed"] += 1
+                log.append(f"ERROR slab {a['story']} {a['section']}: {e}")
+
+        if taken_over:
+            log.insert(0, f"Took over {taken_over} objects ETABS already had at the same points but no app element owned "
+                          "(left from an undone push or an older project file)")
 
         if p.get("supports", "none") in SUPPORTS:
             res["restrained"] = set_supports(m, base_cols, p["supports"], p["baseElevation"], log)

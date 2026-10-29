@@ -21,3 +21,18 @@ describe('active sections', () => {
     expect(useApp.getState().active.beam).toBe('B230x450');
   });
 });
+
+describe('undo and redo', () => {
+  it('keep the record of what was pushed to ETABS', () => {
+    useApp.getState().setModel(emptyModel());
+    useApp.getState().commit((m) => ({ ...m, baseElevation: 100 }));
+    useApp.getState().commit((m) => ({ ...m, pushedIds: ['a', 'b'] }));
+    useApp.getState().undo();
+    useApp.getState().undo();
+    expect(useApp.getState().model.baseElevation).toBe(0);
+    expect(useApp.getState().model.pushedIds).toEqual(['a', 'b']);
+    useApp.getState().redo();
+    expect(useApp.getState().model.baseElevation).toBe(100);
+    expect(useApp.getState().model.pushedIds).toEqual(['a', 'b']);
+  });
+});
