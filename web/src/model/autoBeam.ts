@@ -5,6 +5,7 @@ import { cross, dist, distToSeg, dot, norm, sub } from './geom';
 //  - primary   (an end on a column):         width >= 300, depth >= 450
 //  - secondary (ends on primary beams):      width >= 250
 //  - tertiary  (ends on secondary beams…):   width 200
+//  - unsupported (nothing carries either end): the active section's width, no rank minimums
 //  - depth = span/10 rounded up to 100, 800 max; 400 min, or 300 for spans up to 1.5 m (200x300 is for short beams only)
 //  - ground floor (bottom story from the foundation inputs): periphery beams are at least the plinth height deep
 
@@ -12,7 +13,9 @@ const TOL = 1; // mm
 const PAR = Math.sin((5 * Math.PI) / 180); // beams within 5° of each other are on the same line
 
 export type BeamRank = 1 | 2 | 3;
-export const RANK_NAME: Record<BeamRank, string> = { 1: 'primary', 2: 'secondary', 3: 'tertiary' };
+/** A beam's size class: its rank, or 0 when nothing carries either end. */
+export type SizeRank = BeamRank | 0;
+export const RANK_NAME: Record<SizeRank, string> = { 0: 'unsupported', 1: 'primary', 2: 'secondary', 3: 'tertiary' };
 
 export const AUTO_MIN_DEPTH = 400;
 export const SHORT_SPAN = 1500; // beams up to this long may be AUTO_SHORT_DEPTH deep
@@ -27,9 +30,9 @@ export function autoDepth(span: number): number {
   return Math.min(AUTO_MAX_DEPTH, Math.max(s <= SHORT_SPAN ? AUTO_SHORT_DEPTH : AUTO_MIN_DEPTH, d));
 }
 
-/** `base` is the preferred width (the active beam section's); the rank sets its lower bound, tertiary beams are 200. */
-export function autoWidth(rank: BeamRank, base: number): number {
-  return rank === 1 ? Math.max(base, 300) : rank === 2 ? Math.max(base, 250) : 200;
+/** `base` is the preferred width (the active beam section's); the rank sets its lower bound, tertiary beams are 200, unsupported ones `base`. */
+export function autoWidth(rank: SizeRank, base: number): number {
+  return rank === 0 ? base : rank === 1 ? Math.max(base, 300) : rank === 2 ? Math.max(base, 250) : 200;
 }
 
 const ends = (b: Beam): [Pt, Pt] => [
@@ -50,34 +53,23 @@ function columnAt(m: Model, story: string, p: Pt): Column | undefined {
 }
 
 /**
- * Beams that carry `b` at its end `p`: beams on another line that run through `p` — either `p` is
- * inside one of them, or the line continues on both sides of `p` (a girder split at the junction).
- * A lone beam ending at `p` (an L corner) is not a support. Grouped per line.
+ * Beams that carry `b` at its end `p`: beams on another line that touch `p` — running through it, or
+ * ending there (an L corner, e.g. `b` on the tip of a cantilever). Parallel beams never carry.
  */
-function supportsAt(m: Model, b: Beam, p: Pt): Beam[][] {
-  const touching = m.beams.filter((o) => o.id !== b.id && o.story === b.story && !parallel(o, b) && distToSeg(p, ...ends(o)) < TOL);
-  const lines: Beam[][] = [];
-  for (const o of touching) {
-    const line = lines.find((l) => parallel(l[0], o) && distToSeg(p, ...ends(l[0])) < TOL);
-    line ? line.push(o) : lines.push([o]);
-  }
-  return lines.filter((line) => {
-    if (line.some((o) => ends(o).every((e) => dist(e, p) > TOL))) return true;
-    const d = dir(line[0]);
-    const sides = new Set(line.map((o) => Math.sign(dot(sub(ends(o)[0], p), d) + dot(sub(ends(o)[1], p), d))));
-    return sides.has(1) && sides.has(-1);
-  });
+function supportsAt(m: Model, b: Beam, p: Pt): Beam[] {
+  return m.beams.filter((o) => o.id !== b.id && o.story === b.story && !parallel(o, b) && distToSeg(p, ...ends(o)) < TOL);
 }
+
+const endsAt = (o: Beam, p: Pt) => ends(o).some((e) => dist(e, p) <= TOL);
 
 /** The strongest beam carrying `b` at its end `p` (a line may be split into beams of different rank). */
 function bestSupport(m: Model, b: Beam, p: Pt, seen: Set<string>): { rank: BeamRank; by: Beam } | undefined {
   let best: { rank: BeamRank; by: Beam } | undefined;
-  for (const line of supportsAt(m, b, p))
-    for (const o of line)
-      if (!seen.has(o.id)) {
-        const r = beamRank(m, o, new Set(seen));
-        if (!best || r < best.rank) best = { rank: r, by: o };
-      }
+  for (const o of supportsAt(m, b, p))
+    if (!seen.has(o.id)) {
+      const r = beamRank(m, o, new Set(seen));
+      if (!best || r < best.rank) best = { rank: r, by: o };
+    }
   return best;
 }
 
@@ -87,8 +79,16 @@ export function beamRank(m: Model, b: Beam, seen = new Set<string>()): BeamRank 
   seen.add(b.id);
   let worst = 0;
   for (const p of [a, c]) worst = Math.max(worst, bestSupport(m, b, p, seen)?.rank ?? 0);
-  // no support found (floating, or only L corners): treat as primary
+  // no support found (floating): primary for what it carries; sizeRank sizes it as unsupported
   return Math.min(3, worst + 1) as BeamRank;
+}
+
+/** The rank `b` is sized by: 0 when no column and no beam carries either end. */
+export function sizeRank(m: Model, b: Beam): SizeRank {
+  const [a, c] = ends(b);
+  if (columnAt(m, b.story, a) || columnAt(m, b.story, c)) return 1;
+  const seen = new Set([b.id]);
+  return [a, c].some((p) => bestSupport(m, b, p, seen)) ? beamRank(m, b) : 0;
 }
 
 /**
@@ -131,14 +131,14 @@ function plinthFor(m: Model, story: string): number {
 }
 
 export interface AutoSize {
-  rank: BeamRank;
+  rank: SizeRank;
   width: number;
   depth: number;
   periphery: boolean;
 }
 
 export function autoSize(m: Model, b: Beam, baseWidth: number): AutoSize {
-  const rank = beamRank(m, b);
+  const rank = sizeRank(m, b);
   let depth = autoDepth(dist(...ends(b)));
   if (rank === 1) depth = Math.max(depth, PRIMARY_MIN_DEPTH);
   const plinth = plinthFor(m, b.story);
@@ -182,7 +182,34 @@ export function autoSizeBeams(m: Model, ids: string[], base: string): { model: M
 
 const at = (p: Pt) => `(${Math.round(p.x)}, ${Math.round(p.y)})`;
 
-/** Why `b` is primary, secondary or tertiary: the column or the strongest beam at each end. */
+const NEAR = 500; // mm: how far to look for what nearly carries a free end
+
+/** What is near the free end `p` of `b` and why it does not carry it. */
+function nearMiss(m: Model, b: Beam, p: Pt): string {
+  const words: string[] = [];
+  const beams = m.beams
+    .filter((o) => o.id !== b.id && o.story === b.story)
+    .map((o) => ({ o, d: distToSeg(p, ...ends(o)) }))
+    .filter(({ d }) => d < NEAR)
+    .sort((x, y) => x.d - y.d);
+  const par = beams.find(({ o, d }) => d < TOL && parallel(o, b));
+  if (par) words.push(`beam ${par.o.section} touches it but runs along the same line`);
+  const off = beams.find(({ o, d }) => d >= TOL && !parallel(o, b));
+  if (off) words.push(`beam ${off.o.section} is ${Math.round(off.d)} mm away (it must be within ${TOL} mm)`);
+  const secs = new Map(m.frameSections.map((s) => [s.name, s]));
+  const col = m.columns
+    .filter((x) => x.story === b.story)
+    .map((x) => {
+      const s = secs.get(x.section);
+      return { x, gap: dist(x, p) - (s ? Math.max(s.t2, s.t3) / 2 : 200) };
+    })
+    .filter(({ gap }) => gap < NEAR)
+    .sort((u, v) => u.gap - v.gap)[0];
+  if (col) words.push(`column ${col.x.section} at ${at(col.x)} is ${Math.round(col.gap)} mm short of it`);
+  return words.length ? words.join('; ') : `nothing within ${NEAR} mm on ${b.story}`;
+}
+
+/** Why `b` is primary, secondary, tertiary or unsupported: the column or the strongest beam at each end. */
 function rankReason(m: Model, b: Beam): string {
   const [a, c] = ends(b);
   for (const p of [a, c]) {
@@ -191,9 +218,13 @@ function rankReason(m: Model, b: Beam): string {
   }
   const seen = new Set([b.id]);
   const sup = [a, c].map((p) => ({ p, s: bestSupport(m, b, p, seen) }));
-  const words = sup.map(({ p, s }) => (s ? `at ${at(p)} by ${RANK_NAME[s.rank]} beam ${s.by.section}` : `nothing at ${at(p)} (free end or L corner)`));
+  const words = sup.map(({ p, s }) =>
+    s
+      ? `at ${at(p)} by ${RANK_NAME[s.rank]} beam ${s.by.section}${endsAt(s.by, p) ? ' (ending there too)' : ''}`
+      : `nothing at ${at(p)} (${nearMiss(m, b, p)})`
+  );
+  if (sup.every(({ s }) => !s)) return `unsupported: no column or beam carries either end — ${words.join(', ')}`;
   const rank = beamRank(m, b);
-  if (sup.every(({ s }) => !s)) return `primary: no column or beam carries either end, so it is treated as primary`;
   const weakest = Math.max(...sup.map(({ s }) => s?.rank ?? 0)) as BeamRank;
   return (
     `${RANK_NAME[rank]}: no column at either end; carried ${words.join(', ')}; ` +
@@ -216,6 +247,8 @@ export function explainAutoSize(m: Model, b: Beam, base: string): string {
   out.push(
     s.rank === 3
       ? `Width 200: tertiary beams are always 200 wide.`
+      : s.rank === 0
+      ? `Width ${s.width}: unsupported beams take the active section's width, and ${pref}.`
       : `Width ${s.width}: ${RANK_NAME[s.rank]} beams are at least ${s.rank === 1 ? 300 : 250} wide and ${pref}, so the larger of the two.`
   );
 

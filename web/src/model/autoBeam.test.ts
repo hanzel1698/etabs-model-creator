@@ -87,6 +87,39 @@ describe('auto beam rules', () => {
     expect(beamRank(m, beam(m, P(8000, 8000), P(6000, 6000)))).toBe(1);
   });
 
+  it('an L corner carries: a beam on the tip of a cantilever is ranked, a floating one is unsupported', () => {
+    let m = emptyModel();
+    m = addColumns(m, [P(0, 0)], ['Story1'], 'C400x400', 0);
+    m = addBeams(
+      m,
+      [
+        [P(0, 0), P(3000, 0)], // cantilever off the column
+        [P(0, 0), P(0, 2000)],
+        [P(0, 840), P(3000, 840)], // on the primary at x=0, and on the tip beam at x=3000
+        [P(3000, 0), P(3000, 840)], // L corners at both ends: on the cantilever, and the beam above
+        [P(10000, 0), P(10000, 840)], // floating
+      ],
+      ['Story1'],
+      'B300x500',
+    );
+    m = addColumns(m, [P(10000, -300)], ['Story1'], 'C400x400', 0);
+    m = withSections(m, [200, 300]);
+    // each rests on the other at the corner, so each is one level below the other's secondary rank
+    expect(beamRank(m, beam(m, P(0, 840), P(3000, 840)))).toBe(3);
+    expect(beamRank(m, beam(m, P(3000, 0), P(3000, 840)))).toBe(3);
+    const tip = explainAutoSize(m, beam(m, P(3000, 0), P(3000, 840)), 'B300x500');
+    expect(tip).toContain('at (3000, 0) by primary beam B300x500 (ending there too)');
+    const fl = beam(m, P(10000, 0), P(10000, 840));
+    const { sizes } = autoSizeBeams(m, [fl.id], 'B200x300');
+    expect(sizes.get(fl.id)).toMatchObject({ rank: 0, width: 200, depth: 300, section: 'B200x300' });
+    const why = explainAutoSize(m, fl, 'B200x300');
+    expect(why).toContain('Rank unsupported: no column or beam carries either end');
+    expect(why).toContain('nothing at (10000, 0) (column C400x400 at (10000, -300) is 100 mm short of it)');
+    expect(why).toContain('nothing at (10000, 840) (nothing within 500 mm on Story1)');
+    expect(why).toContain("Width 200: unsupported beams take the active section's width");
+    expect(why).not.toContain('primary minimum');
+  });
+
   it('periphery: one side of the span is empty', () => {
     const m = frame();
     expect(isPeriphery(m, beam(m, P(0, 0), P(6000, 0)))).toBe(true);
