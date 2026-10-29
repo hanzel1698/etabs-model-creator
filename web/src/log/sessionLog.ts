@@ -234,7 +234,7 @@ const SHOW_NAMES: Record<keyof ShowFlags, string> = {
   slabs: 'slabs',
   nodes: 'nodes',
 };
-const PANEL_NAMES = { plan: 'plan view only', '3d': '3D view only', split: 'plan and 3D side by side' };
+const PANEL_NAMES = { plan: 'plan view only', '3d': '3D view only', split: 'plan and 3D side by side', elev: 'elevation view' };
 
 /** The elements `ids` picks out: one in full, several as "3 beams on Story2 (B300x500), 1 column on Story2". */
 function describeIds(m: Model, ids: string[]) {

@@ -14,6 +14,7 @@ import { fmt } from './model/geom';
 import { startSessionLog, log, toggleLog, useLog } from './log/sessionLog';
 import { LogPanel } from './ui/LogPanel';
 import { IssueBadge, watchIssues } from './ui/Checks';
+import { ElevView } from './elev/ElevView';
 
 const View3D = lazy(() => import('./view3d/View3D'));
 
@@ -140,6 +141,7 @@ export function App() {
         <button className={panel === 'plan' ? 'on' : ''} onClick={() => useApp.getState().setPanel('plan')}>Plan</button>
         <button className={panel === 'split' ? 'on' : ''} onClick={() => useApp.getState().setPanel('split')}>Split</button>
         <button className={panel === '3d' ? 'on' : ''} onClick={() => useApp.getState().setPanel('3d')}>3D</button>
+        <button className={panel === 'elev' ? 'on' : ''} onClick={() => useApp.getState().setPanel('elev')} title="Elevation along a grid line">Elev</button>
         <span className="sep" />
         <button className="primary" onClick={() => openDialog({ kind: 'etabs' })}>ETABS…</button>
         <input ref={fileRef} type="file" accept=".json" hidden onChange={(e) => {
@@ -152,8 +154,9 @@ export function App() {
 
       <LeftPanel />
       <div className="main">
-        {panel !== '3d' && <PlanView />}
-        {panel !== 'plan' && (
+        {(panel === 'plan' || panel === 'split') && <PlanView />}
+        {panel === 'elev' && <ElevView />}
+        {(panel === '3d' || panel === 'split') && (
           <Suspense fallback={<div className="view3d muted" style={{ padding: 20 }}>Loading 3D…</div>}>
             <View3D />
           </Suspense>

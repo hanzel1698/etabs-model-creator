@@ -290,6 +290,31 @@ label {
   bottom: 10px;
   pointer-events: none;
 }
+.elev-view {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  touch-action: none;
+  user-select: none;
+  background: radial-gradient(circle at 50% 40%, #1a1e25, var(--bg));
+}
+.elev-view > svg {
+  display: block;
+  position: absolute;
+  inset: 0;
+}
+.elev-view .bar {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  z-index: 2;
+  font-size: 12px;
+}
 .view3d {
   flex: 1;
   position: relative;

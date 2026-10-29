@@ -81,8 +81,11 @@ interface AppState {
 
   viewRotation: number; // degrees, view only
   setViewRotation: (r: number) => void;
-  panel: 'plan' | '3d' | 'split';
-  setPanel: (p: 'plan' | '3d' | 'split') => void;
+  panel: 'plan' | '3d' | 'split' | 'elev';
+  setPanel: (p: 'plan' | '3d' | 'split' | 'elev') => void;
+  /** id of the grid the elevation view looks at */
+  elevGrid: string;
+  setElevGrid: (id: string) => void;
 
   /** extra stories that drawing also applies to (besides the active one) */
   alsoStories: string[];
@@ -210,6 +213,8 @@ export const useApp = create<AppState>((set, get) => ({
   setViewRotation: (r) => set({ viewRotation: ((r % 360) + 360) % 360 }),
   panel: 'plan',
   setPanel: (p) => set({ panel: p }),
+  elevGrid: '',
+  setElevGrid: (id) => set({ elevGrid: id }),
 
   alsoStories: [],
   setAlsoStories: (s) => set({ alsoStories: s }),

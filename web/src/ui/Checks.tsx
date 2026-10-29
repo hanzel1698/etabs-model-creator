@@ -38,7 +38,7 @@ export function goToIssue(i: Issue) {
   if (i.story && i.story !== st.activeStory && st.model.stories.some((s) => s.name === i.story)) st.setActiveStory(i.story);
   const ids = new Set(i.ids);
   useApp.setState((s) => ({ hidden: s.hidden.filter((id) => !ids.has(id)), selection: i.ids }));
-  if (st.panel === '3d') st.setPanel('split');
+  if (st.panel === '3d' || st.panel === 'elev') st.setPanel('split');
   const pts = elementPts(st.model, ids);
   if (!pts.length) pts.push(i.at);
   const pad = 2000;
