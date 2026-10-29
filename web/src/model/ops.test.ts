@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, joinBeams, matchElements, mergeSlabs, nextGridLabel, oppositeLabelStart, panelSize, addSlab, patchIds, replicate, setBeamEnd, slabsUnderBeams, splitSlabsByBeams, storyNodes } from './ops';
+import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, joinBeams, matchElements, mergeSlabs, moveIds, nextGridLabel, oppositeLabelStart, panelSize, addSlab, patchIds, replicate, setBeamEnd, slabsUnderBeams, splitSlabsByBeams, storyAtOffset, storyNodes } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
 import { emptyModel, type Model } from './types';
 import { toPayload } from '../etabs/mapping';
@@ -93,6 +93,15 @@ describe('replicate + payload', () => {
     expect(col3.angle).toBe(30);
     const beam1 = p.frames.find((f) => f.kind === 'beam' && f.story === 'Story1')!;
     expect(beam1.z1).toBe(3000);
+  });
+  it('moves by dz onto the story at that level', () => {
+    let m = emptyModel();
+    m = addColumns(m, [{ x: 0, y: 0 }], ['Story1'], 'C400x400', 0);
+    expect(storyAtOffset(m, 'Story1', 6000)).toBe('Story3');
+    expect(storyAtOffset(m, 'Story1', 1000)).toBeNull();
+    const moved = moveIds(m, [m.columns[0].id], 100, 0, 3000).columns[0];
+    expect(moved.story).toBe('Story2');
+    expect(moved.x).toBe(100);
   });
   it('lists deletions of previously pushed elements', () => {
     const m = { ...emptyModel(), pushedIds: ['gone'] };

@@ -1,5 +1,5 @@
 import type { Beam, Column, Grid, Model, Pt, Slab } from './types';
-import { uid } from './types';
+import { uid, storyElevations } from './types';
 import { alphaLabel, dist, distToSeg, lineIntersect, polyArea, pointInPoly, segIntersect, sub, cross } from './geom';
 
 const TOL = 1; // mm, coincidence tolerance
@@ -236,14 +236,24 @@ const mvBeam = (b: Beam, dx: number, dy: number): Beam => ({ ...b, x1: b.x1 + dx
 const mvSlab = (s: Slab, dx: number, dy: number): Slab => ({ ...s, pts: s.pts.map((p) => ({ x: p.x + dx, y: p.y + dy })) });
 const mvGrid = (g: Grid, dx: number, dy: number): Grid => ({ ...g, x1: g.x1 + dx, y1: g.y1 + dy, x2: g.x2 + dx, y2: g.y2 + dy });
 
-export function moveIds(m: Model, ids: string[], dx: number, dy: number): Model {
+/** The story whose level sits `dz` mm above (or below, if negative) `story`'s level, or null if no story is there. */
+export function storyAtOffset(m: Model, story: string, dz: number): string | null {
+  const el = storyElevations(m);
+  if (!el[story]) return null;
+  const target = el[story].top + dz;
+  return m.stories.find((s) => Math.abs(el[s.name].top - target) < TOL)?.name ?? null;
+}
+
+/** Move by (dx,dy) in plan and dz mm up/down to the story at that level (grids ignore dz). Elements with no story at the new level stay on theirs. */
+export function moveIds(m: Model, ids: string[], dx: number, dy: number, dz = 0): Model {
   const s = new Set(ids);
+  const st = <T extends { story: string }>(x: T): T => (dz ? { ...x, story: storyAtOffset(m, x.story, dz) ?? x.story } : x);
   return {
     ...m,
     grids: m.grids.map((x) => (s.has(x.id) ? mvGrid(x, dx, dy) : x)),
-    columns: m.columns.map((x) => (s.has(x.id) ? mvCol(x, dx, dy) : x)),
-    beams: m.beams.map((x) => (s.has(x.id) ? mvBeam(x, dx, dy) : x)),
-    slabs: m.slabs.map((x) => (s.has(x.id) ? mvSlab(x, dx, dy) : x)),
+    columns: m.columns.map((x) => (s.has(x.id) ? st(mvCol(x, dx, dy)) : x)),
+    beams: m.beams.map((x) => (s.has(x.id) ? st(mvBeam(x, dx, dy)) : x)),
+    slabs: m.slabs.map((x) => (s.has(x.id) ? st(mvSlab(x, dx, dy)) : x)),
   };
 }
 

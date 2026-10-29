@@ -3,7 +3,7 @@ import { useDialog, closeDialog, type Dialog } from './dialogState';
 import { bySize, sectionGroup } from './sectionGroups';
 import { SelectByDialog } from './SelectByDialog';
 import { useApp, toast } from '../model/store';
-import { generateGrids, moveIds, oppositeLabelStart, replicate } from '../model/ops';
+import { generateGrids, moveIds, oppositeLabelStart, replicate, storyAtOffset } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
 import { uid, storyElevations, type FrameSection, type Model, type SlabSection, type Story } from '../model/types';
 import { useUnderlay, saveUnderlayMeta, rescaleDxf } from '../underlay/store';
@@ -189,13 +189,23 @@ function MoveDialog() {
   const sel = useApp((s) => s.selection);
   const [dx, setDx] = useState(0);
   const [dy, setDy] = useState(0);
+  const [dz, setDz] = useState(0);
+  const run = () => {
+    const st = useApp.getState();
+    if (dz) {
+      const s = new Set(sel);
+      const stuck = [...st.model.columns, ...st.model.beams, ...st.model.slabs].filter((x) => s.has(x.id) && !storyAtOffset(st.model, x.story, dz));
+      if (stuck.length) return toast(`No story level ${fmt(dz)} mm from ${[...new Set(stuck.map((x) => x.story))].join(', ')}. dz must land exactly on a story level.`);
+    }
+    st.commit((m) => moveIds(m, sel, dx, dy, dz));
+    closeDialog();
+  };
   return (
-    <Modal
-      title={`Move ${sel.length} selected`}
-      footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={() => (useApp.getState().commit((m) => moveIds(m, sel, dx, dy)), closeDialog())}>Move</button></>}
-    >
+    <Modal title={`Move ${sel.length} selected`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={run}>Move</button></>}>
       <div className="row"><span>dx (mm)</span><input type="number" value={dx} onChange={(e) => setDx(+e.target.value)} /></div>
       <div className="row"><span>dy (mm)</span><input type="number" value={dy} onChange={(e) => setDy(+e.target.value)} /></div>
+      <div className="row"><span>dz (mm)</span><input type="number" value={dz} onChange={(e) => setDz(+e.target.value)} /></div>
+      <div className="small muted">dz moves elements up (+) or down (−) to the story at that level; it must match a story level exactly. Grids ignore dz.</div>
     </Modal>
   );
 }
