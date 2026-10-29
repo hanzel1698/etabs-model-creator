@@ -36,10 +36,12 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     return mats.get(key)!;
   };
   const selMat = mat('__sel', '#39ff9a');
+  const fills = new Map<string, THREE.MeshBasicMaterial>();
   const vis = (story: string) => !onlyStory || story === onlyStory;
-  const line = (pts: THREE.Vector3[], m: THREE.Material, id: string, loop = false) => {
+  const line =(pts: THREE.Vector3[], m: THREE.Material, id: string, loop = false) => {
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
     const o = loop ? new THREE.LineLoop(geo, m) : new THREE.Line(geo, m);
+    if (loop) o.renderOrder = -1; // slab outlines first, so beams on the same edges draw over them
     o.userData.id = id;
     g.add(o);
   };
@@ -63,12 +65,22 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     const e = el[sl.story];
     if (!e || !vis(sl.story) || !sl.pts.length) continue;
     const y = e.top * S;
+    const color = sel.has(sl.id) ? '#39ff9a' : sectionColor(sl.section);
     line(
       sl.pts.map((p) => new THREE.Vector3(p.x * S, y, -p.y * S)),
-      sel.has(sl.id) ? selMat : mat('s' + sl.section, sectionColor(sl.section)),
+      sel.has(sl.id) ? selMat : mat('s' + sl.section, color),
       sl.id,
       true,
     );
+    // translucent plane at the story level; no depth write so lines behind it stay visible
+    const key = (sel.has(sl.id) ? '__sel' : sl.section) + ' fill';
+    if (!fills.has(key)) fills.set(key, new THREE.MeshBasicMaterial({ color: new THREE.Color(color), transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: clip }));
+    const geo = new THREE.ShapeGeometry(new THREE.Shape(sl.pts.map((p) => new THREE.Vector2(p.x * S, p.y * S))));
+    geo.rotateX(-Math.PI / 2);
+    const plane = new THREE.Mesh(geo, fills.get(key)!);
+    plane.position.y = y;
+    plane.userData.id = sl.id;
+    g.add(plane);
     if (labels.has('slab')) {
       const cx = sl.pts.reduce((a, p) => a + p.x, 0) / sl.pts.length,
         cy = sl.pts.reduce((a, p) => a + p.y, 0) / sl.pts.length;
@@ -260,7 +272,9 @@ export default function View3D() {
       const r = renderer.domElement.getBoundingClientRect();
       ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
       const clip = ctx.current.clip;
-      const hit = ray.intersectObjects(ctx.current.group.children).find((h) => clip.every((p) => p.distanceToPoint(h.point) >= -1e-6));
+      const hits = ray.intersectObjects(ctx.current.group.children).filter((h) => clip.every((p) => p.distanceToPoint(h.point) >= -1e-6));
+      // in wireframe a line on the edge of a slab plane wins over the plane (but not one on a floor further back)
+      const hit = hits.find((h) => h.object instanceof THREE.Line && h.distance <= hits[0].distance + 0.3) ?? hits[0];
       const st = useApp.getState();
       const id = hit?.object.userData.id as string | undefined;
       if (!id) return st.setSelection([]);
@@ -346,7 +360,7 @@ export default function View3D() {
         >
           Reset 3D view
         </button>
-        <button className={wire ? 'on' : ''} title="Show members as centrelines and slabs as outlines" onClick={() => setWire(!wire)}>
+        <button className={wire ? 'on' : ''} title="Show members as centrelines and slabs as translucent planes" onClick={() => setWire(!wire)}>
           Wireframe
         </button>
         {wire && (
