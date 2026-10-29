@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, nextGridLabel, oppositeLabelStart, panelSize, patchIds, replicate, setBeamEnd, storyNodes } from './ops';
+import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, matchElements, nextGridLabel, oppositeLabelStart, panelSize, addSlab, patchIds, replicate, setBeamEnd, slabsUnderBeams, splitSlabsByBeams, storyNodes } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
-import { emptyModel } from './types';
+import { emptyModel, type Model } from './types';
 import { toPayload } from '../etabs/mapping';
 
 describe('geom', () => {
@@ -190,5 +190,51 @@ describe('setBeamEnd', () => {
   it('ignores zero-length results and no-op moves', () => {
     expect(setBeamEnd(m, 'b', 2, { x: 0, y: 0 })).toBe(m);
     expect(setBeamEnd(m, 'b', 2, { x: 6000, y: 0 })).toBe(m);
+  });
+});
+
+describe('splitting slabs by beams', () => {
+  const B = 'B300x500';
+  // one 12×10 m slab framed by perimeter beams that overhang it by 500 mm
+  const base = () => {
+    let m = emptyModel();
+    m = addSlab(m, [{ x: 0, y: 0 }, { x: 12000, y: 0 }, { x: 12000, y: 10000 }, { x: 0, y: 10000 }], 'Story1', 'S150');
+    return addBeams(m, [
+      [{ x: -500, y: 0 }, { x: 12500, y: 0 }],
+      [{ x: 12000, y: -500 }, { x: 12000, y: 10500 }],
+      [{ x: 12500, y: 10000 }, { x: -500, y: 10000 }],
+      [{ x: 0, y: 10500 }, { x: 0, y: -500 }],
+    ], ['Story1'], B);
+  };
+  const areas = (m: Model) => m.slabs.map((s) => Math.round(polyArea(s.pts) / 1e6)).sort((a, b) => a - b);
+
+  it('cuts a slab into the panels a cross of beams makes', () => {
+    let m = addBeams(base(), [
+      [{ x: 6000, y: 0 }, { x: 6000, y: 10000 }],
+      [{ x: 0, y: 4000 }, { x: 12000, y: 4000 }],
+    ], ['Story1'], B);
+    const r = splitSlabsByBeams(m, [m.slabs[0].id]);
+    expect(r.split).toBe(1);
+    expect(r.pieces).toBe(4);
+    expect(areas(r.model)).toEqual([24, 24, 36, 36]);
+    expect(r.model.slabs.every((s) => s.section === 'S150' && s.story === 'Story1' && s.pts.length === 4)).toBe(true);
+  });
+  it('ignores a beam that stops short, and splits on one that frames into another', () => {
+    let m = addBeams(base(), [[{ x: 6000, y: 0 }, { x: 6000, y: 10000 }], [{ x: 0, y: 4000 }, { x: 3000, y: 4000 }]], ['Story1'], B);
+    expect(areas(splitSlabsByBeams(m, [m.slabs[0].id]).model)).toEqual([60, 60]);
+    m = addBeams(m, [[{ x: 3000, y: 4000 }, { x: 6000, y: 4000 }]], ['Story1'], B);
+    expect(areas(splitSlabsByBeams(m, [m.slabs[0].id]).model)).toEqual([24, 36, 60]);
+  });
+  it('leaves slabs no beam crosses, and slabs on other stories', () => {
+    let m = base();
+    expect(splitSlabsByBeams(m, [m.slabs[0].id]).model).toBe(m);
+    m = addBeams(m, [[{ x: 6000, y: 0 }, { x: 6000, y: 10000 }]], ['Story2'], B);
+    expect(splitSlabsByBeams(m, [m.slabs[0].id]).split).toBe(0);
+  });
+  it('finds the slabs a new beam runs across', () => {
+    const m = addBeams(base(), [[{ x: 6000, y: 0 }, { x: 6000, y: 10000 }], [{ x: 20000, y: 0 }, { x: 20000, y: 10000 }]], ['Story1'], B);
+    const [inside, outside] = m.beams.slice(-2).map((b) => b.id);
+    expect(slabsUnderBeams(m, [inside])).toEqual([m.slabs[0].id]);
+    expect(slabsUnderBeams(m, [outside])).toEqual([]);
   });
 });

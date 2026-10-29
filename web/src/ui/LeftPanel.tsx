@@ -3,7 +3,7 @@ import { toast, useApp } from '../model/store';
 import { storyElevations } from '../model/types';
 import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
-import { autoBeamsOnGrids } from '../model/ops';
+import { autoBeamsOnGrids, splitSlabsByBeams } from '../model/ops';
 import { fitAll } from '../plan/PlanView';
 import { commitBeams, setTool } from '../plan/tools';
 import { autoSizeBeams, noFitNote } from '../model/autoBeam';
@@ -17,6 +17,7 @@ export function LeftPanel() {
   const angle = useApp((s) => s.columnAngle);
   const tool = useApp((s) => s.tool);
   const auto = useApp((s) => s.autoBeam);
+  const autoSplit = useApp((s) => s.autoSplitSlabs);
   const st = useApp.getState();
   const el = storyElevations(model);
   const stories = [...model.stories].reverse();
@@ -85,6 +86,9 @@ export function LeftPanel() {
             New beams get the smallest listed section that fits their supports and span; the beam width above is the preferred width.
           </div>
         )}
+        <label className="small" title="When a new or moved beam runs across a slab, divide that slab into the panels the beams make (each piece keeps the slab's section).">
+          <input type="checkbox" checked={autoSplit} onChange={st.toggleAutoSplitSlabs} /> Split slabs at new beams
+        </label>
         <div className="row">
           <span>Slab</span>
           <select value={act.slab} onChange={(e) => st.setActive('slab', e.target.value)}>
@@ -125,6 +129,25 @@ export function LeftPanel() {
             }}
           >
             Auto-size beams
+          </button>
+          <button
+            title="Divide the selected slabs (or every slab on the ticked stories) into the panels their story's beams make"
+            onClick={() => {
+              const s = useApp.getState();
+              const m = s.model;
+              const sel = new Set(s.selection);
+              const stories = new Set([active, ...also]);
+              let ids = m.slabs.filter((x) => sel.has(x.id)).map((x) => x.id);
+              if (!ids.length) ids = m.slabs.filter((x) => stories.has(x.story)).map((x) => x.id);
+              if (!ids.length) return toast('No slabs to split.');
+              const r = splitSlabsByBeams(m, ids);
+              if (!r.split) return toast('No beams run fully across these slabs.');
+              s.commit(() => r.model);
+              s.setSelection([]);
+              toast(`${r.split} slab${r.split > 1 ? 's' : ''} split into ${r.pieces} panels.`);
+            }}
+          >
+            Split slabs at beams
           </button>
           <button
             title="Show bubbles at both ends of every grid line"

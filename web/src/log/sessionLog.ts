@@ -115,6 +115,7 @@ export function startSessionLog() {
     if (s.panel !== p.panel) log('view', `Panel ${s.panel}`);
     if (s.ortho !== p.ortho) log('setting', `Ortho ${s.ortho ? 'on' : 'off'}`);
     if (s.autoBeam !== p.autoBeam) log('setting', `Auto beam size ${s.autoBeam ? 'on' : 'off'}`);
+    if (s.autoSplitSlabs !== p.autoSplitSlabs) log('setting', `Split slabs at new beams ${s.autoSplitSlabs ? 'on' : 'off'}`);
     if (s.colorBySection !== p.colorBySection) log('setting', `Colour by section ${s.colorBySection ? 'on' : 'off'}`);
     if (s.active !== p.active)
       for (const k of ['column', 'beam', 'slab'] as const) if (s.active[k] !== p.active[k]) log('setting', `Active ${k} section ${s.active[k]}`);

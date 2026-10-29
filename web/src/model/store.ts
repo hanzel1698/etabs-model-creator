@@ -64,6 +64,9 @@ interface AppState {
   /** beam tool: size new beams from their supports and span instead of using the active beam section as is */
   autoBeam: boolean;
   toggleAutoBeam: () => void;
+  /** beam tools: divide slabs a new or moved beam runs across into the panels the beams make */
+  autoSplitSlabs: boolean;
+  toggleAutoSplitSlabs: () => void;
   show: ShowFlags;
   toggleShow: (k: keyof ShowFlags) => void;
   /** ids of columns, beams and slabs hidden from view (view only, not saved) */
@@ -172,6 +175,8 @@ export const useApp = create<AppState>((set, get) => ({
   toggleOrtho: () => set((s) => ({ ortho: !s.ortho })),
   autoBeam: true,
   toggleAutoBeam: () => set((s) => ({ autoBeam: !s.autoBeam })),
+  autoSplitSlabs: false,
+  toggleAutoSplitSlabs: () => set((s) => ({ autoSplitSlabs: !s.autoSplitSlabs })),
   show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, slabs: true, nodes: false },
   toggleShow: (k) =>
     set((s) => {

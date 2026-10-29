@@ -1,7 +1,7 @@
 import { useApp, usePreview, drawStories, toast, visibleModel, type ToolName } from '../model/store';
 import type { Beam, Model, Pt } from '../model/types';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
-import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, panelSize, setBeamEnd } from '../model/ops';
+import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, panelSize, setBeamEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
 import { uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
@@ -192,24 +192,34 @@ export function onMove(screen: Pt) {
 /**
  * Commit an edit that adds beams or moves beam ends; in Auto mode the new or reshaped beams then get
  * sections from their supports and span (see model/autoBeam), with the active beam section as the preferred width.
+ * With “Split slabs at new beams” on, slabs those beams run across are first divided into the panels the beams make.
  */
 export function commitBeams(fn: (m: Model) => Model) {
-  let picked = '';
+  let picked = '',
+    cut = '';
   A().commit((m) => {
-    const out = fn(m);
-    if (!A().autoBeam || out === m) return out;
+    let out = fn(m);
+    if (out === m || (!A().autoBeam && !A().autoSplitSlabs)) return out;
     const old = new Map(m.beams.map((b) => [b.id, b]));
     const reshaped = (b: Beam) => {
       const o = old.get(b.id);
       return !o || o.x1 !== b.x1 || o.y1 !== b.y1 || o.x2 !== b.x2 || o.y2 !== b.y2;
     };
-    const r = autoSizeBeams(out, out.beams.filter(reshaped).map((b) => b.id), A().active.beam);
+    const ids = out.beams.filter(reshaped).map((b) => b.id);
+    if (A().autoSplitSlabs) {
+      const s = splitSlabsByBeams(out, slabsUnderBeams(out, ids));
+      if (s.split) cut = `${s.split} slab${s.split > 1 ? 's' : ''} split into ${s.pieces} panels`;
+      out = s.model;
+    }
+    if (!A().autoBeam) return out;
+    const r = autoSizeBeams(out, ids, A().active.beam);
     const kinds = [...new Set([...r.sizes.values()].map((s) => `${s.section} (${RANK_NAME[s.rank]}${s.periphery ? ', GF periphery' : ''})`))];
     const note = noFitNote(r.sizes, A().active.beam);
     picked = (kinds.length > 3 ? `${r.sizes.size} beams sized` : kinds.join(', ')) + (note ? '.' + note : '');
     return r.model;
   });
-  if (picked) toast(`Auto: ${picked}`);
+  const msg = [picked && `Auto: ${picked}`, cut].filter(Boolean).join(' · ');
+  if (msg) toast(msg);
 }
 
 const distToSegLine = (p: Pt, [a, b]: [Pt, Pt]) => Math.abs(side(p, a, b)) / (dist(a, b) || 1);

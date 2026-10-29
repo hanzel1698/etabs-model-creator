@@ -311,20 +311,36 @@ export function patchIds(m: Model, ids: string[], patch: { section?: string; sto
 // ---------- bay detection for slabs ----------
 
 /**
- * Find the smallest closed region bounded by the given segments that contains `p`.
- * Segments are split at every intersection and faces are traced on the resulting planar graph.
+ * Bounded faces (CCW) of the planar graph the segments form, split at every crossing and where one
+ * segment ends on a parallel one. With `prune`, dangling edges (beams that stop short) are dropped first.
  */
-export function findBay(segs: [Pt, Pt][], p: Pt): Pt[] | null {
-  if (segs.length < 3) return null;
+function planarFaces(segs: [Pt, Pt][], prune = false): Pt[][] {
   // split segments at intersections
   const cuts: number[][] = segs.map(() => [0, 1]);
+  const along = (q: Pt, [a, b]: [Pt, Pt]) => {
+    const d = sub(b, a);
+    const L = Math.hypot(d.x, d.y);
+    if (L < TOL || Math.abs(cross(d, sub(q, a))) / L > 0.5) return null;
+    const t = ((q.x - a.x) * d.x + (q.y - a.y) * d.y) / (L * L);
+    return t > 1e-6 && t < 1 - 1e-6 ? t : null;
+  };
   for (let i = 0; i < segs.length; i++)
     for (let j = i + 1; j < segs.length; j++) {
       const r = segIntersect(segs[i][0], segs[i][1], segs[j][0], segs[j][1], 1e-4);
       if (r) {
         cuts[i].push(Math.min(1, Math.max(0, r.t)));
         cuts[j].push(Math.min(1, Math.max(0, r.u)));
+        continue;
       }
+      // parallel (e.g. a beam lying along a slab edge but longer than it): cut each at the other's ends
+      for (const [s, o] of [
+        [i, j],
+        [j, i],
+      ])
+        for (const q of segs[o]) {
+          const t = along(q, segs[s]);
+          if (t !== null) cuts[s].push(t);
+        }
     }
   const key = (q: Pt) => `${Math.round(q.x)}|${Math.round(q.y)}`;
   const verts = new Map<string, Pt>();
@@ -348,6 +364,18 @@ export function findBay(segs: [Pt, Pt][], p: Pt): Pt[] | null {
       link(pa, pb);
     }
   });
+  if (prune) {
+    const ends = [...adj.keys()].filter((k) => adj.get(k)!.size < 2);
+    while (ends.length) {
+      const k = ends.pop()!;
+      for (const n of adj.get(k) ?? []) {
+        const ns = adj.get(n)!;
+        ns.delete(k);
+        if (ns.size === 1) ends.push(n);
+      }
+      adj.delete(k);
+    }
+  }
   // sorted outgoing edges (CCW)
   const sorted = new Map<string, string[]>();
   for (const [k, ns] of adj) {
@@ -362,8 +390,7 @@ export function findBay(segs: [Pt, Pt][], p: Pt): Pt[] | null {
     );
   }
   const used = new Set<string>();
-  let best: Pt[] | null = null,
-    bestA = Infinity;
+  const faces: Pt[][] = [];
   for (const [u, ns] of adj)
     for (const v of ns) {
       if (used.has(u + '>' + v)) continue;
@@ -381,13 +408,103 @@ export function findBay(segs: [Pt, Pt][], p: Pt): Pt[] | null {
         b = c;
       }
       const pts = face.map((k) => verts.get(k)!);
-      const A = polyArea(pts);
-      if (A > 1 && A < bestA && pointInPoly(p, pts)) {
-        best = pts;
-        bestA = A;
-      }
+      if (polyArea(pts) > 1) faces.push(pts);
     }
+  return faces;
+}
+
+/** Find the smallest closed region bounded by the given segments that contains `p`. */
+export function findBay(segs: [Pt, Pt][], p: Pt): Pt[] | null {
+  if (segs.length < 3) return null;
+  let best: Pt[] | null = null,
+    bestA = Infinity;
+  for (const pts of planarFaces(segs)) {
+    const A = polyArea(pts);
+    if (A < bestA && pointInPoly(p, pts)) {
+      best = pts;
+      bestA = A;
+    }
+  }
   return best ? simplify(best) : null;
+}
+
+/** A point just inside a CCW face: a little to the left of the middle of its longest edge. */
+function innerPoint(pts: Pt[]): Pt {
+  let i0 = 0,
+    L = 0;
+  pts.forEach((a, i) => {
+    const l = dist(a, pts[(i + 1) % pts.length]);
+    if (l > L) (L = l), (i0 = i);
+  });
+  const a = pts[i0],
+    b = pts[(i0 + 1) % pts.length];
+  const d = Math.min(5, L / 4);
+  return { x: (a.x + b.x) / 2 - ((b.y - a.y) / L) * d, y: (a.y + b.y) / 2 + ((b.x - a.x) / L) * d };
+}
+
+/**
+ * Divide slabs into the panels their story's beams cut them into. Beams that stop short of a support are
+ * ignored; each piece keeps the slab's story and section. A slab no beam fully crosses is left as it is.
+ */
+export function splitSlabsByBeams(m: Model, slabIds: string[]): { model: Model; split: number; pieces: number } {
+  const ids = new Set(slabIds);
+  let split = 0,
+    pieces = 0;
+  const slabs: Slab[] = [];
+  for (const sl of m.slabs) {
+    if (!ids.has(sl.id)) {
+      slabs.push(sl);
+      continue;
+    }
+    const xs = sl.pts.map((p) => p.x),
+      ys = sl.pts.map((p) => p.y);
+    const x0 = Math.min(...xs) - TOL,
+      x1 = Math.max(...xs) + TOL,
+      y0 = Math.min(...ys) - TOL,
+      y1 = Math.max(...ys) + TOL;
+    const segs: [Pt, Pt][] = sl.pts.map((p, i) => [p, sl.pts[(i + 1) % sl.pts.length]]);
+    for (const b of m.beams)
+      if (b.story === sl.story && Math.max(b.x1, b.x2) >= x0 && Math.min(b.x1, b.x2) <= x1 && Math.max(b.y1, b.y2) >= y0 && Math.min(b.y1, b.y2) <= y1)
+        segs.push([
+          { x: b.x1, y: b.y1 },
+          { x: b.x2, y: b.y2 },
+        ]);
+    const parts = planarFaces(segs, true)
+      .filter((f) => pointInPoly(innerPoint(f), sl.pts))
+      .map(simplify)
+      .filter((f) => f.length >= 3);
+    // only accept pieces that tile the slab exactly
+    const area = Math.abs(polyArea(sl.pts));
+    const total = parts.reduce((s, f) => s + polyArea(f), 0);
+    if (parts.length < 2 || Math.abs(total - area) > Math.max(1, area * 1e-6)) {
+      slabs.push(sl);
+      continue;
+    }
+    split++;
+    pieces += parts.length;
+    for (const f of parts) slabs.push({ id: uid(), story: sl.story, pts: f, section: sl.section });
+  }
+  return { model: split ? { ...m, slabs } : m, split, pieces };
+}
+
+/** Ids of slabs that any of the given beams runs across or into (same story). */
+export function slabsUnderBeams(m: Model, beamIds: string[]): string[] {
+  const ids = new Set(beamIds);
+  const beams = m.beams.filter((b) => ids.has(b.id));
+  return m.slabs
+    .filter((sl) =>
+      beams.some((b) => {
+        if (b.story !== sl.story) return false;
+        const a = { x: b.x1, y: b.y1 },
+          c = { x: b.x2, y: b.y2 };
+        if (pointInPoly({ x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, sl.pts)) return true;
+        return sl.pts.some((p, i) => {
+          const r = segIntersect(a, c, p, sl.pts[(i + 1) % sl.pts.length]);
+          return r !== null && r.t > 1e-6 && r.t < 1 - 1e-6;
+        });
+      }),
+    )
+    .map((sl) => sl.id);
 }
 
 /** Drop collinear vertices. */
