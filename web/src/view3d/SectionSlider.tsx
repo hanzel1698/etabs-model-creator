@@ -72,6 +72,13 @@ export default function SectionSlider({ levels, lo, hi, onChange }: { levels: Le
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
     move(ev.clientY);
   };
+  // click on a story name snaps the nearer handle to that level
+  const pickLevel = (elev: number) => (ev: React.PointerEvent) => {
+    ev.stopPropagation();
+    if (Math.abs(elev - hi) <= Math.abs(elev - lo)) {
+      if (elev > lo) onChange(lo, elev);
+    } else if (elev < hi) onChange(elev, hi);
+  };
 
   // thin out labels that would overlap; ticks stay
   const h = track.current?.clientHeight ?? 300;
@@ -121,7 +128,11 @@ export default function SectionSlider({ levels, lo, hi, onChange }: { levels: Le
           <div className="sec-range" style={{ top: pct(hi) + '%', bottom: 100 - pct(lo) + '%' }} />
           {levels.map((l) => (
             <div key={l.name} className={'sec-level' + (l.elev > hi + 1e-6 || l.elev < lo - 1e-6 ? ' out' : '')} style={{ top: pct(l.elev) + '%' }}>
-              {shown.has(l.name) && <span className="sec-name">{l.name}</span>}
+              {shown.has(l.name) && (
+                <span className="sec-name" title={`Snap to ${l.name} (${fmt(l.elev)})`} onPointerDown={pickLevel(l.elev)}>
+                  {l.name}
+                </span>
+              )}
               <span className="sec-tick" />
             </div>
           ))}
