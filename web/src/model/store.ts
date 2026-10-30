@@ -247,7 +247,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ gridBubble: d });
   },
   setTextScale: (v) => set({ textScale: v }),
-  colorBySection: true,
+  colorBySection: false,
   toggleColorBySection: () => set((s) => ({ colorBySection: !s.colorBySection })),
   invertPdf: true,
   toggleInvertPdf: () => set((s) => ({ invertPdf: !s.invertPdf })),
