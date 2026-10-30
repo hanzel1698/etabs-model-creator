@@ -645,6 +645,7 @@ function EtabsDialog() {
         `✔ Imported ${r.stories.length} stories, ${r.grids.length} grids, ${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections, ${r.patterns?.length ?? 0} load patterns` +
           (e ? `, ${e.columns} columns, ${e.beams} beams, ${e.slabs} slabs` : ''),
         ...skipped,
+        ...(imp.elements && !r.frames ? ['⚠ The bridge is an older version that does not send columns, beams or slabs. Restart python bridge/bridge.py and import again.'] : []),
         ...r.warnings.map((w) => '⚠ ' + w),
       );
       requestAnimationFrame(() => fitAll());

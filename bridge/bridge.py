@@ -1254,7 +1254,14 @@ def main():
         print("Attached to ETABS:", _sm.GetModelFilename(True))
     except Exception as e:
         print("Not attached yet:", e)
-    HTTPServer(("127.0.0.1", ARGS.port), Handler).serve_forever()
+    # HTTPServer sets SO_REUSEADDR, which on Windows lets a second bridge bind the port while an older one
+    # still answers on it; without it, starting a bridge next to a running one fails here instead
+    HTTPServer.allow_reuse_address = False
+    try:
+        server = HTTPServer(("127.0.0.1", ARGS.port), Handler)
+    except OSError as e:
+        sys.exit(f"Port {ARGS.port} is in use ({e}). Another bridge is probably running: close it, or pass --port.")
+    server.serve_forever()
 
 
 ARGS = argparse.Namespace(tlb_path=find_tlb())
