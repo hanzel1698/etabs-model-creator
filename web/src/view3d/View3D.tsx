@@ -16,7 +16,7 @@ const LABEL_KINDS: { kind: LabelKind; name: string }[] = [
   { kind: 'slab', name: 'Slabs' },
 ];
 
-const LABEL_PX = 14; // on-screen label height, kept constant by orientLabels
+const LABEL_PX = 14; // label height on screen at the orbit target, as of the last Fit
 const labelGeo = new THREE.PlaneGeometry(1, 1);
 
 // a section-name tag drawn on a canvas, as a plane mesh laid along its member: the text runs along
@@ -62,14 +62,14 @@ const _u = new THREE.Vector3(),
   _m = new THREE.Matrix4();
 
 // per frame: face each label toward the camera without leaving its member's orientation, keep the
-// text reading left to right (bottom to top when it runs straight up the screen) and LABEL_PX tall
-function orientLabels(group: THREE.Group | null, camera: THREE.PerspectiveCamera, viewH: number, clip: THREE.Plane[]) {
+// text reading left to right (bottom to top when it runs straight up the screen). Labels are `h`
+// tall in the scene, so they grow and shrink with zoom like the members do.
+function orientLabels(group: THREE.Group | null, camera: THREE.PerspectiveCamera, h: number, clip: THREE.Plane[]) {
   if (!group) return;
   camera.updateMatrixWorld();
   _r.setFromMatrixColumn(camera.matrixWorld, 0);
   _up.setFromMatrixColumn(camera.matrixWorld, 1);
   _fw.setFromMatrixColumn(camera.matrixWorld, 2).negate();
-  const pxWorld = (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / Math.max(1, viewH);
   for (const o of group.children) {
     if (!o.userData.label) continue;
     // hide labels of members cut away by the section planes
@@ -77,7 +77,6 @@ function orientLabels(group: THREE.Group | null, camera: THREE.PerspectiveCamera
     if (!o.visible) continue;
     _u.copy(o.userData.axis);
     _n.subVectors(camera.position, o.position);
-    const depth = Math.max(-_n.dot(_fw), camera.near);
     if (o.userData.flat) _n.set(0, Math.sign(_n.y) || 1, 0);
     else {
       _n.addScaledVector(_u, -_u.dot(_n));
@@ -88,7 +87,6 @@ function orientLabels(group: THREE.Group | null, camera: THREE.PerspectiveCamera
     if (ur < -1e-3 || (Math.abs(ur) <= 1e-3 && _u.dot(_up) < 0)) _u.negate();
     _v.crossVectors(_n, _u);
     o.quaternion.setFromRotationMatrix(_m.makeBasis(_u, _v, _n));
-    const h = LABEL_PX * pxWorld * depth;
     o.scale.set(h * o.userData.aspect, h, 1);
   }
 }
@@ -338,7 +336,7 @@ const gridMarks = (m: Model, dir: 'X' | 'Y'): Mark[] =>
 
 export default function View3D() {
   const host = useRef<HTMLDivElement>(null);
-  const ctx = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; group: THREE.Group | null; caps: THREE.Group | null; clip: THREE.Plane[]; render: () => void } | null>(null);
+  const ctx = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; group: THREE.Group | null; caps: THREE.Group | null; clip: THREE.Plane[]; labelH: number; render: () => void } | null>(null);
   const model = useApp(visibleModel);
   const selection = useApp((s) => s.selection);
   const activeStory = useApp((s) => s.activeStory);
@@ -411,7 +409,11 @@ export default function View3D() {
       raf = requestAnimationFrame(() => {
         raf = 0;
         if (controls.update()) render();
-        orientLabels(ctx.current?.group ?? null, camera, el.clientHeight, clip);
+        const c = ctx.current;
+        if (c && !c.labelH)
+          // size the labels in the scene so they're LABEL_PX tall at the orbit target from here
+          c.labelH = (LABEL_PX * 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.distanceTo(controls.target)) / Math.max(1, el.clientHeight);
+        orientLabels(c?.group ?? null, camera, c?.labelH ?? 0, clip);
         renderer.render(scene, camera);
       });
     };
@@ -447,7 +449,7 @@ export default function View3D() {
     };
     renderer.domElement.addEventListener('pointerdown', pd);
     renderer.domElement.addEventListener('pointerup', pu);
-    ctx.current = { renderer, scene, camera, controls, group: null, caps: null, clip, render };
+    ctx.current = { renderer, scene, camera, controls, group: null, caps: null, clip, labelH: 0, render };
     return () => {
       ro.disconnect();
       renderer.dispose();
@@ -519,6 +521,7 @@ export default function View3D() {
     c.camera.near = size / 1000;
     c.camera.far = size * 20;
     c.camera.updateProjectionMatrix();
+    c.labelH = 0; // re-size the labels for the fitted view
     c.render();
   };
 
