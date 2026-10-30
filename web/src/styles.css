@@ -947,6 +947,76 @@ table.grid tr.group-row td {
   flex: none;
 }
 
+/* load filter (right panel, 3D wireframe): a two-thumb value slider made of two range inputs stacked
+   on one rail; only the thumbs take the pointer, so either can be dragged */
+.load-filter .row input[type='number'] {
+  width: 0;
+  flex: 1;
+}
+.dual-range {
+  position: relative;
+  height: 22px;
+  margin: 2px 0 4px;
+}
+.dual-range .rail,
+.dual-range .fill {
+  position: absolute;
+  top: calc(50% - 1.5px);
+  height: 3px;
+  border-radius: 2px;
+}
+.dual-range .rail {
+  left: 0;
+  right: 0;
+  background: rgba(138, 148, 163, 0.35);
+}
+.dual-range .fill {
+  background: var(--load);
+}
+.dual-range[aria-disabled='true'] .fill {
+  background: var(--muted);
+}
+.dual-range input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.dual-range input::-webkit-slider-runnable-track {
+  background: none;
+}
+.dual-range input::-moz-range-track {
+  background: none;
+}
+.dual-range input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+  background: var(--load);
+  cursor: pointer;
+}
+.dual-range input::-moz-range-thumb {
+  pointer-events: auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+  background: var(--load);
+  cursor: pointer;
+}
+.dual-range input:disabled::-webkit-slider-thumb {
+  background: var(--muted);
+  cursor: default;
+}
+
 .node-list {
   max-height: 220px;
   overflow-y: auto;

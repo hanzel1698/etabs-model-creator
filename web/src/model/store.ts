@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { emptyModel, type Model, type Pt } from './types';
 import type { PanelSize } from './ops';
+import { defaultLoadFilter, type LoadFilterState } from './loadFilter';
 import { firstSection } from '../ui/sectionGroups';
 
 export type ToolName =
@@ -64,6 +65,12 @@ interface AppState {
   /** load pattern the assign dialogs default to and the views show */
   loadPattern: string;
   setLoadPattern: (p: string) => void;
+  /** which loads the 3D wireframe shows (view only) */
+  loadFilter: LoadFilterState;
+  setLoadFilter: (p: Partial<LoadFilterState>) => void;
+  /** the 3D wireframe is showing loads, so the right panel offers their filter */
+  loads3d: boolean;
+  setLoads3d: (on: boolean) => void;
   ortho: boolean;
   toggleOrtho: () => void;
   /** beam tool: size new beams from their supports and span instead of using the active beam section as is */
@@ -184,6 +191,10 @@ export const useApp = create<AppState>((set, get) => ({
   columnAngle: 0,
   loadPattern: 'Dead',
   setLoadPattern: (p) => set({ loadPattern: p }),
+  loadFilter: defaultLoadFilter(),
+  setLoadFilter: (p) => set((s) => ({ loadFilter: { ...s.loadFilter, ...p } })),
+  loads3d: false,
+  setLoads3d: (on) => set({ loads3d: on }),
   colAlign: { mode: 'off', anchor: 'center', ref: null, picking: false },
   setColAlign: (p) => set((s) => ({ colAlign: { ...s.colAlign, ...p } })),
   setColumnAngle: (a) => set({ columnAngle: a }),

@@ -6,6 +6,7 @@ import { useApp, sectionColor, visibleModel } from '../model/store';
 import { columnOn, columnSpan, levelZ, storyElevations, type Column, type FrameLoad, type LoadDir, type Model } from '../model/types';
 import { pointInPoly } from '../model/geom';
 import { describeJointLoad, shortFrameLoad } from '../model/loads';
+import { makeLoadFilter, type LoadFilter } from '../model/loadFilter';
 import { activePattern } from '../ui/LoadDialogs';
 import SectionSlider, { type Mark } from './SectionSlider';
 
@@ -102,7 +103,7 @@ function orientLabels(group: THREE.Group | null, camera: THREE.PerspectiveCamera
 }
 
 // wireframe draws every member as its centreline (slabs as their outline) instead of solids
-function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE.Plane[], labels: Set<LabelKind>, pattern: string): THREE.Group {
+function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE.Plane[], labels: Set<LabelKind>, lf: LoadFilter): THREE.Group {
   const g = new THREE.Group();
   const el = storyElevations(m);
   const mats = new Map<string, THREE.LineBasicMaterial>();
@@ -121,9 +122,11 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     o.userData.id = id;
     g.add(o);
   };
-  // the active pattern's loads, tagged as in the plan; below the section tag when that's shown too
+  // the filtered loads, tagged as in the plan; below the section tag when that's shown too
   const loads = labels.has('load');
-  const mine = <L extends { pattern: string }>(ls?: L[]) => (loads ? (ls ?? []).filter((l) => l.pattern === pattern) : []);
+  const frameLoads = (ls?: FrameLoad[]) => (loads ? (ls ?? []).filter(lf.frame) : []);
+  const named = (pattern: string, text: string) => (lf.named ? `${pattern} ${text}` : text);
+  const frameTag = (ls: FrameLoad[]) => ls.map((l) => named(l.pattern, shortFrameLoad(l))).join(' + ');
   const loadTag = (text: string, kind: LabelKind, at: THREE.Vector3, axis: THREE.Vector3 | null, flat = false) =>
     g.add(label(text, LOAD_COLOR, at, axis, flat, labels.has(kind) ? -1.15 : 0));
 
@@ -135,8 +138,8 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     line([new THREE.Vector3(x, e.bottom * S, z), new THREE.Vector3(x, e.top * S, z)], sel.has(c.id) ? selMat : mat('c' + c.section, sectionColor(c.section)), c.id);
     const mid = new THREE.Vector3(x, (e.bottom + e.top) * 0.5 * S, z);
     if (labels.has('column')) g.add(label(c.section, sectionColor(c.section), mid, new THREE.Vector3(0, 1, 0), false));
-    const cl = mine(c.loads);
-    if (cl.length) loadTag(cl.map(shortFrameLoad).join(' + '), 'column', mid, new THREE.Vector3(0, 1, 0));
+    const cl = frameLoads(c.loads);
+    if (cl.length) loadTag(frameTag(cl), 'column', mid, new THREE.Vector3(0, 1, 0));
   }
   for (const b of m.beams) {
     const z = levelZ(el, b);
@@ -146,8 +149,8 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     const mid = new THREE.Vector3(((b.x1 + b.x2) / 2) * S, y, (-(b.y1 + b.y2) / 2) * S),
       ax = new THREE.Vector3(b.x2 - b.x1, 0, -(b.y2 - b.y1));
     if (labels.has('beam')) g.add(label(b.section, sectionColor(b.section), mid, ax.clone(), false));
-    const bl = mine(b.loads);
-    if (bl.length) loadTag(bl.map(shortFrameLoad).join(' + '), 'beam', mid, ax);
+    const bl = frameLoads(b.loads);
+    if (bl.length) loadTag(frameTag(bl), 'beam', mid, ax);
   }
   for (const sl of m.slabs) {
     const z = levelZ(el, sl);
@@ -169,7 +172,7 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     plane.position.y = y;
     plane.userData.id = sl.id;
     g.add(plane);
-    const sll = mine(sl.loads);
+    const sll = loads ? (sl.loads ?? []).filter(lf.slab) : [];
     if (labels.has('slab') || sll.length) {
       const cx = sl.pts.reduce((a, p) => a + p.x, 0) / sl.pts.length,
         cy = sl.pts.reduce((a, p) => a + p.y, 0) / sl.pts.length;
@@ -183,15 +186,15 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
       });
       const at = new THREE.Vector3(cx * S, y, -cy * S);
       if (labels.has('slab')) g.add(label(sl.section, sectionColor(sl.section), at, ax.clone(), true));
-      if (sll.length) loadTag(`${sll.map((l) => Math.round(l.value * 1000) / 1000).join(' + ')} kN/m²`, 'slab', at, ax, true);
+      if (sll.length) loadTag(`${sll.map((l) => named(l.pattern, String(Math.round(l.value * 1000) / 1000))).join(' + ')} kN/m²`, 'slab', at, ax, true);
     }
   }
   for (const j of loads ? m.jointLoads : []) {
     const z = levelZ(el, j);
-    if (z === null || j.pattern !== pattern || !vis(j.story)) continue;
-    g.add(label(`↓ ${describeJointLoad(j.f)}`, LOAD_COLOR, new THREE.Vector3(j.x * S, z * S, -j.y * S), null, false));
+    if (z === null || !lf.joint(j) || !vis(j.story)) continue;
+    g.add(label(named(j.pattern, `↓ ${describeJointLoad(j.f)}`), LOAD_COLOR, new THREE.Vector3(j.x * S, z * S, -j.y * S), null, false));
   }
-  if (loads) g.add(...buildLoadPlots(m, pattern, vis, colVis, clip));
+  if (loads) g.add(...buildLoadPlots(m, lf, vis, colVis, clip));
   return g;
 }
 
@@ -227,11 +230,11 @@ function frameAxes(a: THREE.Vector3, b: THREE.Vector3, angle: number | null): TH
   return [l1, l2, l1.clone().cross(l2)];
 }
 
-// Load diagrams of the active pattern: arrows onto the loaded members and joints, and each distributed
+// Load diagrams of the filtered loads: arrows onto the loaded members and joints, and each distributed
 // load's plot filled between the member and its arrow tails, so where it acts and how it varies reads at a
 // glance. Each kind (frame distributed, frame point, slab, joint force, joint moment) is scaled on its own,
 // its largest value drawn `H` long. Moments are arrows with a double head (right-hand rule).
-function buildLoadPlots(m: Model, pattern: string, vis: (story: string) => boolean, colVis: (c: Column) => boolean, clip: THREE.Plane[]): THREE.Object3D[] {
+function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolean, colVis: (c: Column) => boolean, clip: THREE.Plane[]): THREE.Object3D[] {
   const el = storyElevations(m);
   const P = (x: number, y: number, z: number) => new THREE.Vector3(x * S, z * S, -y * S);
   const frames: { a: THREE.Vector3; b: THREE.Vector3; ax: THREE.Vector3[]; ls: FrameLoad[] }[] = [];
@@ -242,7 +245,7 @@ function buildLoadPlots(m: Model, pattern: string, vis: (story: string) => boole
     const a = P(c.x, c.y, e.bottom),
       b = P(c.x, c.y, e.top);
     box.expandByPoint(a).expandByPoint(b);
-    const ls = (c.loads ?? []).filter((l) => l.pattern === pattern);
+    const ls = (c.loads ?? []).filter(lf.frame);
     if (ls.length) frames.push({ a, b, ax: frameAxes(a, b, c.angle), ls });
   }
   for (const bm of m.beams) {
@@ -251,19 +254,19 @@ function buildLoadPlots(m: Model, pattern: string, vis: (story: string) => boole
     const a = P(bm.x1, bm.y1, z),
       b = P(bm.x2, bm.y2, z);
     box.expandByPoint(a).expandByPoint(b);
-    const ls = (bm.loads ?? []).filter((l) => l.pattern === pattern);
+    const ls = (bm.loads ?? []).filter(lf.frame);
     if (ls.length) frames.push({ a, b, ax: frameAxes(a, b, null), ls });
   }
   const slabs = m.slabs.flatMap((sl) => {
     const z = levelZ(el, sl);
     if (z === null || !vis(sl.story) || sl.pts.length < 3) return [];
     sl.pts.forEach((p) => box.expandByPoint(P(p.x, p.y, z)));
-    const ls = (sl.loads ?? []).filter((l) => l.pattern === pattern);
+    const ls = (sl.loads ?? []).filter(lf.slab);
     return ls.length ? [{ sl, z, ls }] : [];
   });
   const joints = m.jointLoads.flatMap((j) => {
     const z = levelZ(el, j);
-    return z !== null && j.pattern === pattern && vis(j.story) ? [{ p: P(j.x, j.y, z), f: j.f }] : [];
+    return z !== null && lf.joint(j) && vis(j.story) ? [{ p: P(j.x, j.y, z), f: j.f }] : [];
   });
   if (box.isEmpty()) return [];
   const H = THREE.MathUtils.clamp(box.getSize(new THREE.Vector3()).length() * 0.06, 0.25, 2.5);
@@ -567,9 +570,17 @@ export default function View3D() {
   const selection = useApp((s) => s.selection);
   const activeStory = useApp((s) => s.activeStory);
   const pattern = useApp(activePattern);
+  const loadFilter = useApp((s) => s.loadFilter);
+  const lf = useMemo(() => makeLoadFilter(loadFilter, pattern), [loadFilter, pattern]);
   const [onlyStory, setOnlyStory] = useState(false);
   const [wire, setWire] = useState(false);
   const [labels, setLabels] = useState<Set<LabelKind>>(new Set());
+  // the right panel offers the load filter while loads are shown here
+  const showsLoads = wire && labels.has('load');
+  useEffect(() => {
+    useApp.getState().setLoads3d(showsLoads);
+    return () => useApp.getState().setLoads3d(false);
+  }, [showsLoads]);
   const [labelScale, setLabelScale] = useState(1); // multiplies the fitted label size
   const toggleLabel = (k: LabelKind) =>
     setLabels((cur) => {
@@ -709,7 +720,7 @@ export default function View3D() {
       c.caps = null;
     }
     const story = onlyStory ? activeStory : null;
-    c.group = wire ? buildWire(model, new Set(selection), story, c.clip, labels, pattern) : build(model, new Set(selection), story, c.clip);
+    c.group = wire ? buildWire(model, new Set(selection), story, c.clip, labels, lf) : build(model, new Set(selection), story, c.clip);
     c.scene.add(c.group);
     if (!wire) {
       c.caps = buildCaps(c.group, c.clip);
@@ -721,7 +732,7 @@ export default function View3D() {
       fitted.current = true;
     }
     c.render();
-  }, [model, selection, onlyStory, activeStory, wire, labels, pattern]);
+  }, [model, selection, onlyStory, activeStory, wire, labels, lf]);
 
   useEffect(() => {
     const c = ctx.current;
@@ -784,7 +795,7 @@ export default function View3D() {
           <span className="label-picks" title="Show section names">
             Names:
             {LABEL_KINDS.map(({ kind, name }) => (
-              <button key={kind} className={labels.has(kind) ? 'on' : ''} title={kind === 'load' ? `Show the loads of the active pattern (${pattern})` : undefined} onClick={() => toggleLabel(kind)}>
+              <button key={kind} className={labels.has(kind) ? 'on' : ''} title={kind === 'load' ? 'Show loads as arrows and plots; filter them in the right panel' : undefined} onClick={() => toggleLabel(kind)}>
                 {name}
               </button>
             ))}

@@ -12,10 +12,12 @@ import { dist, fmt } from '../model/geom';
 import { autoSizeBeams, noFitNote } from '../model/autoBeam';
 import { ChecksSection } from './Checks';
 import { LoadsSection } from './LoadDialogs';
+import { LoadFilterSection } from './LoadFilterSection';
 
 export function RightPanel() {
   return (
     <div className="side right">
+      <LoadFilterSection />
       <Properties />
       <LoadsSection />
       <ChecksSection />
