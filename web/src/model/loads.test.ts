@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addBeams, addColumns, anyFilter, joinBeams, joinColumns, matchElements, mergeSlabs, moveIds, replicate, splitSlabsByBeams } from './ops';
 import { checkModel } from './checks';
-import { assignFrameLoad, assignJointLoad, assignShellLoad, deletePattern, frameLoadKey, patternUse, removeLoad, renamePattern, shellLoadKey } from './loads';
+import { assignFrameLoad, assignJointLoad, assignShellLoad, deletePattern, frameLoadKey, partialUniform, patternUse, removeLoad, renamePattern, shellLoadKey } from './loads';
 import { emptyModel, type FrameLoad, type Model, type ShellLoad } from './types';
 import { jointKeys, toPayload } from '../etabs/mapping';
 
@@ -157,6 +157,16 @@ describe('load payload', () => {
     expect(p.areas[0].loads[0].value).toBeCloseTo(1.5e-6);
     expect(p.jointLoads).toEqual([{ x: 0, y: 0, z: 6000, pattern: 'Dead', f: [0, 0, -50, 2000, 0, 0] }]);
     expect(p.patterns.map((x) => `${x.name}:${x.type}:${x.selfWeight}`)).toEqual(['Dead:1:1', 'SDL:2:0', 'Live:3:0']);
+  });
+
+  it('sends a uniform load over part of a beam as one segment with equal end values', () => {
+    const wall = partialUniform({ pattern: 'SDL', force: 'F', dir: 'Gravity', rel: false }, 4500, 1500, 12.6);
+    expect(wall).toMatchObject({ kind: 'dist', d1: 1500, d2: 4500, v1: 12.6, v2: 12.6 });
+    let m = frame();
+    m = assignFrameLoad(m, [m.beams[0].id], wall, 'add');
+    const l = toPayload(m, { updateStories: false, pushGrids: false }).frames.find((f) => f.kind === 'beam')!.loads[0];
+    expect(l).toMatchObject({ kind: 'dist', type: 1, dir: 10, rel: false, d1: 1500, d2: 4500 });
+    expect([l.v1, l.v2].map((v) => +v.toFixed(6))).toEqual([0.0126, 0.0126]);
   });
 
   it('clears joints loaded at the last push and not now, and can leave loads out', () => {

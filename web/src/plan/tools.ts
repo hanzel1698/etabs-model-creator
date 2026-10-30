@@ -518,11 +518,11 @@ function beamPick(w: Pt) {
 }
 
 /** Start picking a distance along a selected beam; the dialog hides until a point is picked or Esc. */
-export function startFramePick(done: (t: number, len: number) => void) {
+export function startFramePick(done: (t: number, len: number) => void, hint = 'Click a point along a selected beam: its distance from the beam start fills the dialog.') {
   const { model, selection, activeStory } = A();
   if (!model.beams.some((b) => b.story === activeStory && selection.includes(b.id))) return toast(`Select a beam on ${activeStory} to pick along (a column has no length in plan).`);
   useFramePick.setState({ done });
-  P().set({ hint: 'Click a point along a selected beam: its distance from the beam start fills the dialog. Esc or right-click returns without it.' });
+  P().set({ hint: `${hint} Esc or right-click returns without it.` });
 }
 
 export function endFramePick() {

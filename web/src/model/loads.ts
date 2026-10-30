@@ -27,6 +27,15 @@ const withLoads = <T extends { loads?: unknown[] }>(x: T, loads: T['loads']): T 
   return (loads && loads.length ? { ...rest, loads } : rest) as T;
 };
 
+/**
+ * A uniform load over part of a frame, from `a` to `b` (either order; mm, or 0–1 when `rel`). ETABS' Uniform tab
+ * only covers the whole length, but a distributed load is stored as a segment with a value at each end, so this
+ * is one segment with equal end values: what the Trapezoidal tab gives with the same load at both distances.
+ */
+export function partialUniform(base: Pick<FrameLoad, 'pattern' | 'force' | 'dir' | 'rel'>, a: number, b: number, v: number): FrameLoad {
+  return { ...base, kind: 'dist', d1: Math.min(a, b), d2: Math.max(a, b), v1: v, v2: v };
+}
+
 /** Assign a frame load to the columns and beams among `ids`. */
 export function assignFrameLoad(m: Model, ids: string[], load: FrameLoad, mode: AssignMode): Model {
   const s = new Set(ids);

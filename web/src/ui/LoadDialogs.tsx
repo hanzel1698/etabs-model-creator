@@ -15,6 +15,7 @@ import {
   describeShellLoad,
   DIR_LABEL,
   frameLoadKey,
+  partialUniform,
   patternUse,
   removeLoad,
   renamePattern,
@@ -255,6 +256,9 @@ export function FrameLoadDialog() {
     { d: 1, v: 0 },
   ]);
   const [pt, setPt] = useState({ d: 0.5, v: 20 });
+  // uniform over part of the length (e.g. a wall that stops short of the beam ends): from a to b
+  const [part, setPart] = useState(false);
+  const [span, setSpan] = useState({ a: 0.25, b: 0.75 });
   const [mode, setMode] = useState<AssignMode>('add');
   const [calc, setCalc] = useState(false);
   const activeStory = useApp((s) => s.activeStory);
@@ -266,18 +270,32 @@ export function FrameLoadDialog() {
   // closing the dialog some other way while picking must not leave the plan in pick mode
   useEffect(() => () => void (picking() && endFramePick()), []);
   // pick a distance along a selected beam in the plan; it comes back in the dialog's current units
+  const fromPick = (t: number, len: number) => +(rel ? t : (t * len) / 1000).toFixed(3);
   const pickBtn = (set: (d: number) => void) => (
     <button
       disabled={!canPick}
       title={canPick ? 'Pick on plan: click a point along a selected beam; its distance from the beam start fills this field' : 'Picking needs a selected beam (a column has no length in plan)'}
-      onClick={() => startFramePick((t, len) => set(+(rel ? t : (t * len) / 1000).toFixed(3)))}
+      onClick={() => startFramePick((t, len) => set(fromPick(t, len)))}
     >
       ⌖ Pick
     </button>
   );
+  // the start and then the end of the loaded length, in two clicks on the plan
+  const pickSpan = () =>
+    startFramePick(
+      (t, len) => {
+        const a = fromPick(t, len);
+        setSpan((s) => ({ ...s, a }));
+        startFramePick((t2, len2) => setSpan({ a, b: fromPick(t2, len2) }), 'End of the load: click where it stops along the beam.');
+      },
+      'Start of the load: click where it begins along a selected beam.',
+    );
+  // the shortest selected beam, for absolute distances that run past a beam's end
+  const shortest = Math.min(...frames.filter((f): f is Beam => 'x1' in f).map((b) => dist({ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 })));
 
   const loads = (): FrameLoad[] => {
     const base = { pattern, force, dir, rel };
+    if (kind === 'uniform' && part) return span.a === span.b ? [] : [partialUniform(base, toMm(span.a), toMm(span.b), value)];
     if (kind === 'uniform') return [{ ...base, kind: 'dist', rel: true, d1: 0, d2: 1, v1: value, v2: value }];
     if (kind === 'point') return [{ ...base, kind: 'point', d1: toMm(pt.d), d2: toMm(pt.d), v1: pt.v, v2: pt.v }];
     return trap.slice(1).map((b, i) => ({ ...base, kind: 'dist' as const, d1: toMm(trap[i].d), d2: toMm(b.d), v1: trap[i].v, v2: b.v })).filter((l) => l.d2 > l.d1);
@@ -288,6 +306,7 @@ export function FrameLoadDialog() {
     const ls = loads();
     if (mode !== 'delete' && !ls.length) return toast('The distances must increase from one row to the next.');
     if (mode !== 'delete' && rel && ls.some((l) => l.d1 < 0 || l.d2 > 1)) return toast('Relative distances run from 0 to 1.');
+    if (mode !== 'delete' && !rel && ls.some((l) => l.d1 < 0 || l.d2 > shortest + 1)) return toast(`Distances must lie on the beam: the shortest selected beam is ${fmt(shortest / 1000, 3)} m long.`);
     const ids = frames.map((f) => f.id);
     // a trapezoid is several segments: the first one applies the mode, the rest are added to it
     const del = { pattern } as FrameLoad;
@@ -327,8 +346,31 @@ export function FrameLoadDialog() {
               }}
             />
           )}
-          {kind !== 'uniform' && (
+          {kind === 'uniform' && (
+            <div className="chips">
+              <label className="small"><input type="radio" checked={!part} onChange={() => setPart(false)} /> Full length</label>
+              <label className="small" title="A uniform load from one distance to another, e.g. a wall that covers only part of the beam">
+                <input type="radio" checked={part} onChange={() => setPart(true)} /> Part of the length
+              </label>
+            </div>
+          )}
+          {(kind !== 'uniform' || part) && (
             <label className="small"><input type="checkbox" checked={rel} onChange={() => setRel(!rel)} /> Relative distances (0 = start, 1 = end); off: metres from the start</label>
+          )}
+          {kind === 'uniform' && part && (
+            <>
+              <Num label={`From ${dUnit}`} value={span.a} onChange={(a) => setSpan({ ...span, a })} step={rel ? 0.05 : 0.25} extra={pickBtn((a) => setSpan((s) => ({ ...s, a })))} />
+              <Num label={`To ${dUnit}`} value={span.b} onChange={(b) => setSpan({ ...span, b })} step={rel ? 0.05 : 0.25} extra={pickBtn((b) => setSpan((s) => ({ ...s, b })))} />
+              <div className="chips">
+                <button disabled={!canPick} onClick={pickSpan} title={canPick ? 'Click the start and then the end of the loaded length along a selected beam' : 'Picking needs a selected beam (a column has no length in plan)'}>
+                  ⌖ Pick start → end
+                </button>
+              </div>
+              <div className="small muted">
+                {+value.toFixed(3)} {unit} {span.a === span.b ? 'over no length' : `over ${+Math.abs(span.b - span.a).toFixed(3)} ${rel ? 'of the length' : 'm'}`}. ETABS' Uniform tab only covers the whole frame,
+                so this goes to ETABS as a trapezoidal segment with the same load at both ends (as entered in its Trapezoidal tab).
+              </div>
+            </>
           )}
           {kind === 'point' && (
             <>
