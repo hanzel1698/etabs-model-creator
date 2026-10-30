@@ -563,7 +563,7 @@ export default function View3D() {
             ))}
             <span className="label-size" title="Name size">
               Size
-              <input type="range" min={0.3} max={4} step={0.1} value={labelScale} onChange={(e) => setLabelScale(+e.target.value)} />
+              <input type="range" min={0.5} max={2.5} step={0.1} value={labelScale} onChange={(e) => setLabelScale(+e.target.value)} />
             </span>
           </span>
         )}
