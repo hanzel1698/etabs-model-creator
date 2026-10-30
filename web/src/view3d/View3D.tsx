@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
-import { columnOn, columnSpan, levelZ, storyElevations, type Column, type Model } from '../model/types';
+import { columnOn, columnSpan, levelZ, storyElevations, type Column, type FrameLoad, type LoadDir, type Model } from '../model/types';
+import { pointInPoly } from '../model/geom';
 import { describeJointLoad, shortFrameLoad } from '../model/loads';
 import { activePattern } from '../ui/LoadDialogs';
 import SectionSlider, { type Mark } from './SectionSlider';
@@ -190,7 +191,204 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     if (z === null || j.pattern !== pattern || !vis(j.story)) continue;
     g.add(label(`↓ ${describeJointLoad(j.f)}`, LOAD_COLOR, new THREE.Vector3(j.x * S, z * S, -j.y * S), null, false));
   }
+  if (loads) g.add(...buildLoadPlots(m, pattern, vis, colVis, clip));
   return g;
+}
+
+const UP = new THREE.Vector3(0, 1, 0);
+const _q = new THREE.Quaternion();
+
+// scene direction a positive load along `dir` acts in (Gravity: down); `ax` are the element's local axes 1, 2, 3
+function loadDir(dir: LoadDir, ax: THREE.Vector3[]): THREE.Vector3 {
+  switch (dir) {
+    case 'Gravity':
+    case 'PGravity':
+      return new THREE.Vector3(0, -1, 0);
+    case 'X':
+    case 'PX':
+      return new THREE.Vector3(1, 0, 0);
+    case 'Y':
+    case 'PY':
+      return new THREE.Vector3(0, 0, -1);
+    case 'Z':
+    case 'PZ':
+      return UP.clone();
+    default:
+      return ax[+dir - 1].clone();
+  }
+}
+
+// ETABS default local axes of a frame from `a` to `b`: 1 along it; 2 up for a beam, or global X turned by
+// `angle` (deg) for a column; 3 = 1 × 2. The scene's axis swap is a rotation, so the cross product holds.
+function frameAxes(a: THREE.Vector3, b: THREE.Vector3, angle: number | null): THREE.Vector3[] {
+  const l1 = b.clone().sub(a).normalize();
+  const r = ((angle ?? 0) * Math.PI) / 180;
+  const l2 = angle === null ? UP.clone() : new THREE.Vector3(Math.cos(r), 0, -Math.sin(r));
+  return [l1, l2, l1.clone().cross(l2)];
+}
+
+// Load diagrams of the active pattern: arrows onto the loaded members and joints, and each distributed
+// load's plot filled between the member and its arrow tails, so where it acts and how it varies reads at a
+// glance. Each kind (frame distributed, frame point, slab, joint force, joint moment) is scaled on its own,
+// its largest value drawn `H` long. Moments are arrows with a double head (right-hand rule).
+function buildLoadPlots(m: Model, pattern: string, vis: (story: string) => boolean, colVis: (c: Column) => boolean, clip: THREE.Plane[]): THREE.Object3D[] {
+  const el = storyElevations(m);
+  const P = (x: number, y: number, z: number) => new THREE.Vector3(x * S, z * S, -y * S);
+  const frames: { a: THREE.Vector3; b: THREE.Vector3; ax: THREE.Vector3[]; ls: FrameLoad[] }[] = [];
+  const box = new THREE.Box3();
+  for (const c of m.columns) {
+    const e = columnSpan(el, c);
+    if (!e || !colVis(c)) continue;
+    const a = P(c.x, c.y, e.bottom),
+      b = P(c.x, c.y, e.top);
+    box.expandByPoint(a).expandByPoint(b);
+    const ls = (c.loads ?? []).filter((l) => l.pattern === pattern);
+    if (ls.length) frames.push({ a, b, ax: frameAxes(a, b, c.angle), ls });
+  }
+  for (const bm of m.beams) {
+    const z = levelZ(el, bm);
+    if (z === null || !vis(bm.story)) continue;
+    const a = P(bm.x1, bm.y1, z),
+      b = P(bm.x2, bm.y2, z);
+    box.expandByPoint(a).expandByPoint(b);
+    const ls = (bm.loads ?? []).filter((l) => l.pattern === pattern);
+    if (ls.length) frames.push({ a, b, ax: frameAxes(a, b, null), ls });
+  }
+  const slabs = m.slabs.flatMap((sl) => {
+    const z = levelZ(el, sl);
+    if (z === null || !vis(sl.story) || sl.pts.length < 3) return [];
+    sl.pts.forEach((p) => box.expandByPoint(P(p.x, p.y, z)));
+    const ls = (sl.loads ?? []).filter((l) => l.pattern === pattern);
+    return ls.length ? [{ sl, z, ls }] : [];
+  });
+  const joints = m.jointLoads.flatMap((j) => {
+    const z = levelZ(el, j);
+    return z !== null && j.pattern === pattern && vis(j.story) ? [{ p: P(j.x, j.y, z), f: j.f }] : [];
+  });
+  if (box.isEmpty()) return [];
+  const H = THREE.MathUtils.clamp(box.getSize(new THREE.Vector3()).length() * 0.06, 0.25, 2.5);
+  const scale = (vs: number[]) => {
+    const mx = Math.max(0, ...vs.map(Math.abs));
+    return mx > 0 ? H / mx : 0;
+  };
+  const kDist = scale(frames.flatMap((f) => f.ls.filter((l) => l.kind === 'dist').flatMap((l) => [l.v1, l.v2])));
+  const kPoint = scale(frames.flatMap((f) => f.ls.filter((l) => l.kind === 'point').map((l) => l.v1)));
+  const kSlab = scale(slabs.flatMap((s) => s.ls.map((l) => l.value))) * 0.5; // lower than the frame plots, so they stay readable over a loaded slab
+  const kJf = scale(joints.flatMap((j) => j.f.slice(0, 3)));
+  const kJm = scale(joints.flatMap((j) => j.f.slice(3)));
+
+  const segs: number[] = [],
+    tris: number[] = [],
+    slabTris: number[] = [],
+    heads: THREE.BufferGeometry[] = [];
+  const seg = (p: THREE.Vector3, q: THREE.Vector3) => segs.push(p.x, p.y, p.z, q.x, q.y, q.z);
+  const tri = (...ps: THREE.Vector3[]) => ps.forEach((p) => tris.push(p.x, p.y, p.z));
+  const arrow = (tip: THREE.Vector3, tail: THREE.Vector3, moment: boolean) => {
+    const v = tip.clone().sub(tail),
+      len = v.length();
+    if (len < 1e-6) return;
+    v.divideScalar(len);
+    const hl = Math.min(len * 0.4, H * 0.16);
+    seg(tail, tip);
+    _q.setFromUnitVectors(UP, v);
+    for (let i = 0; i < (moment ? 2 : 1); i++) {
+      const cone = new THREE.ConeGeometry(hl * 0.35, hl, 8);
+      cone.translate(0, -hl / 2, 0); // tip at the origin
+      cone.applyQuaternion(_q);
+      cone.translate(tip.x - v.x * hl * 0.8 * i, tip.y - v.y * hl * 0.8 * i, tip.z - v.z * hl * 0.8 * i);
+      heads.push(cone);
+    }
+  };
+
+  for (const { a, b, ax, ls } of frames) {
+    const Lm = a.distanceTo(b); // m
+    const at = (t: number) => a.clone().lerp(b, t);
+    const frac = (l: FrameLoad, d: number) => THREE.MathUtils.clamp(l.rel ? d : (d * S) / (Lm || 1), 0, 1);
+    for (const l of ls) {
+      const d = loadDir(l.dir, ax),
+        moment = l.force === 'M';
+      if (l.kind === 'point') {
+        const tip = at(frac(l, l.d1));
+        arrow(tip, tip.clone().addScaledVector(d, -l.v1 * kPoint), moment);
+        continue;
+      }
+      const t1 = frac(l, l.d1),
+        t2 = frac(l, l.d2);
+      if (t2 <= t1) continue;
+      const tail = (t: number) => at(t).addScaledVector(d, -(l.v1 + ((l.v2 - l.v1) * (t - t1)) / (t2 - t1)) * kDist);
+      const p1 = at(t1),
+        p2 = at(t2),
+        q1 = tail(t1),
+        q2 = tail(t2);
+      tri(p1, p2, q2);
+      tri(p1, q2, q1);
+      seg(q1, q2);
+      const n = Math.min(16, Math.max(2, Math.ceil(((t2 - t1) * Lm) / (H * 0.9)) + 1));
+      for (let i = 0; i < n; i++) {
+        const t = t1 + ((t2 - t1) * i) / (n - 1);
+        arrow(at(t), tail(t), moment);
+      }
+    }
+  }
+
+  // slabs: the outline lifted off the slab by the load, filled, with arrows on a grid inside the outline
+  const slabAx = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1), UP];
+  for (const { sl, z, ls } of slabs) {
+    const xs = sl.pts.map((p) => p.x),
+      ys = sl.pts.map((p) => p.y);
+    const x0 = Math.min(...xs),
+      x1 = Math.max(...xs),
+      y0 = Math.min(...ys),
+      y1 = Math.max(...ys);
+    const step = Math.max(x1 - x0, y1 - y0) / 5;
+    const grid: { x: number; y: number }[] = [];
+    for (let x = x0 + step / 2; x < x1; x += step) for (let y = y0 + step / 2; y < y1; y += step) if (pointInPoly({ x, y }, sl.pts)) grid.push({ x, y });
+    const shape = new THREE.ShapeGeometry(new THREE.Shape(sl.pts.map((p) => new THREE.Vector2(p.x * S, p.y * S)))).toNonIndexed();
+    shape.rotateX(-Math.PI / 2);
+    const pos = shape.attributes.position;
+    for (const l of ls) {
+      const off = loadDir(l.dir, slabAx).multiplyScalar(-l.value * kSlab);
+      for (let i = 0; i < pos.count; i++) slabTris.push(pos.getX(i) + off.x, pos.getY(i) + z * S + off.y, pos.getZ(i) + off.z);
+      sl.pts.forEach((p, i) => {
+        const q = sl.pts[(i + 1) % sl.pts.length];
+        seg(P(p.x, p.y, z).add(off), P(q.x, q.y, z).add(off));
+      });
+      for (const g of grid) {
+        const tip = P(g.x, g.y, z);
+        arrow(tip, tip.clone().add(off), false);
+      }
+    }
+    shape.dispose();
+  }
+
+  const jointAx = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1), UP];
+  for (const { p, f } of joints)
+    f.forEach((v, i) => {
+      if (v) arrow(p, p.clone().addScaledVector(jointAx[i % 3], -v * (i < 3 ? kJf : kJm)), i >= 3);
+    });
+
+  const out: THREE.Object3D[] = [];
+  const color = new THREE.Color(LOAD_COLOR);
+  if (segs.length) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
+    out.push(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color, clippingPlanes: clip })));
+  }
+  ([
+    [tris, 0.25],
+    [slabTris, 0.1],
+  ] as const).forEach(([ts, opacity]) => {
+    if (!ts.length) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(ts, 3));
+    out.push(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: clip })));
+  });
+  if (heads.length) {
+    out.push(new THREE.Mesh(mergeGeometries(heads), new THREE.MeshBasicMaterial({ color, clippingPlanes: clip })));
+    heads.forEach((h) => h.dispose());
+  }
+  for (const o of out) o.raycast = () => {}; // load plots are never picked
+  return out;
 }
 
 function build(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE.Plane[]): THREE.Group {
