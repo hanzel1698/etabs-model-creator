@@ -22,3 +22,9 @@ export type Dialog =
 export const useDialog = create<{ d: Dialog | null }>(() => ({ d: null }));
 export const openDialog = (d: Dialog) => useDialog.setState({ d });
 export const closeDialog = () => useDialog.setState({ d: null });
+
+/**
+ * The frame load dialog is waiting for a point picked along a selected beam in the plan; it hides
+ * meanwhile. `done` gets the position along the beam (0 = start, 1 = end) and the beam length in mm.
+ */
+export const useFramePick = create<{ done: ((t: number, len: number) => void) | null }>(() => ({ done: null }));

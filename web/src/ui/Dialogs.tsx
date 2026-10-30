@@ -16,9 +16,10 @@ import { fitAll } from '../plan/PlanView';
 import { log as sessionLog } from '../log/sessionLog';
 import { modelIssues } from '../model/checks';
 
-export function Modal({ title, children, footer, wide }: { title: string; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+export function Modal({ title, children, footer, wide, hidden }: { title: string; children: ReactNode; footer?: ReactNode; wide?: boolean; hidden?: boolean }) {
+  // hidden keeps the dialog (and its state) mounted while the plan is used to pick a value for it
   return (
-    <div className="modal-bg" onPointerDown={(e) => e.target === e.currentTarget && closeDialog()}>
+    <div className="modal-bg" style={hidden ? { display: 'none' } : undefined} onPointerDown={(e) => e.target === e.currentTarget && closeDialog()}>
       <div className={'modal' + (wide ? ' wide' : '')} onKeyDown={(e) => e.stopPropagation()}>
         <header>
           {title}

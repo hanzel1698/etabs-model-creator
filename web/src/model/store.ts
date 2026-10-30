@@ -295,6 +295,7 @@ export interface Preview {
   offsetLine: [Pt, Pt] | null;
   grip: [Pt, Pt] | null; // beam being reshaped: fixed end, dragged end (world)
   panel: PanelSize | null; // Panel Size & Type result, drawn as dimensions inside the panel
+  pick: { a: Pt; p: Pt; text: string } | null; // frame load distance pick: beam start, picked point (world)
 }
 
 export const usePreview = create<Preview & { set: (p: Partial<Preview>) => void }>((set) => ({
@@ -310,6 +311,7 @@ export const usePreview = create<Preview & { set: (p: Partial<Preview>) => void 
   offsetLine: null,
   grip: null,
   panel: null,
+  pick: null,
   set: (p) => set(p),
 }));
 

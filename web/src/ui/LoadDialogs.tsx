@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { closeDialog, openDialog } from './dialogState';
+import { useEffect, useState, type ReactNode } from 'react';
+import { closeDialog, openDialog, useFramePick } from './dialogState';
+import { endFramePick, picking, startFramePick } from '../plan/tools';
 import { Modal, StoryChecks } from './Dialogs';
 import { toast, useApp } from '../model/store';
 import { cachedStoryNodes, isNodeId } from '../model/ops';
@@ -172,12 +173,13 @@ function DirSelect({ value, onChange, dirs }: { value: LoadDir; onChange: (d: Lo
   );
 }
 
-function Num({ label, value, onChange, unit, step }: { label: string; value: number; onChange: (v: number) => void; unit?: string; step?: number }) {
+function Num({ label, value, onChange, unit, step, extra }: { label: string; value: number; onChange: (v: number) => void; unit?: string; step?: number; extra?: ReactNode }) {
   return (
     <div className="row">
       <span>{label}</span>
       <input type="number" value={value} step={step ?? 0.5} onChange={(e) => onChange(+e.target.value || 0)} />
       {unit && <span className="small muted" style={{ width: 'auto' }}>{unit}</span>}
+      {extra}
     </div>
   );
 }
@@ -208,6 +210,20 @@ export function FrameLoadDialog() {
   const unit = kind === 'point' ? (force === 'F' ? 'kN' : 'kN·m') : force === 'F' ? 'kN/m' : 'kN·m/m';
   const dUnit = rel ? '(0–1)' : 'm';
   const toMm = (d: number) => (rel ? d : d * 1000);
+  const hidden = useFramePick((s) => !!s.done);
+  const canPick = frames.some((f) => 'x1' in f);
+  // closing the dialog some other way while picking must not leave the plan in pick mode
+  useEffect(() => () => void (picking() && endFramePick()), []);
+  // pick a distance along a selected beam in the plan; it comes back in the dialog's current units
+  const pickBtn = (set: (d: number) => void) => (
+    <button
+      disabled={!canPick}
+      title={canPick ? 'Pick on plan: click a point along a selected beam; its distance from the beam start fills this field' : 'Picking needs a selected beam (a column has no length in plan)'}
+      onClick={() => startFramePick((t, len) => set(+(rel ? t : (t * len) / 1000).toFixed(3)))}
+    >
+      ⌖ Pick
+    </button>
+  );
 
   const loads = (): FrameLoad[] => {
     const base = { pattern, force, dir, rel };
@@ -229,7 +245,7 @@ export function FrameLoadDialog() {
     closeDialog();
   };
   return (
-    <Modal title={`Frame load · ${plural(frames.length, 'frame')}`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={apply}>Apply</button></>}>
+    <Modal hidden={hidden} title={`Frame load · ${plural(frames.length, 'frame')}`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={apply}>Apply</button></>}>
       <PatternSelect value={pattern} onChange={setPattern} />
       {mode !== 'delete' && (
         <>
@@ -248,7 +264,7 @@ export function FrameLoadDialog() {
           )}
           {kind === 'point' && (
             <>
-              <Num label={`Distance ${dUnit}`} value={pt.d} onChange={(d) => setPt({ ...pt, d })} step={rel ? 0.05 : 0.25} />
+              <Num label={`Distance ${dUnit}`} value={pt.d} onChange={(d) => setPt({ ...pt, d })} step={rel ? 0.05 : 0.25} extra={pickBtn((d) => setPt((p) => ({ ...p, d })))} />
               <Num label="Load" value={pt.v} onChange={(v) => setPt({ ...pt, v })} unit={unit} />
             </>
           )}
@@ -258,7 +274,10 @@ export function FrameLoadDialog() {
               <tbody>
                 {trap.map((r, i) => (
                   <tr key={i}>
-                    <td><input type="number" step={rel ? 0.05 : 0.25} value={r.d} onChange={(e) => setTrap(trap.map((x, j) => (j === i ? { ...x, d: +e.target.value || 0 } : x)))} /></td>
+                    <td style={{ display: 'flex', gap: 4 }}>
+                      <input type="number" step={rel ? 0.05 : 0.25} value={r.d} onChange={(e) => setTrap(trap.map((x, j) => (j === i ? { ...x, d: +e.target.value || 0 } : x)))} />
+                      {pickBtn((d) => setTrap((rows) => rows.map((x, j) => (j === i ? { ...x, d } : x))))}
+                    </td>
                     <td><input type="number" step={0.5} value={r.v} onChange={(e) => setTrap(trap.map((x, j) => (j === i ? { ...x, v: +e.target.value || 0 } : x)))} /></td>
                     <td>{trap.length > 2 && <button className="danger" onClick={() => setTrap(trap.filter((_, j) => j !== i))}>✕</button>}</td>
                   </tr>

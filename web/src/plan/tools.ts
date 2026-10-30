@@ -8,7 +8,7 @@ import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOn
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
 import { viewport } from './viewport';
 import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf, rectOf } from '../underlay/store';
-import { openDialog } from '../ui/dialogState';
+import { openDialog, useFramePick } from '../ui/dialogState';
 import { fitAll } from './PlanView';
 
 const SNAP_PX = 12;
@@ -148,7 +148,7 @@ const snapKindsFor = (t: ToolName): SnapKind[] | undefined => {
 export function doSnap(screen: Pt): Snap {
   const w = viewport.toWorld(screen);
   const t = A().tool;
-  if (t === 'select' || t === 'panel') return { p: w, kind: 'none' };
+  if ((t === 'select' || t === 'panel') && !picking()) return { p: w, kind: 'none' };
   const rub = P().rubber;
   const from = rub.length ? rub[rub.length - 1] : null;
   // region corners and reference point are raw DXF points: never snap them to model elements
@@ -171,6 +171,11 @@ export function onMove(screen: Pt) {
   const t = A().tool;
   const p = P();
   const upd: Partial<ReturnType<typeof P>> = { cursor: s.p, snap: s.kind === 'none' ? null : s };
+  if (picking()) {
+    const h = beamPick(s.p);
+    upd.pick = h && { a: h.a, p: h.p, text: `${fmt(h.t * h.len / 1000, 3)} m · ${fmt(h.t, 3)} of ${fmt(h.len / 1000, 3)} m` };
+    return p.set(upd);
+  }
   if (s.kind !== 'none' && s.kind !== 'near' && s.kind !== 'ortho') upd.track = s.p;
   const last = p.rubber[p.rubber.length - 1];
   if (last && (t === 'beam' || t === 'grid' || t === 'slabDraw' || t === 'area' || t === 'measure' || t === 'angle' || t === 'calibrate')) upd.hint = liveText(last, s.p);
@@ -487,7 +492,49 @@ export function redrawRegion(id: string) {
   resetTool();
 }
 
+// ---------- frame load distance pick ----------
+
+export const picking = () => !!useFramePick.getState().done;
+
+/** The selected beam on the active story nearest to `w`, and where `w` falls along it from its start. */
+function beamPick(w: Pt) {
+  const { model, selection, activeStory } = A();
+  const sel = new Set(selection);
+  let best: { a: Pt; p: Pt; t: number; len: number; d: number } | null = null;
+  for (const b of model.beams) {
+    if (b.story !== activeStory || !sel.has(b.id)) continue;
+    const a = { x: b.x1, y: b.y1 };
+    const q = projectOnSeg(w, a, { x: b.x2, y: b.y2 });
+    const d = dist(w, q.p);
+    if (!best || d < best.d) best = { a, p: q.p, t: q.t, len: dist(a, { x: b.x2, y: b.y2 }), d };
+  }
+  return best;
+}
+
+/** Start picking a distance along a selected beam; the dialog hides until a point is picked or Esc. */
+export function startFramePick(done: (t: number, len: number) => void) {
+  const { model, selection, activeStory } = A();
+  if (!model.beams.some((b) => b.story === activeStory && selection.includes(b.id))) return toast(`Select a beam on ${activeStory} to pick along (a column has no length in plan).`);
+  useFramePick.setState({ done });
+  P().set({ hint: 'Click a point along a selected beam: its distance from the beam start fills the dialog. Esc or right-click returns without it.' });
+}
+
+export function endFramePick() {
+  useFramePick.setState({ done: null });
+  P().set({ pick: null, snap: null });
+  resetTool();
+}
+
+/** A primary click while picking: hand the position along the nearest selected beam to the dialog. */
+export function finishFramePick(screen: Pt) {
+  const h = beamPick(doSnap(screen).p);
+  const done = useFramePick.getState().done;
+  endFramePick();
+  if (h && done) done(h.t, h.len);
+}
+
 export function onCancel() {
+  if (picking()) return endFramePick();
   const p = P();
   if (p.rubber.length || p.measure || p.panel || offsetSrc || regionRect || p.box) return resetTool();
   if (A().tool !== 'select') setTool('select');

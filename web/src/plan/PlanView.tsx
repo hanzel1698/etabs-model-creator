@@ -6,11 +6,12 @@ import { columnOn, type Beam, type Pt } from '../model/types';
 import { viewport } from './viewport';
 import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer } from './layers';
 import { activePattern } from '../ui/LoadDialogs';
-import { onMove, onClick, onCancel, finishPolygon, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, type Grip } from './tools';
+import { onMove, onClick, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, type Grip } from './tools';
 import { columnOutline } from './snap';
 import { useUnderlay, regionFor } from '../underlay/store';
 import { UnderlayCanvas } from './UnderlayCanvas';
 import { useIssues } from '../ui/Checks';
+import { useFramePick } from '../ui/dialogState';
 
 export function fitAll(w?: number, h?: number) {
   const el = document.getElementById('plan-host');
@@ -190,7 +191,7 @@ export function PlanView() {
     }
     if (e.button === 2) return;
     if (e.button !== 0) return;
-    const grip = useApp.getState().tool === 'select' ? gripAt(p) : null;
+    const grip = useApp.getState().tool === 'select' && !picking() ? gripAt(p) : null;
     drag.current = grip ? { mode: 'grip', start: p, last: p, button: 0, grip } : { mode: 'none', start: p, last: p, button: 0 };
   };
 
@@ -203,8 +204,8 @@ export function PlanView() {
       return;
     }
     if (d?.mode === 'grip') return gripMove(d.grip!, p);
-    if (!d && useApp.getState().tool === 'select') hostRef.current!.style.cursor = gripAt(p) ? 'move' : 'default';
-    if (d && d.button === 0) {
+    if (!d && useApp.getState().tool === 'select' && !picking()) hostRef.current!.style.cursor = gripAt(p) ? 'move' : 'default';
+    if (d && d.button === 0 && !picking()) {
       const t = useApp.getState().tool;
       if ((t === 'select' || t === 'column') && Math.hypot(p.x - d.start.x, p.y - d.start.y) > 5) d.mode = 'box';
       if (d.mode === 'box') {
@@ -223,6 +224,7 @@ export function PlanView() {
     if (d.mode === 'pan') return;
     const p = local(e);
     if (d.mode === 'grip') return gripDrop(d.grip!, p);
+    if (picking()) return finishFramePick(p);
     const st = useApp.getState();
     if (d.mode === 'box') {
       usePreview.getState().set({ box: null });
@@ -260,7 +262,8 @@ export function PlanView() {
     if (t === 'slabDraw' || t === 'area') finishPolygon();
   };
 
-  const cursor = tool === 'select' ? 'default' : 'crosshair';
+  const pickOn = useFramePick((s) => !!s.done);
+  const cursor = tool === 'select' && !pickOn ? 'default' : 'crosshair';
 
   return (
     <div id="plan-host" ref={hostRef} className="plan-host" style={{ cursor }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={dropStaleGrip} onContextMenu={ctx} onDoubleClick={dblClick} onPointerLeave={() => usePreview.getState().set({ cursor: null, snap: null })}>
@@ -396,6 +399,19 @@ function Overlay() {
   if (pv.grip) {
     const [a, b] = pv.grip.map(S);
     items.push(<line key="grip" x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#4aa3ff" strokeWidth={2} strokeDasharray="8 4" />);
+  }
+  if (pv.pick) {
+    const a = S(pv.pick.a),
+      p = S(pv.pick.p);
+    items.push(
+      <g key="pick">
+        <line x1={a.x} y1={a.y} x2={p.x} y2={p.y} stroke="#ff7ad9" strokeWidth={3} strokeOpacity={0.8} />
+        <circle cx={a.x} cy={a.y} r={5} fill="none" stroke="#ff7ad9" strokeWidth={2} />
+        <text x={a.x + 8} y={a.y + 16} fill="#ff7ad9" fontSize={11} className="halo">start</text>
+        <circle cx={p.x} cy={p.y} r={4} fill="#ff7ad9" />
+        <text x={p.x + 12} y={p.y + 22} fill="#ff7ad9" fontSize={12} className="halo">{pv.pick.text}</text>
+      </g>,
+    );
   }
   if (pv.offsetLine) {
     const [a, b] = pv.offsetLine.map(S);
