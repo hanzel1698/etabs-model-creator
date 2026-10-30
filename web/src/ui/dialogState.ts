@@ -28,3 +28,9 @@ export const closeDialog = () => useDialog.setState({ d: null });
  * meanwhile. `done` gets the position along the beam (0 = start, 1 = end) and the beam length in mm.
  */
 export const useFramePick = create<{ done: ((t: number, len: number) => void) | null }>(() => ({ done: null }));
+
+/**
+ * The move dialog is waiting for a base point and then a destination picked in the plan; it hides
+ * meanwhile. `base` is the first point once clicked; `done` gets the displacement dx, dy in mm.
+ */
+export const useMovePick = create<{ done: ((dx: number, dy: number) => void) | null; base: Pt | null }>(() => ({ done: null, base: null }));

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useDialog, openDialog, closeDialog, type Dialog } from './dialogState';
+import { useDialog, openDialog, closeDialog, useMovePick, type Dialog } from './dialogState';
 import { bySize, sectionGroup } from './sectionGroups';
 import { SelectByDialog } from './SelectByDialog';
 import { FrameLoadDialog, JointLoadDialog, LoadPatternsDialog, ShellLoadDialog } from './LoadDialogs';
@@ -9,7 +9,7 @@ import { parseSpacing, fmt } from '../model/geom';
 import { columnStories, uid, storyElevations, type Column, type FrameSection, type Model, type RefPlane, type SlabSection, type Story } from '../model/types';
 import { useUnderlay, saveUnderlayMeta, rescaleDxf, rectOf, withStories } from '../underlay/store';
 import type { DxfLayer } from '../underlay/dxf';
-import { setTool, redrawRegion } from '../plan/tools';
+import { setTool, redrawRegion, startMovePick, endMovePick, movePicking } from '../plan/tools';
 import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports, type Unowned } from '../etabs/bridgeClient';
 import { toPayload, applyImport, importElements, jointKeys } from '../etabs/mapping';
 import { fitAll } from '../plan/PlanView';
@@ -236,10 +236,19 @@ function MoveDialog() {
     st.commit((m) => moveIds(m, sel, dx, dy, dz));
     closeDialog();
   };
+  const hidden = useMovePick((s) => !!s.done);
+  // closing the dialog some other way while picking must not leave the plan in pick mode
+  useEffect(() => () => void (movePicking() && endMovePick()), []);
+  // pick a base point and a destination in the plan; the vector between them fills dx and dy
+  const pick = () => {
+    const panel = useApp.getState().panel;
+    if (panel !== 'plan' && panel !== 'split') return toast('Switch to the plan view to pick the move.');
+    startMovePick((x, y) => (setDx(+x.toFixed(3)), setDy(+y.toFixed(3))));
+  };
   return (
-    <Modal title={`Move ${sel.length} selected`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={run}>Move</button></>}>
+    <Modal hidden={hidden} title={`Move ${sel.length} selected`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={run}>Move</button></>}>
       <div className="row"><span>dx (mm)</span><input type="number" value={dx} onChange={(e) => setDx(+e.target.value)} /></div>
-      <div className="row"><span>dy (mm)</span><input type="number" value={dy} onChange={(e) => setDy(+e.target.value)} /></div>
+      <div className="row"><span>dy (mm)</span><input type="number" value={dy} onChange={(e) => setDy(+e.target.value)} /><button onClick={pick} title="Pick on plan: click a base point, then its destination; dx and dy fill from the two points (snaps to grids, columns, beam ends...)">⌖ Pick</button></div>
       <div className="row"><span>dz (mm)</span><input type="number" value={dz} onChange={(e) => setDz(+e.target.value)} /></div>
       <div className="small muted">dz moves elements up (+) or down (−) to the story at that level; it must match a story level exactly. Grids ignore dz.</div>
     </Modal>

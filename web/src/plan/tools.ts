@@ -8,7 +8,7 @@ import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOn
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
 import { viewport } from './viewport';
 import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf, rectOf } from '../underlay/store';
-import { openDialog, useFramePick } from '../ui/dialogState';
+import { openDialog, useFramePick, useMovePick } from '../ui/dialogState';
 import { fitAll } from './PlanView';
 
 const SNAP_PX = 12;
@@ -171,6 +171,11 @@ export function onMove(screen: Pt) {
   const t = A().tool;
   const p = P();
   const upd: Partial<ReturnType<typeof P>> = { cursor: s.p, snap: s.kind === 'none' ? null : s };
+  if (movePicking()) {
+    const b = useMovePick.getState().base;
+    if (b) Object.assign(upd, { rubber: [b], hint: liveText(b, s.p) });
+    return p.set(upd);
+  }
   if (picking()) {
     const h = beamPick(s.p);
     upd.pick = h && { a: h.a, p: h.p, text: `${fmt(h.t * h.len / 1000, 3)} m · ${fmt(h.t, 3)} of ${fmt(h.len / 1000, 3)} m` };
@@ -494,7 +499,8 @@ export function redrawRegion(id: string) {
 
 // ---------- frame load distance pick ----------
 
-export const picking = () => !!useFramePick.getState().done;
+/** The plan is picking a value for a dialog (frame load distance or move displacement) instead of running the tool. */
+export const picking = () => !!useFramePick.getState().done || movePicking();
 
 /** The selected beam on the active story nearest to `w`, and where `w` falls along it from its start. */
 function beamPick(w: Pt) {
@@ -527,13 +533,43 @@ export function endFramePick() {
 
 /** A primary click while picking: hand the position along the nearest selected beam to the dialog. */
 export function finishFramePick(screen: Pt) {
+  if (movePicking()) return clickMovePick(screen);
   const h = beamPick(doSnap(screen).p);
   const done = useFramePick.getState().done;
   endFramePick();
   if (h && done) done(h.t, h.len);
 }
 
+// ---------- move displacement pick ----------
+
+export const movePicking = () => !!useMovePick.getState().done;
+
+/** Start picking a move as two points in the plan (base, then destination); the dialog hides until both are picked or Esc. */
+export function startMovePick(done: (dx: number, dy: number) => void) {
+  useMovePick.setState({ done, base: null });
+  P().set({ rubber: [], hint: 'Move: click the base point (snaps to grids, columns, beam ends...). Esc or right-click returns without it.' });
+}
+
+export function endMovePick() {
+  useMovePick.setState({ done: null, base: null });
+  P().set({ snap: null });
+  resetTool();
+}
+
+function clickMovePick(screen: Pt) {
+  const pt = doSnap(screen).p;
+  const { base, done } = useMovePick.getState();
+  if (!base) {
+    useMovePick.setState({ base: pt });
+    P().set({ rubber: [pt], hint: 'Move: click the destination point; dx and dy from the base point fill the dialog.' });
+    return;
+  }
+  endMovePick();
+  done?.(pt.x - base.x, pt.y - base.y);
+}
+
 export function onCancel() {
+  if (movePicking()) return endMovePick();
   if (picking()) return endFramePick();
   const p = P();
   if (p.rubber.length || p.measure || p.panel || offsetSrc || regionRect || p.box) return resetTool();

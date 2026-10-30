@@ -11,7 +11,7 @@ import { columnOutline } from './snap';
 import { useUnderlay, regionFor } from '../underlay/store';
 import { UnderlayCanvas } from './UnderlayCanvas';
 import { useIssues } from '../ui/Checks';
-import { useFramePick } from '../ui/dialogState';
+import { useFramePick, useMovePick } from '../ui/dialogState';
 
 export function fitAll(w?: number, h?: number) {
   const el = document.getElementById('plan-host');
@@ -262,7 +262,9 @@ export function PlanView() {
     if (t === 'slabDraw' || t === 'area') finishPolygon();
   };
 
-  const pickOn = useFramePick((s) => !!s.done);
+  const framePick = useFramePick((s) => !!s.done);
+  const movePick = useMovePick((s) => !!s.done);
+  const pickOn = framePick || movePick;
   const cursor = tool === 'select' && !pickOn ? 'default' : 'crosshair';
 
   return (
