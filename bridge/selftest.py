@@ -168,6 +168,19 @@ def main():
         v = B.do_verify(p6)
         print("verify 6:", v["log"][0])
         assert v["ok"], v
+        # reference planes: pushed, read back by import, verified, then replaced
+        planes = [{"name": "RP1", "z": 1500.0}, {"name": "Mezz", "z": 4200.0}]
+        r = B.do_push(dict(p2, refPlanes=planes))
+        print("push 7 (reference planes):", [x for x in r["log"] if "eference" in x])
+        got = B.do_import()["refPlanes"]
+        print("imported reference planes:", got)
+        assert [(x["name"], round(x["z"])) for x in got] == [("RP1", 1500), ("Mezz", 4200)], got
+        assert B.do_verify(dict(p2, refPlanes=planes))["ok"], "reference planes should match"
+        v = B.do_verify(dict(p2, refPlanes=planes[:1]))
+        assert not v["ok"] and any("Reference planes differ" in x for x in v["log"]), v["log"]
+        B.do_push(dict(p2, refPlanes=planes[1:]))
+        got = B.do_import()["refPlanes"]
+        assert [x["name"] for x in got] == ["Mezz"], got
         print("SELFTEST OK")
     finally:
         if not KEEP:

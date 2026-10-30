@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { useApp, type ShowFlags, type ToolName } from '../model/store';
 import { useDialog, type Dialog } from '../ui/dialogState';
 import { explainAutoSize } from '../model/autoBeam';
-import type { Beam, Column, FrameSection, Grid, JointLoad, LoadPattern, Material, Model, Pt, Slab, SlabSection, Story } from '../model/types';
+import type { Beam, Column, FrameSection, Grid, JointLoad, LoadPattern, Material, Model, Pt, RefPlane, Slab, SlabSection, Story } from '../model/types';
 import { describeFrameLoad, describeJointLoad, describeShellLoad } from '../model/loads';
 
 export type LogLevel = 'info' | 'warn' | 'error';
@@ -122,6 +122,10 @@ const gridWords: Words<Grid> = {
     ...field('bubble', a.bubble, b.bubble),
   ],
 };
+const refPlaneWords: Words<RefPlane> = {
+  describe: (r) => `reference plane ${r.name} at ${mm(r.z)} mm`,
+  compare: (a, b) => [...field('name', a.name, b.name), ...field('elevation', a.z, b.z, ' mm')],
+};
 const storyWords: Words<Story> = {
   describe: (s) => `story ${s.name}, ${mm(s.height)} mm high${s.isMaster ? ', master' : s.similarTo ? `, similar to ${s.similarTo}` : ''}`,
   compare: (a, b) => [
@@ -200,6 +204,7 @@ export function diffModel(a: Model, b: Model): string[] {
     ...diffList(a.beams, b.beams, 'beam', id, beamWords),
     ...diffList(a.slabs, b.slabs, 'slab', id, slabWords),
     ...diffList(a.stories, b.stories, 'story', name, storyWords),
+    ...diffList(a.refPlanes ?? [], b.refPlanes ?? [], 'reference plane', id, refPlaneWords),
     ...diffList(a.frameSections, b.frameSections, 'frame section', name, frameWords),
     ...diffList(a.slabSections, b.slabSections, 'slab section', name, slabSecWords),
     ...diffList(a.materials, b.materials, 'material', name, materialWords),
@@ -242,6 +247,7 @@ const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   selectBy: 'Select by',
   sections: 'Sections',
   stories: 'Stories',
+  refPlanes: 'Reference planes',
   underlay: 'Underlay',
   etabs: 'ETABS',
   rotate: 'Rotate',

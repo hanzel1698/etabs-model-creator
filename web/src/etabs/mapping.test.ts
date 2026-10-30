@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyModel, type Model } from '../model/types';
-import { importElements, toPayload } from './mapping';
+import { applyImport, importElements, toPayload } from './mapping';
 import type { ImportResult } from './bridgeClient';
 
 const g = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -77,5 +77,23 @@ describe('importElements', () => {
     expect(r.model.slabs[0].loads).toEqual([{ pattern: 'Live', dir: 'Gravity', value: 2.5 }]);
     const again = importElements(r.model, imp);
     expect(again.columns + again.beams + again.slabs).toBe(0);
+  });
+});
+
+describe('reference planes', () => {
+  const m: Model = { ...emptyModel(), refPlanes: [{ id: g(9), name: 'Mezz', z: 4500 }] };
+
+  it('are sent only when replacing them, without their ids', () => {
+    expect(toPayload(m, { updateStories: false, pushGrids: false }).refPlanes).toBeNull();
+    expect(toPayload(m, { updateStories: false, pushGrids: false, pushRefPlanes: true }).refPlanes).toEqual([{ name: 'Mezz', z: 4500 }]);
+  });
+
+  it('are replaced by an import that has some, and kept otherwise', () => {
+    const r = { stories: [], grids: [], materials: [], frameSections: [], slabSections: [], patterns: [], baseElevation: 0, warnings: [], frames: [], areas: [] };
+    const what = { stories: false, grids: false, sections: false, refPlanes: true };
+    const out = applyImport(m, { ...r, refPlanes: [{ name: 'RP1', z: 1500 }] }, what);
+    expect(out.refPlanes.map(({ name, z }) => ({ name, z }))).toEqual([{ name: 'RP1', z: 1500 }]);
+    expect(applyImport(m, { ...r, refPlanes: [] }, what).refPlanes).toBe(m.refPlanes);
+    expect(applyImport(m, { ...r, refPlanes: [{ name: 'RP1', z: 1500 }] }, { ...what, refPlanes: false }).refPlanes).toBe(m.refPlanes);
   });
 });

@@ -26,6 +26,7 @@ import comtypes.client
 KN_MM_C = 5
 TOL = 1.0  # mm
 GRID_TABLE = "Grid Definitions - Grid Lines"
+REF_PLANE_TABLE = "Grid Definitions - Reference Planes"
 MAT_TYPES = {1: "Steel", 2: "Concrete", 3: "NoDesign", 4: "Aluminum", 5: "ColdFormed", 6: "Rebar", 7: "Tendon", 8: "Masonry"}
 
 E = None  # comtypes.gen.ETABSv1
@@ -190,6 +191,23 @@ def get_grids(m, warnings):
     return out
 
 
+def get_ref_planes(m, warnings):
+    """Reference planes of every grid system: [{name, z}] (ETABS has no API object for them, only this table)."""
+    try:
+        _, fields, rows = read_table(m, REF_PLANE_TABLE)
+    except Exception as e:
+        warnings.append(f"Reference planes not read: {e}")
+        return []
+    f_id, f_z = _field(fields, "id"), _field(fields, "z")
+    out = []
+    for r in rows:
+        try:
+            out.append({"name": str(r.get(f_id) or ""), "z": float(r[f_z])})
+        except (TypeError, ValueError, KeyError):
+            warnings.append(f"Skipped reference plane row {r}")
+    return sorted(out, key=lambda p: p["z"])
+
+
 def get_materials(m):
     r = ok(m.PropMaterial.GetNameList(0, []), "PropMaterial.GetNameList")
     out = []
@@ -254,6 +272,7 @@ def do_import():
             "baseElevation": base,
             "stories": stories,
             "grids": get_grids(m, warnings),
+            "refPlanes": get_ref_planes(m, warnings),
             "materials": get_materials(m),
             "frameSections": get_frame_sections(m, warnings),
             "slabSections": get_slab_sections(m, warnings),
@@ -738,11 +757,62 @@ def push_grids(m, grids, log):
             data.extend(r[f] if r[f] is not None else "" for f in fields)
     nrec = len(data) // len(fields)
     ok(m.DatabaseTables.SetTableForEditingArray(GRID_TABLE, version, fields, nrec, data), "SetTableForEditingArray")
+    apply_tables(m, "Grid")
+    log.append(f"Grids set on system {sysname} ({len(grids) - skipped})" + (f", {skipped} general grids skipped" if skipped else ""))
+
+
+def grid_system_name(m):
+    try:
+        _, fields, rows = read_table(m, GRID_TABLE)
+        f_sys = _field(fields, "name", "gridsystem", "system")
+        if rows and f_sys and rows[0].get(f_sys):
+            return rows[0][f_sys]
+    except Exception:
+        pass
+    return "G1"
+
+
+def apply_tables(m, what):
     r = m.DatabaseTables.ApplyEditedTables(True, 0, 0, 0, 0, "")
     nfatal, nerr, logtxt = r[0], r[1], r[4]
     if nfatal or nerr:
-        raise EtabsError(f"Grid import errors: {logtxt}")
-    log.append(f"Grids set on system {sysname} ({len(grids) - skipped})" + (f", {skipped} general grids skipped" if skipped else ""))
+        raise EtabsError(f"{what} import errors: {logtxt}")
+
+
+def push_ref_planes(m, planes, log):
+    """Replace the reference planes of the main grid system (the one the grids are pushed to); other systems' planes stay."""
+    version, fields, rows = read_table(m, REF_PLANE_TABLE)
+    if not fields:
+        raise EtabsError("Reference plane table has no fields")
+    f_sys, f_z, f_id, f_vis = _field(fields, "name"), _field(fields, "z"), _field(fields, "id"), _field(fields, "visible")
+    sysname = rows[0].get(f_sys) if rows and rows[0].get(f_sys) else grid_system_name(m)
+    data = []
+    for p in sorted(planes, key=lambda p: p["z"]):
+        row = {f: "" for f in fields}
+        row[f_sys] = sysname
+        row[f_z] = str(float(p["z"]))
+        row[f_id] = p["name"]
+        if f_vis:
+            row[f_vis] = "Yes"
+        data.extend(row[f] for f in fields)
+    for r in rows:
+        if r.get(f_sys) != sysname:
+            data.extend(r[f] if r[f] is not None else "" for f in fields)
+    nrec = len(data) // len(fields)
+    ok(m.DatabaseTables.SetTableForEditingArray(REF_PLANE_TABLE, version, fields, nrec, data), "SetTableForEditingArray")
+    apply_tables(m, "Reference plane")
+    log.append(f"Reference planes set on system {sysname} ({len(planes)})")
+
+
+def ref_planes_match(m, planes, log):
+    have = get_ref_planes(m, log)
+    want = sorted(({"name": p["name"], "z": float(p["z"])} for p in planes), key=lambda p: p["z"])
+    key = lambda l: sorted((p["name"], round(p["z"] / TOL)) for p in l)  # noqa: E731
+    if key(have) == key(want):
+        return True
+    fmt = lambda l: ", ".join(f"{p['name']} {p['z']:g}" for p in l) or "none"  # noqa: E731
+    log.append(f"Reference planes differ: ETABS has {fmt(have)}; the app has {fmt(want)}")
+    return False
 
 
 def to_guid(g):
@@ -923,6 +993,12 @@ def do_push(p):
                 push_grids(m, p["grids"], log)
             except Exception as e:
                 log.append(f"WARNING grids not pushed: {e}")
+        if p.get("refPlanes") is not None:
+            trace("reference planes")
+            try:
+                push_ref_planes(m, p["refPlanes"], log)
+            except Exception as e:
+                log.append(f"WARNING reference planes not pushed: {e}")
         trace("sections")
         push_sections(m, p, log)
         if p.get("loads"):
@@ -1105,9 +1181,11 @@ def do_verify(p):
                 wrong += 1
                 log.append(f"Mismatch slab {n}")
         loads = verify_loads(m, p, fmap, amap, log) if p.get("loads") else 0
+        planes_ok = p.get("refPlanes") is None or ref_planes_match(m, p["refPlanes"], log)
         log.insert(0, f"Checked {len(p['frames'])} frames and {len(p['areas'])} slabs: {missing} missing, {wrong} different"
-                      + (f", loads differ on {loads}" if p.get("loads") else "") + ".")
-        return {"ok": missing == 0 and wrong == 0 and loads == 0, "log": log, "unowned": unowned(m, owned_guids(p))}
+                      + (f", loads differ on {loads}" if p.get("loads") else "")
+                      + ("" if p.get("refPlanes") is None else ", reference planes " + ("match" if planes_ok else "differ")) + ".")
+        return {"ok": missing == 0 and wrong == 0 and loads == 0 and planes_ok, "log": log, "unowned": unowned(m, owned_guids(p))}
     finally:
         m.SetPresentUnits(units)
 

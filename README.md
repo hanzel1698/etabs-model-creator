@@ -27,6 +27,7 @@ The hosted Pages build works the same way: it calls the bridge on `127.0.0.1:876
    - **DXF** (recommended): vector, real units, snapping. All plans can sit in one model space. Use **Define story region**: box a plan, click its reference point (e.g. grid A/1), then tick the stories it applies to. The reference point maps to the model origin, so every story lines up.
    - **PDF**: one page per story. In **Setup**, assign the pages to stories. Then on each story use **Calibrate + origin**: click two points, type their real distance, then click the reference point.
 2. **Grids** (G): draw them, or use **Generate grids…** with spacings like `3@6000, 4500`.
+   **Reference planes…** (Draw menu) adds horizontal planes at any elevation, such as a landing or a mezzanine. Type the elevation, or add one at a story level plus an offset. They show in the Elevation view.
 3. **Columns** (C): click a point (snaps to intersections), or drag a window to fill every intersection inside it.
 4. **Beams** (B): chained drawing that snaps to columns, faces, ends, midpoints, perpendiculars and underlay vertices. Type `dx,dy`, `@dist<angle` or a length, relative to the last point (or the last snap point you hovered). **Offset beam** (O): pick a grid or beam, then type a distance or click a side. **Beams on grids** places beams between consecutive columns along every grid.
 5. **Slabs**: **Slab (bay)** (S) fills the closed bay you click. **Draw slab** (P) lets you draw a polygon.
@@ -44,8 +45,8 @@ The hosted Pages build works the same way: it calls the bridge on `127.0.0.1:876
     - Loads follow Replicate, Move, Split slabs and Undo. Joining or merging keeps a load only when every piece carried the same one; if the pieces differ, the toast says the loads were dropped.
     - **Select by…** can pick elements that carry a load in a given pattern, or no loads at all.
 11. **ETABS…**:
-    - **Import** reads stories, grids, materials, frame sections, slab sections and load patterns. With **Columns, beams, slabs** ticked it also brings in the frame and area objects on the story levels, with their frame and uniform slab loads in the app's patterns. Braces, walls, openings and objects between story levels are skipped. Elements the app already has (same GUID, or same place on the same story) are left as they are.
-    - **Push** sends sections, grids, stories (optional), elements, and (with **Loads** ticked) load patterns and loads.
+    - **Import** reads stories, grids, reference planes, materials, frame sections, slab sections and load patterns. With **Columns, beams, slabs** ticked it also brings in the frame and area objects on the story levels, with their frame and uniform slab loads in the app's patterns. Braces, walls, openings and objects between story levels are skipped. Elements the app already has (same GUID, or same place on the same story) are left as they are.
+    - **Push** sends sections, grids, reference planes and stories (each optional), elements, and (with **Loads** ticked) load patterns and loads.
     - **Verify** reads everything back and compares it with the app, loads included.
 
 ## How the app maps to ETABS
@@ -58,6 +59,7 @@ The hosted Pages build works the same way: it calls the bridge on `127.0.0.1:876
   - changed geometry means the object is deleted and re-added;
   - an element deleted in the app is deleted in ETABS.
 - Objects you drew directly in ETABS are never touched, unless you import them. An imported element keeps its ETABS GUID as its id, so the app owns it from then on: pushes update it and deleting it in the app deletes it in ETABS. Importing gives an ETABS object a new GUID if it has none.
+- Reference planes: ETABS has no API object for them, so the bridge edits the **Grid Definitions - Reference Planes** table (`DatabaseTables`), as it does for grids. **Replace reference planes** replaces the planes of the main grid system and leaves other grid systems' planes alone. With it ticked, **Verify** also compares them.
 - Supports: the push option (Fixed / Pinned / None) restrains the bottom joint of every column at the base elevation on each push; None leaves joint restraints untouched.
 - Sections created in the app are created in ETABS (rectangular, circular and slab). Sections imported from ETABS are left as they are.
 - ETABS only allows story replacement (`SetStories_2`) on a model with no objects. Otherwise, import the stories from ETABS first.

@@ -15,6 +15,7 @@ export interface ElevSlab { id: string; section: string; s0: number; s1: number;
 
 export interface Elevation {
   levels: ElevLevel[]; // bottom → top, the base first
+  refPlanes: ElevLevel[]; // bottom → top
   grids: ElevGridMark[];
   columns: ElevColumn[];
   beams: ElevBeam[];
@@ -35,6 +36,8 @@ export function elevationAt(m: Model, g: Grid, tol: number): Elevation {
   const slabT = new Map(m.slabSections.map((s) => [s.name, s.thickness]));
 
   const levels: ElevLevel[] = [{ name: 'Base', z: m.baseElevation }, ...m.stories.map((s) => ({ name: s.name, z: el[s.name].top }))];
+
+  const refPlanes: ElevLevel[] = [...(m.refPlanes ?? [])].sort((a, b) => a.z - b.z).map((r) => ({ name: r.name, z: r.z }));
 
   const grids: ElevGridMark[] = [];
   for (const h of m.grids) {
@@ -100,7 +103,7 @@ export function elevationAt(m: Model, g: Grid, tol: number): Elevation {
     for (const [s0, s1] of spans) slabs.push({ id: sl.id, section: sl.section, s0, s1, z: e.top, t });
   }
 
-  return { levels, grids, columns, beams, cuts, slabs };
+  return { levels, refPlanes, grids, columns, beams, cuts, slabs };
 }
 
 /** Stretches of the line at offset `at` that lie inside the polygon, as [s0, s1] stations. */

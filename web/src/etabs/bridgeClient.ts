@@ -1,4 +1,4 @@
-import type { FrameSection, Grid, LoadPattern, Material, SlabSection, Story } from '../model/types';
+import type { FrameSection, Grid, LoadPattern, Material, RefPlane, SlabSection, Story } from '../model/types';
 
 export const DEFAULT_BRIDGE = 'http://127.0.0.1:8765';
 
@@ -45,6 +45,8 @@ export interface ImportResult {
   baseElevation: number;
   stories: Story[];
   grids: Omit<Grid, 'id'>[];
+  /** absent from an older bridge */
+  refPlanes?: Omit<RefPlane, 'id'>[];
   materials: Material[];
   frameSections: FrameSection[];
   slabSections: SlabSection[];
@@ -89,6 +91,8 @@ export interface PushPayload {
   stories: Story[];
   updateStories: boolean;
   grids: Omit<Grid, 'id'>[] | null;
+  /** null leaves ETABS' reference planes alone; a list replaces them */
+  refPlanes: Omit<RefPlane, 'id'>[] | null;
   frameSections: FrameSection[]; // app-defined sections to create
   slabSections: SlabSection[];
   frames: { guid: string; kind: 'column' | 'beam'; x1: number; y1: number; z1: number; x2: number; y2: number; z2: number; section: string; angle: number; story: string; loads: FrameLoadOut[] }[];

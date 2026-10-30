@@ -7,7 +7,7 @@ import { uid } from '../model/types';
  * App model → ETABS push payload (all lengths mm, ETABS units set to kN-mm-C by the bridge).
  * A column on story S spans from the elevation of the story below S up to S (a joined column from below its base story).
  */
-export function toPayload(m: Model, opts: { updateStories: boolean; pushGrids: boolean; supports?: Supports; loads?: boolean }): PushPayload {
+export function toPayload(m: Model, opts: { updateStories: boolean; pushGrids: boolean; pushRefPlanes?: boolean; supports?: Supports; loads?: boolean }): PushPayload {
   const el = storyElevations(m);
   const pushLoads = opts.loads ?? true;
   const fl = (ls?: FrameLoad[]) => (pushLoads && ls ? ls.map(frameLoadOut) : []);
@@ -44,6 +44,7 @@ export function toPayload(m: Model, opts: { updateStories: boolean; pushGrids: b
     stories: m.stories,
     updateStories: opts.updateStories,
     grids: opts.pushGrids ? m.grids.map(({ id, ...g }) => g) : null,
+    refPlanes: opts.pushRefPlanes ? m.refPlanes.map(({ id, ...r }) => r) : null,
     frameSections: m.frameSections.filter((s) => !s.fromEtabs),
     slabSections: m.slabSections.filter((s) => !s.fromEtabs),
     frames,
@@ -173,8 +174,8 @@ export function importElements(m: Model, r: Pick<ImportResult, 'frames' | 'areas
 /** `story|x|y` (mm, rounded) of every joint that carries a joint load. */
 export const jointKeys = (m: Model) => [...new Set(m.jointLoads.map((j) => `${j.story}|${Math.round(j.x)}|${Math.round(j.y)}`))];
 
-/** Merge ETABS import into the model. Existing elements are kept; sections/materials/stories/grids are replaced as chosen. */
-export function applyImport(m: Model, r: ImportResult, what: { stories: boolean; grids: boolean; sections: boolean; patterns?: boolean }): Model {
+/** Merge ETABS import into the model. Existing elements are kept; sections/materials/stories/grids/reference planes are replaced as chosen. */
+export function applyImport(m: Model, r: ImportResult, what: { stories: boolean; grids: boolean; sections: boolean; patterns?: boolean; refPlanes?: boolean }): Model {
   let out = { ...m };
   if (what.patterns && r.patterns?.length) {
     // ETABS patterns come in as imported; the app's own keep their settings (they are pushed over ETABS')
@@ -191,6 +192,9 @@ export function applyImport(m: Model, r: ImportResult, what: { stories: boolean;
   }
   if (what.grids && r.grids.length) {
     out = { ...out, grids: r.grids.map((g) => ({ ...g, id: uid() })) };
+  }
+  if (what.refPlanes && r.refPlanes?.length) {
+    out = { ...out, refPlanes: r.refPlanes.map((p) => ({ ...p, id: uid() })) };
   }
   return out;
 }

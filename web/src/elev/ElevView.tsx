@@ -33,17 +33,18 @@ export function ElevView() {
   const extent = () => {
     if (!e || !grid) return null;
     const ss = [0, Math.hypot(grid.x2 - grid.x1, grid.y2 - grid.y1), ...e.grids.map((g) => g.s), ...e.columns.flatMap((c) => [c.s0, c.s1]), ...e.beams.flatMap((b) => [b.s0, b.s1])];
-    const zs = e.levels.map((l) => l.z);
+    const zs = [...e.levels, ...e.refPlanes].map((l) => l.z);
     return { s0: Math.min(...ss), s1: Math.max(...ss), z0: Math.min(...zs), z1: Math.max(...zs) };
   };
   const fit = () => {
     const x = extent();
     if (!x) return;
-    // room on the left for level names and on top for grid bubbles
+    // room on the left for level names, on the right for reference plane names and on top for grid bubbles
     const left = PAD + 110,
+      right = PAD + (e?.refPlanes.length ? 100 : 0),
       top = PAD + 50;
-    const k = Math.min((size.w - left - PAD) / Math.max(x.s1 - x.s0, 1), (size.h - top - PAD) / Math.max(x.z1 - x.z0, 1));
-    setView({ k, tx: left + ((size.w - left - PAD) - k * (x.s1 - x.s0)) / 2 - k * x.s0, ty: top + ((size.h - top - PAD) + k * (x.z1 - x.z0)) / 2 + k * x.z0 });
+    const k = Math.min((size.w - left - right) / Math.max(x.s1 - x.s0, 1), (size.h - top - PAD) / Math.max(x.z1 - x.z0, 1));
+    setView({ k, tx: left + ((size.w - left - right) - k * (x.s1 - x.s0)) / 2 - k * x.s0, ty: top + ((size.h - top - PAD) + k * (x.z1 - x.z0)) / 2 + k * x.z0 });
   };
   // refit when the grid changes or the view is resized
   useEffect(fit, [grid?.id, size.w, size.h]);
@@ -130,6 +131,15 @@ export function ElevView() {
                 </text>
                 <text x={sl - 6} y={Y(l.z)} dy={12} textAnchor="end" fill="var(--muted)" fontSize={11}>
                   {l.z >= 0 ? '+' : ''}
+                  {fmt(l.z)}
+                </text>
+              </g>
+            ))}
+            {e.refPlanes.map((l, i) => (
+              <g key={'rp' + i}>
+                <line x1={sl} x2={sr} y1={Y(l.z)} y2={Y(l.z)} stroke="var(--accent2)" strokeOpacity={0.7} strokeDasharray="14 4 2 4" />
+                <text x={sr + 6} y={Y(l.z)} dy={4} fill="var(--accent2)" fontSize={11}>
+                  {l.name} {l.z >= 0 ? '+' : ''}
                   {fmt(l.z)}
                 </text>
               </g>

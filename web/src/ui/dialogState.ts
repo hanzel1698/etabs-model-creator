@@ -10,6 +10,7 @@ export type Dialog =
   | { kind: 'selectBy' }
   | { kind: 'sections' }
   | { kind: 'stories' }
+  | { kind: 'refPlanes' }
   | { kind: 'underlay' }
   | { kind: 'etabs' }
   | { kind: 'rotate' }

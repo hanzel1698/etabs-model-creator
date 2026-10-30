@@ -221,6 +221,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
         tools.slabDraw,
         'sep',
         { label: 'Stories…', run: () => openDialog({ kind: 'stories' }) },
+        { label: 'Reference planes…', title: 'Horizontal planes at any elevation, pushed to ETABS as reference planes', run: () => openDialog({ kind: 'refPlanes' }) },
         { label: 'Sections…', run: () => openDialog({ kind: 'sections' }) },
       ],
     },

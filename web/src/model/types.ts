@@ -20,6 +20,13 @@ export interface Grid {
   bubble: 'start' | 'end' | 'both';
 }
 
+/** Horizontal reference plane at elevation `z` (ETABS Grid Definitions - Reference Planes); used to draw between story levels in ETABS. */
+export interface RefPlane {
+  id: string;
+  name: string;
+  z: number;
+}
+
 export interface Column {
   id: string; // also the GUID written to ETABS
   story: string; // spans from story below to this story
@@ -124,6 +131,7 @@ export interface Model {
   baseElevation: number;
   stories: Story[]; // bottom → top
   grids: Grid[];
+  refPlanes: RefPlane[];
   columns: Column[];
   beams: Beam[];
   slabs: Slab[];
@@ -150,6 +158,7 @@ export const emptyModel = (): Model => ({
     { name: 'Story3', height: 3000, isMaster: false, similarTo: 'Story1' },
   ],
   grids: [],
+  refPlanes: [],
   columns: [],
   beams: [],
   slabs: [],

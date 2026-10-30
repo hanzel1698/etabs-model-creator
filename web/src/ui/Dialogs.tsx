@@ -6,7 +6,7 @@ import { FrameLoadDialog, JointLoadDialog, LoadPatternsDialog, ShellLoadDialog }
 import { useApp, toast } from '../model/store';
 import { generateGrids, moveIds, oppositeLabelStart, replicate, storyAtOffset } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
-import { columnStories, uid, storyElevations, type Column, type FrameSection, type Model, type SlabSection, type Story } from '../model/types';
+import { columnStories, uid, storyElevations, type Column, type FrameSection, type Model, type RefPlane, type SlabSection, type Story } from '../model/types';
 import { useUnderlay, saveUnderlayMeta, rescaleDxf, rectOf, withStories } from '../underlay/store';
 import { setTool, redrawRegion } from '../plan/tools';
 import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports, type Unowned } from '../etabs/bridgeClient';
@@ -50,6 +50,8 @@ export function Dialogs() {
       return <SectionsDialog />;
     case 'stories':
       return <StoriesDialog />;
+    case 'refPlanes':
+      return <RefPlanesDialog />;
     case 'underlay':
       return <UnderlayDialog />;
     case 'etabs':
@@ -495,6 +497,80 @@ function StoriesDialog() {
   );
 }
 
+// ---------------- reference planes ----------------
+
+/** Where an elevation sits relative to the stories, e.g. "Story2 + 1500" or "below base". */
+export function levelOf(m: Pick<Model, 'baseElevation' | 'stories'>, z: number): string {
+  const el = storyElevations(m as Model);
+  let at = 'Base',
+    zAt = m.baseElevation;
+  for (const s of m.stories) if (el[s.name].top <= z + 1e-6) (at = s.name), (zAt = el[s.name].top);
+  if (z < m.baseElevation - 1e-6) return `Base − ${fmt(m.baseElevation - z)}`;
+  return Math.abs(z - zAt) < 1e-6 ? `at ${at}` : `${at} + ${fmt(z - zAt)}`;
+}
+
+function RefPlanesDialog() {
+  const model = useApp((s) => s.model);
+  const [rows, setRows] = useState<RefPlane[]>(model.refPlanes);
+  const el = storyElevations(model);
+  const [from, setFrom] = useState(model.stories[0]?.name ?? 'Base');
+  const [offset, setOffset] = useState(1500);
+  const up = (i: number, p: Partial<RefPlane>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  const nextName = () => {
+    let n = rows.length + 1;
+    while (rows.some((r) => r.name === `RP${n}`)) n++;
+    return `RP${n}`;
+  };
+  const add = () => {
+    const z = (from === 'Base' ? model.baseElevation : el[from]?.top ?? model.baseElevation) + offset;
+    setRows([...rows, { id: uid(), name: nextName(), z }].sort((a, b) => a.z - b.z));
+  };
+  const save = () => {
+    const names = rows.map((r) => r.name.trim());
+    if (new Set(names).size !== names.length || names.some((n) => !n)) return toast('Reference plane names must be unique and not empty.');
+    const zs = rows.map((r) => r.z);
+    if (zs.some((z) => !isFinite(z))) return toast('Every reference plane needs an elevation.');
+    if (new Set(zs).size !== zs.length) return toast('Two reference planes are at the same elevation.');
+    useApp.getState().commit((m) => ({ ...m, refPlanes: rows.map((r) => ({ ...r, name: r.name.trim() })).sort((a, b) => a.z - b.z) }));
+    closeDialog();
+  };
+  const display = [...rows.map((r, i) => ({ r, i }))].sort((a, b) => b.r.z - a.r.z);
+  return (
+    <Modal title="Reference planes" footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={save}>Save</button></>}>
+      <div className="small muted">
+        Horizontal planes at a given elevation, between or beyond the story levels (e.g. a landing or a mezzanine). They are pushed to ETABS as reference planes (Grid Definitions - Reference Planes), where you can draw and snap on them. Highest first.
+      </div>
+      <table className="grid">
+        <thead><tr><th>Name</th><th>Elevation (Z)</th><th>Level</th><th></th></tr></thead>
+        <tbody>
+          {display.map(({ r, i }) => (
+            <tr key={r.id}>
+              <td><input type="text" value={r.name} onChange={(e) => up(i, { name: e.target.value })} /></td>
+              <td><input type="number" value={r.z} onChange={(e) => up(i, { z: e.target.valueAsNumber })} /></td>
+              <td className="muted">{isFinite(r.z) ? levelOf(model, r.z) : ''}</td>
+              <td><button className="danger" onClick={() => setRows(rows.filter((_, j) => j !== i))}>✕</button></td>
+            </tr>
+          ))}
+          {!rows.length && (
+            <tr><td colSpan={4} className="muted small">No reference planes yet.</td></tr>
+          )}
+        </tbody>
+      </table>
+      <div className="row">
+        <span>Add at</span>
+        <select value={from} onChange={(e) => setFrom(e.target.value)}>
+          <option value="Base">Base ({fmt(model.baseElevation)})</option>
+          {[...model.stories].reverse().map((s) => <option key={s.name} value={s.name}>{s.name} ({fmt(el[s.name].top)})</option>)}
+        </select>
+        <span className="muted" style={{ width: 'auto' }}>+</span>
+        <input type="number" value={offset} onChange={(e) => setOffset(+e.target.value)} />
+        <span className="muted" style={{ width: 'auto' }}>mm</span>
+        <button onClick={add}>Add</button>
+      </div>
+    </Modal>
+  );
+}
+
 // ---------------- underlay setup ----------------
 
 function UnderlayDialog() {
@@ -597,8 +673,8 @@ function EtabsDialog() {
   const [busy, setBusy] = useState('');
   const [log, setLog] = useState<string[]>([]);
   const [url, setUrl] = useState(bridgeUrl());
-  const [imp, setImp] = useState({ sections: true, stories: true, grids: true, patterns: true, elements: true });
-  const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; supports: Supports; loads: boolean }>({ updateStories: false, pushGrids: false, supports: 'none', loads: true });
+  const [imp, setImp] = useState({ sections: true, stories: true, grids: true, refPlanes: true, patterns: true, elements: true });
+  const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; pushRefPlanes: boolean; supports: Supports; loads: boolean }>({ updateStories: false, pushGrids: false, pushRefPlanes: false, supports: 'none', loads: true });
   const [unowned, setUnowned] = useState<Unowned[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const model = useApp((s) => s.model);
@@ -642,9 +718,10 @@ function EtabsDialog() {
       const e = el as ReturnType<typeof importElements> | null;
       const skipped = e ? Object.entries(e.skipped).map(([why, n]) => `${n} skipped: ${why}`) : [];
       add(
-        `✔ Imported ${r.stories.length} stories, ${r.grids.length} grids, ${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections, ${r.patterns?.length ?? 0} load patterns` +
+        `✔ Imported ${r.stories.length} stories, ${r.grids.length} grids, ${r.refPlanes?.length ?? 0} reference planes, ${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections, ${r.patterns?.length ?? 0} load patterns` +
           (e ? `, ${e.columns} columns, ${e.beams} beams, ${e.slabs} slabs` : ''),
         ...skipped,
+        ...(imp.refPlanes && !r.refPlanes ? ['⚠ The bridge is an older version that does not send reference planes. Restart python bridge/bridge.py and import again.'] : []),
         ...(imp.elements && !r.frames ? ['⚠ The bridge is an older version that does not send columns, beams or slabs. Restart python bridge/bridge.py and import again.'] : []),
         ...r.warnings.map((w) => '⚠ ' + w),
       );
@@ -719,14 +796,14 @@ function EtabsDialog() {
       <div className="section">
         <h4>Import from ETABS</h4>
         <div className="chips">
-          {(['sections', 'stories', 'grids', 'patterns', 'elements'] as const).map((k) => (
+          {(['sections', 'stories', 'grids', 'refPlanes', 'patterns', 'elements'] as const).map((k) => (
             <label
               key={k}
               className="small"
               title={k === 'elements' ? 'Columns, beams and slabs on the story levels, with their frame and slab loads in the app’s patterns. They are then managed by the app: pushes update them and deleting them here deletes them in ETABS.' : undefined}
             >
               <input type="checkbox" checked={imp[k]} onChange={() => setImp({ ...imp, [k]: !imp[k] })} />{' '}
-              {k === 'sections' ? 'Materials + sections' : k === 'patterns' ? 'Load patterns' : k === 'elements' ? 'Columns, beams, slabs' : k[0].toUpperCase() + k.slice(1)}
+              {k === 'sections' ? 'Materials + sections' : k === 'refPlanes' ? 'Reference planes' : k === 'patterns' ? 'Load patterns' : k === 'elements' ? 'Columns, beams, slabs' : k[0].toUpperCase() + k.slice(1)}
             </label>
           ))}
           <button onClick={doImport} disabled={!!busy}>Import</button>
@@ -746,6 +823,9 @@ function EtabsDialog() {
         <div className="chips">
           <label className="small"><input type="checkbox" checked={push.updateStories} onChange={() => setPush({ ...push, updateStories: !push.updateStories })} /> Replace ETABS stories</label>
           <label className="small"><input type="checkbox" checked={push.pushGrids} onChange={() => setPush({ ...push, pushGrids: !push.pushGrids })} /> Replace grids</label>
+          <label className="small" title={`Replace the reference planes of the grid system in ETABS with the app's ${model.refPlanes.length}`}>
+            <input type="checkbox" checked={push.pushRefPlanes} onChange={() => setPush({ ...push, pushRefPlanes: !push.pushRefPlanes })} /> Replace reference planes
+          </label>
           <label className="small" title="Create the load patterns and write the frame, slab and joint loads. In the app's patterns, the app's loads replace what ETABS has on the app's elements.">
             <input type="checkbox" checked={push.loads} onChange={() => setPush({ ...push, loads: !push.loads })} /> Loads
           </label>
