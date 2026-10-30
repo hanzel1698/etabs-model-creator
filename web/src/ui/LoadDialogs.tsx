@@ -22,7 +22,7 @@ import {
   updatePattern,
   type AssignMode,
 } from '../model/loads';
-import { PATTERN_TYPES, type FrameLoad, type LoadDir, type LoadPattern, type Model, type Pt, type Vec6 } from '../model/types';
+import { PATTERN_TYPES, type Beam, type FrameLoad, type LoadDir, type LoadPattern, type Model, type Pt, type Vec6 } from '../model/types';
 import { dist, fmt } from '../model/geom';
 
 /** The active load pattern, or the first one if it was renamed or deleted. */
@@ -190,6 +190,55 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 const FRAME_DIRS: LoadDir[] = ['Gravity', 'X', 'Y', 'Z', '1', '2', '3', 'PX', 'PY', 'PZ', 'PGravity'];
 
+// wall load calculator inputs, kept between openings of the dialog (mm, kN/m³)
+const WALL_PRESETS = [200, 100];
+const wallCalc = { t: 200, beamDepth: 450, gamma: 21 };
+
+/** Line load of a wall on the beams: thickness × height × unit weight. The height starts at the
+ *  story above the beams' floor less a beam depth (the top story, a parapet, uses its own height). */
+function WallCalculator({ story, onUse }: { story: string; onUse: (v: number) => void }) {
+  const stories = useApp((s) => s.model.stories);
+  const i = stories.findIndex((s) => s.name === story);
+  const above = stories[i + 1] ?? stories[i];
+  const clear = above?.height ?? 3000;
+  const [t, setT] = useState(wallCalc.t);
+  const [beamDepth, setBeamDepth] = useState(wallCalc.beamDepth);
+  const [h, setH] = useState(Math.max(0, clear - wallCalc.beamDepth));
+  const [gamma, setGamma] = useState(wallCalc.gamma);
+  useEffect(() => void Object.assign(wallCalc, { t, beamDepth, gamma }), [t, beamDepth, gamma]);
+  const load = +((t / 1000) * (h / 1000) * gamma).toFixed(3);
+  const changeDepth = (d: number) => {
+    setBeamDepth(d);
+    setH(Math.max(0, clear - d));
+  };
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 4, padding: '6px 8px', marginBottom: 5 }}>
+      <div className="row">
+        <span>Thickness</span>
+        <input type="number" step={25} value={t} onChange={(e) => setT(+e.target.value || 0)} />
+        <span className="small muted" style={{ width: 'auto' }}>mm</span>
+      </div>
+      <div className="chips" style={{ marginBottom: 5 }}>
+        {WALL_PRESETS.map((p) => (
+          <button key={p} className={t === p ? 'primary' : ''} onClick={() => setT(p)}>{p} mm</button>
+        ))}
+      </div>
+      <Num label="Beam" value={beamDepth} onChange={changeDepth} unit="mm" step={25} />
+      <Num label="Height" value={h} onChange={setH} unit="mm" step={50} extra={<button title={`Reset to ${above?.name ?? 'story'} height ${clear} mm less the beam depth`} onClick={() => setH(Math.max(0, clear - beamDepth))}>↺</button>} />
+      <div className="small muted" style={{ marginBottom: 5 }}>
+        {above ? `${above.name} height ${clear} mm − beam ${beamDepth} mm` : 'No story height found'}
+      </div>
+      <Num label="Unit wt" value={gamma} onChange={setGamma} unit="kN/m³" step={0.5} />
+      <div className="row">
+        <span>Load</span>
+        <b>{fmt(load, 2)} kN/m</b>
+        <span className="small muted" style={{ width: 'auto' }}>= {t / 1000} × {h / 1000} × {gamma}</span>
+        <button className="primary" style={{ marginLeft: 'auto' }} onClick={() => onUse(load)}>Use</button>
+      </div>
+    </div>
+  );
+}
+
 export function FrameLoadDialog() {
   const pat0 = useApp((s) => activePattern(s));
   const { frames } = loadTargets();
@@ -207,6 +256,8 @@ export function FrameLoadDialog() {
   ]);
   const [pt, setPt] = useState({ d: 0.5, v: 20 });
   const [mode, setMode] = useState<AssignMode>('add');
+  const [calc, setCalc] = useState(false);
+  const activeStory = useApp((s) => s.activeStory);
   const unit = kind === 'point' ? (force === 'F' ? 'kN' : 'kN·m') : force === 'F' ? 'kN/m' : 'kN·m/m';
   const dUnit = rel ? '(0–1)' : 'm';
   const toMm = (d: number) => (rel ? d : d * 1000);
@@ -258,7 +309,24 @@ export function FrameLoadDialog() {
             <label className="small"><input type="radio" checked={force === 'M'} onChange={() => setForce('M')} /> Moment</label>
           </div>
           <DirSelect value={dir} onChange={setDir} dirs={FRAME_DIRS} />
-          {kind === 'uniform' && <Num label="Load" value={value} onChange={setValue} unit={unit} />}
+          {kind === 'uniform' && (
+            <Num
+              label="Load"
+              value={value}
+              onChange={setValue}
+              unit={unit}
+              extra={force === 'F' && <button className={calc ? 'primary' : ''} onClick={() => setCalc(!calc)} title="Wall load calculator: thickness × height × unit weight">🧮 Calculator</button>}
+            />
+          )}
+          {kind === 'uniform' && force === 'F' && calc && (
+            <WallCalculator
+              story={frames.find((f): f is Beam => 'x1' in f)?.story ?? frames[0]?.story ?? activeStory}
+              onUse={(v) => {
+                setValue(v);
+                setCalc(false);
+              }}
+            />
+          )}
           {kind !== 'uniform' && (
             <label className="small"><input type="checkbox" checked={rel} onChange={() => setRel(!rel)} /> Relative distances (0 = start, 1 = end); off: metres from the start</label>
           )}
