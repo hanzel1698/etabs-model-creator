@@ -475,6 +475,15 @@ label {
   color: var(--text);
   font-size: 12px;
 }
+.view3d .label-size {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+}
+.view3d .label-size input {
+  width: 90px;
+}
 
 /* section sliders (3D view): narrow translucent strips docked to the canvas's right (elevation),
    bottom (X grids) and left (Y grids) edges; names sit outside the strip, on the canvas.

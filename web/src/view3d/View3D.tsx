@@ -336,13 +336,14 @@ const gridMarks = (m: Model, dir: 'X' | 'Y'): Mark[] =>
 
 export default function View3D() {
   const host = useRef<HTMLDivElement>(null);
-  const ctx = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; group: THREE.Group | null; caps: THREE.Group | null; clip: THREE.Plane[]; labelH: number; render: () => void } | null>(null);
+  const ctx = useRef<{ renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; group: THREE.Group | null; caps: THREE.Group | null; clip: THREE.Plane[]; labelH: number; labelScale: number; render: () => void } | null>(null);
   const model = useApp(visibleModel);
   const selection = useApp((s) => s.selection);
   const activeStory = useApp((s) => s.activeStory);
   const [onlyStory, setOnlyStory] = useState(false);
   const [wire, setWire] = useState(false);
   const [labels, setLabels] = useState<Set<LabelKind>>(new Set());
+  const [labelScale, setLabelScale] = useState(1); // multiplies the fitted label size
   const toggleLabel = (k: LabelKind) =>
     setLabels((cur) => {
       const n = new Set(cur);
@@ -413,7 +414,7 @@ export default function View3D() {
         if (c && !c.labelH)
           // size the labels in the scene so they're LABEL_PX tall at the orbit target from here
           c.labelH = (LABEL_PX * 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.distanceTo(controls.target)) / Math.max(1, el.clientHeight);
-        orientLabels(c?.group ?? null, camera, c?.labelH ?? 0, clip);
+        orientLabels(c?.group ?? null, camera, (c?.labelH ?? 0) * (c?.labelScale ?? 1), clip);
         renderer.render(scene, camera);
       });
     };
@@ -449,7 +450,7 @@ export default function View3D() {
     };
     renderer.domElement.addEventListener('pointerdown', pd);
     renderer.domElement.addEventListener('pointerup', pu);
-    ctx.current = { renderer, scene, camera, controls, group: null, caps: null, clip, labelH: 0, render };
+    ctx.current = { renderer, scene, camera, controls, group: null, caps: null, clip, labelH: 0, labelScale: 1, render };
     return () => {
       ro.disconnect();
       renderer.dispose();
@@ -509,6 +510,13 @@ export default function View3D() {
     c.render();
   }, [zCut.lo, zCut.hi, zCut.min, zCut.max, xCut.lo, xCut.hi, xCut.min, xCut.max, yCut.lo, yCut.hi, yCut.min, yCut.max, gridPad]);
 
+  useEffect(() => {
+    const c = ctx.current;
+    if (!c) return;
+    c.labelScale = labelScale;
+    c.render();
+  }, [labelScale]);
+
   const fitView = () => {
     const c = ctx.current;
     if (!c?.group) return;
@@ -553,6 +561,10 @@ export default function View3D() {
                 {name}
               </button>
             ))}
+            <span className="label-size" title="Name size">
+              Size
+              <input type="range" min={0.3} max={4} step={0.1} value={labelScale} onChange={(e) => setLabelScale(+e.target.value)} />
+            </span>
           </span>
         )}
       </div>
