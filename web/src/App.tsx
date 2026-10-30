@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useRef } from 'react';
-import { useApp, usePreview, type ToolName } from './model/store';
+import { useApp, usePreview } from './model/store';
 import { PlanView, fitAll } from './plan/PlanView';
 import { setTool, onCancel, onInput, finishPolygon, resetTool } from './plan/tools';
 import { LeftPanel } from './ui/LeftPanel';
@@ -15,25 +15,17 @@ import { startSessionLog, log, toggleLog, useLog } from './log/sessionLog';
 import { LogPanel } from './ui/LogPanel';
 import { IssueBadge, watchIssues } from './ui/Checks';
 import { ElevView } from './elev/ElevView';
-import { LoadsBar } from './ui/LoadDialogs';
+import { PatternPicker } from './ui/LoadDialogs';
+import { MainMenu, TOOLS, MEASURE } from './ui/MenuBar';
 
 const View3D = lazy(() => import('./view3d/View3D'));
 
-const TOOLS: { t: ToolName; label: string; key: string }[] = [
-  { t: 'select', label: 'Select', key: 'V' },
-  { t: 'grid', label: 'Grid', key: 'G' },
-  { t: 'column', label: 'Column', key: 'C' },
-  { t: 'beam', label: 'Beam', key: 'B' },
-  { t: 'beamOffset', label: 'Offset beam', key: 'O' },
-  { t: 'slab', label: 'Slab (bay)', key: 'S' },
-  { t: 'slabDraw', label: 'Draw slab', key: 'P' },
-];
-const MEASURE: { t: ToolName; label: string; key: string }[] = [
-  { t: 'measure', label: 'Distance', key: 'M' },
-  { t: 'angle', label: 'Angle', key: 'A' },
-  { t: 'area', label: 'Area', key: 'R' },
-  { t: 'panel', label: 'Panel Size & Type', key: 'T' },
-];
+const VIEWS = [
+  { p: 'plan', label: 'Plan' },
+  { p: 'split', label: 'Split' },
+  { p: '3d', label: '3D' },
+  { p: 'elev', label: 'Elev', title: 'Elevation along a grid line' },
+] as const;
 
 export function App() {
   const tool = useApp((s) => s.tool);
@@ -117,36 +109,38 @@ export function App() {
   return (
     <div className="app">
       <div className="topbar">
-        <span className="brand">ETABS Model Creator</span>
-        <button title="New model" onClick={() => confirm('Start a new model? Unsaved work is lost.') && (log('file', 'New model'), useApp.getState().setModel(emptyModel()), resetTool())}>New</button>
-        <button onClick={() => fileRef.current?.click()}>Open</button>
-        <button onClick={downloadProject} title="Ctrl+S">Save</button>
-        <button onClick={() => ulRef.current?.click()} title="Load a DXF (all stories in model space) or a PDF (one page per story)">Underlay…</button>
-        <span className="sep" />
-        {TOOLS.map((x) => (
-          <button key={x.t} className={'tool ' + (tool === x.t ? 'on' : '')} onClick={() => setTool(x.t)} title={`${x.label} (${x.key})`}>
-            {x.label} <kbd>{x.key}</kbd>
-          </button>
-        ))}
-        <span className="sep" />
-        {MEASURE.map((x) => (
-          <button key={x.t} className={'tool ' + (tool === x.t ? 'on' : '')} onClick={() => setTool(x.t)} title={`${x.label} (${x.key})`}>
-            {x.label}
-          </button>
-        ))}
-        <span className="sep" />
-        <button onClick={() => useApp.getState().undo()} title="Ctrl+Z">Undo</button>
-        <button onClick={() => useApp.getState().redo()} title="Ctrl+Y">Redo</button>
-        <span className="sep" />
-        <StoryStepper />
-        <button className={panel === 'plan' ? 'on' : ''} onClick={() => useApp.getState().setPanel('plan')}>Plan</button>
-        <button className={panel === 'split' ? 'on' : ''} onClick={() => useApp.getState().setPanel('split')}>Split</button>
-        <button className={panel === '3d' ? 'on' : ''} onClick={() => useApp.getState().setPanel('3d')}>3D</button>
-        <button className={panel === 'elev' ? 'on' : ''} onClick={() => useApp.getState().setPanel('elev')} title="Elevation along a grid line">Elev</button>
-        <span className="sep" />
-        <LoadsBar />
-        <span className="sep" />
-        <button className="primary" onClick={() => openDialog({ kind: 'etabs' })}>ETABS…</button>
+        <MainMenu
+          onNew={() => confirm('Start a new model? Unsaved work is lost.') && (log('file', 'New model'), useApp.getState().setModel(emptyModel()), resetTool())}
+          onOpen={() => fileRef.current?.click()}
+          onUnderlay={() => ulRef.current?.click()}
+        />
+        <div className="toolbar">
+          {TOOLS.map((x) => (
+            <button key={x.t} className={'tool ' + (tool === x.t ? 'on' : '')} onClick={() => setTool(x.t)} title={`${x.label} (${x.key})`}>
+              {x.label} <kbd>{x.key}</kbd>
+            </button>
+          ))}
+          <span className="sep" />
+          {MEASURE.map((x) => (
+            <button key={x.t} className={'tool ' + (tool === x.t ? 'on' : '')} onClick={() => setTool(x.t)} title={`${x.label} (${x.key})`}>
+              {x.label}
+            </button>
+          ))}
+          <span className="sep hist" />
+          <button className="hist" onClick={() => useApp.getState().undo()} title="Undo (Ctrl+Z)">Undo</button>
+          <button className="hist" onClick={() => useApp.getState().redo()} title="Redo (Ctrl+Y)">Redo</button>
+          <span className="spacer" />
+          <StoryStepper />
+          <span className="seg" role="group" aria-label="View">
+            {VIEWS.map((v) => (
+              <button key={v.p} className={panel === v.p ? 'on' : ''} onClick={() => useApp.getState().setPanel(v.p)} title={'title' in v ? v.title : undefined}>
+                {v.label}
+              </button>
+            ))}
+          </span>
+          <PatternPicker />
+          <button className="primary" onClick={() => openDialog({ kind: 'etabs' })}>ETABS…</button>
+        </div>
         <input ref={fileRef} type="file" accept=".json" hidden onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = '';

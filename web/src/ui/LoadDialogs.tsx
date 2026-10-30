@@ -43,24 +43,25 @@ export function loadTargets() {
 
 // ---------- top bar ----------
 
-export function LoadsBar() {
+/** Which load dialogs the current selection can use. */
+export function useLoadTargets() {
   const model = useApp((s) => s.model);
-  const pat = useApp((s) => activePattern(s));
   const sel = useApp((s) => s.selection);
   const set = new Set(sel);
-  const frames = model.columns.some((x) => set.has(x.id)) || model.beams.some((x) => set.has(x.id));
-  const slabs = model.slabs.some((x) => set.has(x.id));
-  const joints = sel.some(isNodeId);
+  return {
+    frames: model.columns.some((x) => set.has(x.id)) || model.beams.some((x) => set.has(x.id)),
+    slabs: model.slabs.some((x) => set.has(x.id)),
+    joints: sel.some(isNodeId),
+  };
+}
+
+export function PatternPicker() {
+  const patterns = useApp((s) => s.model.loadPatterns);
+  const pat = useApp((s) => activePattern(s));
   return (
-    <>
-      <button onClick={() => openDialog({ kind: 'loadPatterns' })} title="Define load patterns (Dead, SDL, Live…)">Load patterns…</button>
-      <select value={pat} onChange={(e) => useApp.getState().setLoadPattern(e.target.value)} title="Active load pattern: the default in the load dialogs, and the one the plan shows">
-        {model.loadPatterns.map((p) => <option key={p.name}>{p.name}</option>)}
-      </select>
-      <button disabled={!frames} onClick={() => openDialog({ kind: 'frameLoad' })} title="Assign a distributed or point load to the selected beams and columns">Frame load…</button>
-      <button disabled={!slabs} onClick={() => openDialog({ kind: 'shellLoad' })} title="Assign a uniform load to the selected slabs">Shell load…</button>
-      <button disabled={!joints} onClick={() => openDialog({ kind: 'jointLoad' })} title="Assign a force or moment to the selected nodes (Alt+drag selects nodes)">Joint load…</button>
-    </>
+    <select className="pattern" value={pat} onChange={(e) => useApp.getState().setLoadPattern(e.target.value)} title="Active load pattern: the default in the load dialogs, and the one the plan shows">
+      {patterns.map((p) => <option key={p.name}>{p.name}</option>)}
+    </select>
   );
 }
 
