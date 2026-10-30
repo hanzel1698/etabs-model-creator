@@ -45,7 +45,7 @@ describe('auto beam rules', () => {
   it('width bounds by rank around the preferred width', () => {
     expect([autoWidth(1, 200), autoWidth(2, 200), autoWidth(3, 200)]).toEqual([300, 250, 200]);
     expect([autoWidth(1, 230), autoWidth(2, 230), autoWidth(3, 230)]).toEqual([300, 250, 200]);
-    expect([autoWidth(1, 350), autoWidth(2, 350), autoWidth(3, 350)]).toEqual([350, 350, 200]);
+    expect([autoWidth(1, 350), autoWidth(2, 350), autoWidth(3, 350)]).toEqual([350, 250, 200]);
   });
 
   it('ranks beams by what carries them', () => {
@@ -137,9 +137,9 @@ describe('auto beam rules', () => {
     expect(sec(P(0, 0), P(6000, 0))).toBe('B300x600'); // 6 m primary
     expect(sec(P(0, 0), P(0, 5000))).toBe('B300x600'); // 5 m → 500, periphery → plinth 600
     expect(sec(P(6000, 0), P(6000, 5000))).toBe('B300x500'); // interior
-    expect(sec(P(3000, 0), P(3000, 5000))).toBe('B300x500'); // secondary keeps the 300 preferred width
+    expect(sec(P(3000, 0), P(3000, 5000))).toBe('B250x500'); // secondary is 250 wide, not the 300 preferred width
     expect(sec(P(0, 2500), P(3000, 2500))).toBe('B200x400'); // 3 m tertiary: 200x300 is for spans up to 1.5 m
-    // a narrower preferred width: secondaries are still at least 250 wide
+    // a narrower preferred width: secondaries are still 250 wide
     expect(beam(autoSizeBeams(m, ids, 'B200x300').model, P(3000, 0), P(3000, 5000)).section).toBe('B250x500');
     expect(model.frameSections).toBe(m.frameSections); // nothing created
     // a short primary is still 450 deep
@@ -156,7 +156,7 @@ describe('auto beam rules', () => {
     const ids = m.beams.map((b) => b.id);
     const { sizes } = autoSizeBeams(m, ids, 'B300x500');
     const at = (a: Pt, b: Pt) => sizes.get(beam(m, a, b).id)!;
-    expect(at(P(3000, 0), P(3000, 5000))).toMatchObject({ width: 300, depth: 500, section: 'B300x500', fits: true });
+    expect(at(P(3000, 0), P(3000, 5000))).toMatchObject({ width: 250, depth: 500, section: 'B300x500', fits: true });
     expect(at(P(0, 0), P(6000, 0))).toMatchObject({ width: 300, depth: 600, section: 'B350x700', fits: true });
     const small = withSections({ ...m, frameSections: m.frameSections.filter((s) => !s.name.startsWith('B')) }, [300, 400]);
     expect(autoSizeBeams(small, ids, 'B300x400').sizes.get(beam(m, P(0, 0), P(6000, 0)).id)).toMatchObject({ section: 'B300x400', fits: false });
@@ -167,7 +167,7 @@ describe('auto beam rules', () => {
     const why = (a: Pt, b: Pt, base = 'B300x500') => explainAutoSize(m, beam(m, a, b), base);
     const sec = why(P(3000, 0), P(3000, 5000), 'B200x400');
     expect(sec).toContain('Rank secondary: no column at either end; carried at (3000, 0) by primary beam B300x500, at (3000, 5000) by primary beam B300x500');
-    expect(sec).toContain('Width 250: secondary beams are at least 250 wide and the active section B200x400 is 200 wide');
+    expect(sec).toContain('Width 250: secondary beams are always 250 wide.');
     expect(sec).toContain('Depth 500: span 5.00 m / 10 = 500, rounded up to 500.');
     expect(sec).toContain('Section B250x500 (250×500): listed at exactly 250×500. Next that fit: B300x500, B300x700.');
     const pri = why(P(0, 0), P(6000, 0));

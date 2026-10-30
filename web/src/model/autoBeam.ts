@@ -3,7 +3,7 @@ import { cross, dist, distToSeg, dot, norm, sub } from './geom';
 
 // Auto beam sizing (beam tool "Auto" mode).
 //  - primary   (an end on a column):         width >= 300, depth >= 450
-//  - secondary (ends on primary beams):      width >= 250
+//  - secondary (ends on primary beams):      width 250
 //  - tertiary  (ends on secondary beams…):   width 200
 //  - unsupported (nothing carries either end): the active section's width, no rank minimums
 //  - depth = span/10 rounded up to 100, 800 max; 400 min, or 300 for spans up to 1.5 m (200x300 is for short beams only)
@@ -30,9 +30,9 @@ export function autoDepth(span: number): number {
   return Math.min(AUTO_MAX_DEPTH, Math.max(s <= SHORT_SPAN ? AUTO_SHORT_DEPTH : AUTO_MIN_DEPTH, d));
 }
 
-/** `base` is the preferred width (the active beam section's); the rank sets its lower bound, tertiary beams are 200, unsupported ones `base`. */
+/** `base` is the preferred width (the active beam section's); primaries are at least 300, secondaries 250, tertiaries 200, unsupported ones `base`. */
 export function autoWidth(rank: SizeRank, base: number): number {
-  return rank === 0 ? base : rank === 1 ? Math.max(base, 300) : rank === 2 ? Math.max(base, 250) : 200;
+  return rank === 0 ? base : rank === 1 ? Math.max(base, 300) : rank === 2 ? 250 : 200;
 }
 
 const ends = (b: Beam): [Pt, Pt] => [
@@ -249,9 +249,11 @@ export function explainAutoSize(m: Model, b: Beam, base: string): string {
   out.push(
     s.rank === 3
       ? `Width 200: tertiary beams are always 200 wide.`
+      : s.rank === 2
+      ? `Width 250: secondary beams are always 250 wide.`
       : s.rank === 0
       ? `Width ${s.width}: unsupported beams take the active section's width, and ${pref}.`
-      : `Width ${s.width}: ${RANK_NAME[s.rank]} beams are at least ${s.rank === 1 ? 300 : 250} wide and ${pref}, so the larger of the two.`
+      : `Width ${s.width}: primary beams are at least 300 wide and ${pref}, so the larger of the two.`
   );
 
   const tenth = Math.ceil(L / 1000) * 100;
