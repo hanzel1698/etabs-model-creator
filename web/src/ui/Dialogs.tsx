@@ -8,6 +8,7 @@ import { generateGrids, moveIds, oppositeLabelStart, replicate, storyAtOffset } 
 import { parseSpacing, fmt } from '../model/geom';
 import { columnStories, uid, storyElevations, type Column, type FrameSection, type Model, type RefPlane, type SlabSection, type Story } from '../model/types';
 import { useUnderlay, saveUnderlayMeta, rescaleDxf, rectOf, withStories } from '../underlay/store';
+import type { DxfLayer } from '../underlay/dxf';
 import { setTool, redrawRegion } from '../plan/tools';
 import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports, type Unowned } from '../etabs/bridgeClient';
 import { toPayload, applyImport, importElements, jointKeys } from '../etabs/mapping';
@@ -576,6 +577,11 @@ function RefPlanesDialog() {
 function UnderlayDialog() {
   const u = useUnderlay();
   const stories = useApp((s) => s.model.stories);
+  const setLayers = (visible: (l: DxfLayer, i: number) => boolean) => {
+    const layers = u.dxf!.layers.map((l, i) => ({ ...l, visible: visible(l, i) }));
+    u.set({ dxf: { ...u.dxf!, layers }, hiddenLayers: layers.filter((l) => !l.visible).map((l) => l.name) });
+    saveUnderlayMeta();
+  };
   if (u.kind === 'dxf' && u.dxf)
     return (
       <Modal title="DXF underlay" footer={<button className="primary" onClick={closeDialog}>Done</button>}>
@@ -594,21 +600,16 @@ function UnderlayDialog() {
           </button>
         </div>
         <div className="small muted">Drawing size: {fmt((u.dxf.bbox.maxX - u.dxf.bbox.minX) / 1000, 1)} m × {fmt((u.dxf.bbox.maxY - u.dxf.bbox.minY) / 1000, 1)} m · {u.dxf.segs.length} segments. Check the measured sizes look right.</div>
-        <div className="small">
-          <b>Layers</b>
+        <div className="row small">
+          <b style={{ flex: 1 }}>Layers</b>
+          <button onClick={() => setLayers(() => true)} title="Show every layer">Select all</button>
+          <button onClick={() => setLayers(() => false)} title="Hide every layer">Select none</button>
+          <button onClick={() => setLayers((l) => !l.visible)} title="Show the hidden layers and hide the shown ones">Select inverse</button>
         </div>
         <div className="layerlist">
           {u.dxf.layers.map((l, i) => (
             <label key={l.name} className="small">
-              <input
-                type="checkbox"
-                checked={l.visible}
-                onChange={() => {
-                  const layers = u.dxf!.layers.map((x, j) => (j === i ? { ...x, visible: !x.visible } : x));
-                  u.set({ dxf: { ...u.dxf!, layers }, hiddenLayers: layers.filter((x) => !x.visible).map((x) => x.name) });
-                  saveUnderlayMeta();
-                }}
-              />
+              <input type="checkbox" checked={l.visible} onChange={() => setLayers((x, j) => (j === i ? !x.visible : x.visible))} />
               {l.name}
             </label>
           ))}
