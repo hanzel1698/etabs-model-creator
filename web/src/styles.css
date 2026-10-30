@@ -475,23 +475,6 @@ label {
   color: var(--text);
   font-size: 12px;
 }
-/* section-name labels drawn over the wireframe */
-.view3d .label-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-}
-.view3d .sec-label {
-  padding: 0 4px;
-  font-size: 10px;
-  line-height: 14px;
-  white-space: nowrap;
-  color: #e6ebf2;
-  background: rgba(21, 24, 29, 0.78);
-  border: 1px solid;
-  border-radius: 3px;
-}
 
 /* section sliders (3D view): narrow translucent strips docked to the canvas's right (elevation),
    bottom (X grids) and left (Y grids) edges; names sit outside the strip, on the canvas.

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
 import { columnOn, columnSpan, storyElevations, type Column, type Model } from '../model/types';
@@ -17,14 +16,81 @@ const LABEL_KINDS: { kind: LabelKind; name: string }[] = [
   { kind: 'slab', name: 'Slabs' },
 ];
 
-function label(text: string, color: string, x: number, y: number, z: number): CSS2DObject {
-  const div = document.createElement('div');
-  div.className = 'sec-label';
-  div.textContent = text;
-  div.style.borderColor = color;
-  const o = new CSS2DObject(div);
-  o.position.set(x, y, z);
+const LABEL_PX = 14; // on-screen label height, kept constant by orientLabels
+const labelGeo = new THREE.PlaneGeometry(1, 1);
+
+// a section-name tag drawn on a canvas, as a plane mesh laid along its member: the text runs along
+// `axis`; frames turn only about their own axis to face the camera, slabs (`flat`) lie in their plane
+function label(text: string, color: string, at: THREE.Vector3, axis: THREE.Vector3, flat: boolean): THREE.Mesh {
+  const px = 40,
+    pad = 12;
+  const cv = document.createElement('canvas');
+  const c2 = cv.getContext('2d')!;
+  const font = `${px * 0.7}px system-ui, sans-serif`;
+  c2.font = font;
+  cv.width = Math.ceil(c2.measureText(text).width) + 2 * pad;
+  cv.height = px;
+  c2.font = font;
+  c2.fillStyle = 'rgba(21, 24, 29, 0.78)';
+  c2.strokeStyle = color;
+  c2.lineWidth = 3;
+  c2.beginPath();
+  c2.roundRect(1.5, 1.5, cv.width - 3, cv.height - 3, 8);
+  c2.fill();
+  c2.stroke();
+  c2.fillStyle = '#e6ebf2';
+  c2.textAlign = 'center';
+  c2.textBaseline = 'middle';
+  c2.fillText(text, cv.width / 2, cv.height / 2 + 1);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const o = new THREE.Mesh(labelGeo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+  o.renderOrder = 10;
+  o.position.copy(at);
+  o.raycast = () => {}; // labels are never picked
+  o.userData = { label: true, aspect: cv.width / cv.height, axis: axis.normalize(), flat };
   return o;
+}
+
+const _u = new THREE.Vector3(),
+  _v = new THREE.Vector3(),
+  _n = new THREE.Vector3(),
+  _r = new THREE.Vector3(),
+  _up = new THREE.Vector3(),
+  _fw = new THREE.Vector3(),
+  _m = new THREE.Matrix4();
+
+// per frame: face each label toward the camera without leaving its member's orientation, keep the
+// text reading left to right (bottom to top when it runs straight up the screen) and LABEL_PX tall
+function orientLabels(group: THREE.Group | null, camera: THREE.PerspectiveCamera, viewH: number, clip: THREE.Plane[]) {
+  if (!group) return;
+  camera.updateMatrixWorld();
+  _r.setFromMatrixColumn(camera.matrixWorld, 0);
+  _up.setFromMatrixColumn(camera.matrixWorld, 1);
+  _fw.setFromMatrixColumn(camera.matrixWorld, 2).negate();
+  const pxWorld = (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / Math.max(1, viewH);
+  for (const o of group.children) {
+    if (!o.userData.label) continue;
+    // hide labels of members cut away by the section planes
+    o.visible = clip.every((p) => p.distanceToPoint(o.position) >= -1e-6);
+    if (!o.visible) continue;
+    _u.copy(o.userData.axis);
+    _n.subVectors(camera.position, o.position);
+    const depth = Math.max(-_n.dot(_fw), camera.near);
+    if (o.userData.flat) _n.set(0, Math.sign(_n.y) || 1, 0);
+    else {
+      _n.addScaledVector(_u, -_u.dot(_n));
+      if (_n.lengthSq() < 1e-12) _n.copy(_fw).negate();
+      _n.normalize();
+    }
+    const ur = _u.dot(_r);
+    if (ur < -1e-3 || (Math.abs(ur) <= 1e-3 && _u.dot(_up) < 0)) _u.negate();
+    _v.crossVectors(_n, _u);
+    o.quaternion.setFromRotationMatrix(_m.makeBasis(_u, _v, _n));
+    const h = LABEL_PX * pxWorld * depth;
+    o.scale.set(h * o.userData.aspect, h, 1);
+  }
 }
 
 // wireframe draws every member as its centreline (slabs as their outline) instead of solids
@@ -54,14 +120,15 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     const x = c.x * S,
       z = -c.y * S;
     line([new THREE.Vector3(x, e.bottom * S, z), new THREE.Vector3(x, e.top * S, z)], sel.has(c.id) ? selMat : mat('c' + c.section, sectionColor(c.section)), c.id);
-    if (labels.has('column')) g.add(label(c.section, sectionColor(c.section), x, (e.bottom + e.top) * 0.5 * S, z));
+    if (labels.has('column')) g.add(label(c.section, sectionColor(c.section), new THREE.Vector3(x, (e.bottom + e.top) * 0.5 * S, z), new THREE.Vector3(0, 1, 0), false));
   }
   for (const b of m.beams) {
     const e = el[b.story];
     if (!e || !vis(b.story)) continue;
     const y = e.top * S;
     line([new THREE.Vector3(b.x1 * S, y, -b.y1 * S), new THREE.Vector3(b.x2 * S, y, -b.y2 * S)], sel.has(b.id) ? selMat : mat('b' + b.section, sectionColor(b.section)), b.id);
-    if (labels.has('beam')) g.add(label(b.section, sectionColor(b.section), ((b.x1 + b.x2) / 2) * S, y, (-(b.y1 + b.y2) / 2) * S));
+    if (labels.has('beam'))
+      g.add(label(b.section, sectionColor(b.section), new THREE.Vector3(((b.x1 + b.x2) / 2) * S, y, (-(b.y1 + b.y2) / 2) * S), new THREE.Vector3(b.x2 - b.x1, 0, -(b.y2 - b.y1)), false));
   }
   for (const sl of m.slabs) {
     const e = el[sl.story];
@@ -86,7 +153,15 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     if (labels.has('slab')) {
       const cx = sl.pts.reduce((a, p) => a + p.x, 0) / sl.pts.length,
         cy = sl.pts.reduce((a, p) => a + p.y, 0) / sl.pts.length;
-      g.add(label(sl.section, sectionColor(sl.section), cx * S, y, -cy * S));
+      // text runs along the slab's longest edge
+      let ax = new THREE.Vector3(1, 0, 0),
+        best = 0;
+      sl.pts.forEach((p, i) => {
+        const q = sl.pts[(i + 1) % sl.pts.length],
+          len = Math.hypot(q.x - p.x, q.y - p.y);
+        if (len > best) (best = len), (ax = new THREE.Vector3(q.x - p.x, 0, -(q.y - p.y)));
+      });
+      g.add(label(sl.section, sectionColor(sl.section), new THREE.Vector3(cx * S, y, -cy * S), ax, true));
     }
   }
   return g;
@@ -318,10 +393,6 @@ export default function View3D() {
       new THREE.Vector3(0, 0, 1),
     ].map((n) => new THREE.Plane(n, OPEN));
     el.appendChild(renderer.domElement);
-    // section-name labels (wireframe) are DOM overlays positioned by this renderer
-    const labelRenderer = new CSS2DRenderer();
-    labelRenderer.domElement.className = 'label-layer';
-    el.appendChild(labelRenderer.domElement);
     const scene = new THREE.Scene();
     scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 1.1));
     const dl = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -340,12 +411,8 @@ export default function View3D() {
       raf = requestAnimationFrame(() => {
         raf = 0;
         if (controls.update()) render();
+        orientLabels(ctx.current?.group ?? null, camera, el.clientHeight, clip);
         renderer.render(scene, camera);
-        // hide labels of members cut away by the section planes
-        ctx.current?.group?.children.forEach((o) => {
-          if (o instanceof CSS2DObject) o.visible = clip.every((p) => p.distanceToPoint(o.position) >= -1e-6);
-        });
-        labelRenderer.render(scene, camera);
       });
     };
     controls.addEventListener('change', render);
@@ -353,7 +420,6 @@ export default function View3D() {
       const w = el.clientWidth,
         h = el.clientHeight;
       renderer.setSize(w, h);
-      labelRenderer.setSize(w, h);
       camera.aspect = w / Math.max(1, h);
       camera.updateProjectionMatrix();
       render();
@@ -386,7 +452,6 @@ export default function View3D() {
       ro.disconnect();
       renderer.dispose();
       el.removeChild(renderer.domElement);
-      el.removeChild(labelRenderer.domElement);
       ctx.current = null;
     };
   }, []);
@@ -397,9 +462,11 @@ export default function View3D() {
     if (c.group) {
       c.scene.remove(c.group);
       c.group.traverse((o) => {
-        (o as THREE.Mesh).geometry?.dispose();
-        // removing the group doesn't fire 'removed' on its labels, so drop their DOM nodes here
-        if (o instanceof CSS2DObject) o.element.remove();
+        if (!o.userData.label) return (o as THREE.Mesh).geometry?.dispose();
+        // labels share one plane geometry but own their canvas texture and material
+        const lm = (o as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        lm.map?.dispose();
+        lm.dispose();
       });
     }
     if (c.caps) {
