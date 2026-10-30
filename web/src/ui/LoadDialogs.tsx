@@ -15,16 +15,19 @@ import {
   describeShellLoad,
   DIR_LABEL,
   frameLoadKey,
+  frameLoadUnit,
   partialUniform,
   patternUse,
   removeLoad,
   renamePattern,
   shellLoadKey,
   updatePattern,
+  usedLoadValues,
   type AssignMode,
 } from '../model/loads';
 import { PATTERN_TYPES, type Beam, type FrameLoad, type LoadDir, type LoadPattern, type Model, type Pt, type Vec6 } from '../model/types';
 import { dist, fmt } from '../model/geom';
+import { recentValues, rememberValues } from './recentValues';
 
 /** The active load pattern, or the first one if it was renamed or deleted. */
 export function activePattern(s: { loadPattern: string; model: Model }): string {
@@ -174,13 +177,36 @@ function DirSelect({ value, onChange, dirs }: { value: LoadDir; onChange: (d: Lo
   );
 }
 
-function Num({ label, value, onChange, unit, step, extra }: { label: string; value: number; onChange: (v: number) => void; unit?: string; step?: number; extra?: ReactNode }) {
+function Num({ label, value, onChange, unit, step, extra, recent, used }: { label: string; value: number; onChange: (v: number) => void; unit?: string; step?: number; extra?: ReactNode; recent?: number[]; used?: number[] }) {
+  const num = (v: number) => `${+v.toFixed(3)}`;
   return (
-    <div className="row">
-      <span>{label}</span>
-      <input type="number" value={value} step={step ?? 0.5} onChange={(e) => onChange(+e.target.value || 0)} />
-      {unit && <span className="small muted" style={{ width: 'auto' }}>{unit}</span>}
-      {extra}
+    <>
+      <div className="row">
+        <span>{label}</span>
+        <input type="number" value={value} step={step ?? 0.5} onChange={(e) => onChange(+e.target.value || 0)} />
+        {unit && <span className="small muted" style={{ width: 'auto' }}>{unit}</span>}
+        {extra}
+      </div>
+      {recent && <Recent items={recent} label={num} current={value} onPick={onChange} />}
+      {used && <Recent title="In model" items={notIn(used, recent ?? [])} label={num} current={value} onPick={onChange} />}
+    </>
+  );
+}
+
+const notIn = <T,>(vs: T[], shown: T[]) => vs.filter((v) => !shown.some((x) => JSON.stringify(x) === JSON.stringify(v)));
+
+/** Recently applied (or already assigned) values as one-click chips under a field. */
+function Recent<T>({ title = 'Recent', items, label, current, onPick }: { title?: string; items: T[]; label: (v: T) => string; current?: T; onPick: (v: T) => void }) {
+  if (!items.length) return null;
+  const cur = JSON.stringify(current);
+  return (
+    <div className="chips recent">
+      <span className="small muted">{title}</span>
+      {items.map((v) => (
+        <button key={JSON.stringify(v)} className={JSON.stringify(v) === cur ? 'primary' : ''} onClick={() => onPick(v)} title={title === 'Recent' ? 'Use this recently applied value' : 'Use this value, already assigned in the model'}>
+          {label(v)}
+        </button>
+      ))}
     </div>
   );
 }
@@ -262,8 +288,14 @@ export function FrameLoadDialog() {
   const [mode, setMode] = useState<AssignMode>('add');
   const [calc, setCalc] = useState(false);
   const activeStory = useApp((s) => s.activeStory);
-  const unit = kind === 'point' ? (force === 'F' ? 'kN' : 'kN·m') : force === 'F' ? 'kN/m' : 'kN·m/m';
+  const unit = frameLoadUnit({ kind: kind === 'point' ? 'point' : 'dist', force });
   const dUnit = rel ? '(0–1)' : 'm';
+  // recent values are kept per unit, so a line load never offers a point load's kN
+  const recentKey = `frame:${unit}`;
+  const [recent] = useState(() => ({ 'kN/m': recentValues<number>('frame:kN/m'), 'kN·m/m': recentValues<number>('frame:kN·m/m'), kN: recentValues<number>('frame:kN'), 'kN·m': recentValues<number>('frame:kN·m') }));
+  const recentHere = recent[unit];
+  const [used] = useState(() => usedLoadValues(useApp.getState().model));
+  const usedHere = used.frame[unit] ?? [];
   const toMm = (d: number) => (rel ? d : d * 1000);
   const hidden = useFramePick((s) => !!s.done);
   const canPick = frames.some((f) => 'x1' in f);
@@ -310,6 +342,7 @@ export function FrameLoadDialog() {
     const ids = frames.map((f) => f.id);
     // a trapezoid is several segments: the first one applies the mode, the rest are added to it
     const del = { pattern } as FrameLoad;
+    if (mode !== 'delete') rememberValues(recentKey, kind === 'uniform' ? [value] : kind === 'point' ? [pt.v] : trap.map((r) => r.v));
     useApp.getState().commit((m) => (mode === 'delete' ? assignFrameLoad(m, ids, del, 'delete') : ls.reduce((acc, l, i) => assignFrameLoad(acc, ids, l, i === 0 ? mode : 'add'), m)));
     toast(`${mode === 'delete' ? 'Deleted' : 'Assigned'} ${pattern} frame load${mode === 'delete' ? 's' : ''} on ${plural(frames.length, 'frame')}.`);
     closeDialog();
@@ -334,6 +367,8 @@ export function FrameLoadDialog() {
               value={value}
               onChange={setValue}
               unit={unit}
+              recent={recentHere}
+              used={usedHere}
               extra={force === 'F' && <button className={calc ? 'primary' : ''} onClick={() => setCalc(!calc)} title="Wall load calculator: thickness × height × unit weight">🧮 Calculator</button>}
             />
           )}
@@ -375,7 +410,7 @@ export function FrameLoadDialog() {
           {kind === 'point' && (
             <>
               <Num label={`Distance ${dUnit}`} value={pt.d} onChange={(d) => setPt({ ...pt, d })} step={rel ? 0.05 : 0.25} extra={pickBtn((d) => setPt((p) => ({ ...p, d })))} />
-              <Num label="Load" value={pt.v} onChange={(v) => setPt({ ...pt, v })} unit={unit} />
+              <Num label="Load" value={pt.v} onChange={(v) => setPt({ ...pt, v })} unit={unit} recent={recentHere} used={usedHere} />
             </>
           )}
           {kind === 'trap' && (
@@ -388,12 +423,17 @@ export function FrameLoadDialog() {
                       <input type="number" step={rel ? 0.05 : 0.25} value={r.d} onChange={(e) => setTrap(trap.map((x, j) => (j === i ? { ...x, d: +e.target.value || 0 } : x)))} />
                       {pickBtn((d) => setTrap((rows) => rows.map((x, j) => (j === i ? { ...x, d } : x))))}
                     </td>
-                    <td><input type="number" step={0.5} value={r.v} onChange={(e) => setTrap(trap.map((x, j) => (j === i ? { ...x, v: +e.target.value || 0 } : x)))} /></td>
+                    <td><input type="number" step={0.5} list="recent-frame-values" value={r.v} onChange={(e) => setTrap(trap.map((x, j) => (j === i ? { ...x, v: +e.target.value || 0 } : x)))} /></td>
                     <td>{trap.length > 2 && <button className="danger" onClick={() => setTrap(trap.filter((_, j) => j !== i))}>✕</button>}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          )}
+          {kind === 'trap' && (
+            <datalist id="recent-frame-values">
+              {[...recentHere, ...notIn(usedHere, recentHere)].map((v) => <option key={v} value={v} />)}
+            </datalist>
           )}
           {kind === 'trap' && trap.length < 4 && <div className="chips"><button onClick={() => setTrap([...trap, { d: rel ? 1 : trap[trap.length - 1].d + 1, v: 0 }])}>+ Row</button></div>}
           <div className="small muted">Gravity: a positive value acts downward. Local 2 is the frame's strong-axis direction.</div>
@@ -415,10 +455,13 @@ export function ShellLoadDialog() {
   const [value, setValue] = useState(1.5);
   const [dir, setDir] = useState<LoadDir>('Gravity');
   const [mode, setMode] = useState<AssignMode>('replace');
+  const [recent] = useState(() => recentValues<number>('shell'));
+  const [used] = useState(() => usedLoadValues(useApp.getState().model).shell);
   const apply = () => {
     if (!slabs.length) return toast('Select slabs first.');
     if (!pattern) return toast('Define a load pattern first.');
     const ids = slabs.map((s) => s.id);
+    if (mode !== 'delete') rememberValues('shell', [value]);
     useApp.getState().commit((m) => assignShellLoad(m, ids, { pattern, dir, value }, mode));
     toast(`${mode === 'delete' ? 'Deleted' : 'Assigned'} ${pattern} shell load${mode === 'delete' ? 's' : ''} on ${plural(slabs.length, 'slab')}.`);
     closeDialog();
@@ -428,7 +471,7 @@ export function ShellLoadDialog() {
       <PatternSelect value={pattern} onChange={setPattern} />
       {mode !== 'delete' && (
         <>
-          <Num label="Load" value={value} onChange={setValue} unit="kN/m²" step={0.25} />
+          <Num label="Load" value={value} onChange={setValue} unit="kN/m²" step={0.25} recent={recent} used={used} />
           <DirSelect value={dir} onChange={setDir} dirs={SHELL_DIRS} />
           <div className="small muted">Uniform over the slab. ETABS passes it on to the beams according to the slab section's modelling (a membrane slab spreads it to its supporting beams).</div>
         </>
@@ -449,9 +492,12 @@ export function JointLoadDialog() {
   const [stories, setStories] = useState<string[]>([story]);
   const [mode, setMode] = useState<AssignMode>('add');
   const labels = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'];
+  const [recent] = useState(() => recentValues<Vec6>('joint'));
+  const [used] = useState(() => usedLoadValues(useApp.getState().model).joint);
   const apply = () => {
     if (!nodes.length) return toast('Select nodes first (Alt+drag a window, or turn on Nodes and click them).');
     if (!pattern || !stories.length) return toast('Pick a pattern and at least one story.');
+    if (mode !== 'delete') rememberValues('joint', [f], (v) => v.every((x) => !x));
     useApp.getState().commit((m) => assignJointLoad(m, stories, nodes, { pattern, f }, mode));
     toast(`${mode === 'delete' ? 'Deleted' : 'Assigned'} ${pattern} joint load${mode === 'delete' ? 's' : ''} at ${plural(nodes.length, 'node')} on ${plural(stories.length, 'story')}.`);
     closeDialog();
@@ -464,6 +510,8 @@ export function JointLoadDialog() {
           {labels.map((l, i) => (
             <Num key={l} label={l} value={f[i]} onChange={(v) => setF(f.map((x, j) => (j === i ? v : x)) as Vec6)} unit={i < 3 ? 'kN' : 'kN·m'} step={i < 3 ? 5 : 1} />
           ))}
+          <Recent items={recent} label={describeJointLoad} current={f} onPick={(v) => setF([...v] as Vec6)} />
+          <Recent title="In model" items={notIn(used, recent)} label={describeJointLoad} current={f} onPick={(v) => setF([...v] as Vec6)} />
           <div className="small muted">Global axes. Fz below 0 acts downward. Added on top, a load sums with the joint's load in the same pattern.</div>
         </>
       )}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addBeams, addColumns, anyFilter, joinBeams, joinColumns, matchElements, mergeSlabs, moveIds, replicate, splitSlabsByBeams } from './ops';
 import { checkModel } from './checks';
-import { assignFrameLoad, assignJointLoad, assignShellLoad, deletePattern, frameLoadKey, partialUniform, patternUse, removeLoad, renamePattern, shellLoadKey } from './loads';
+import { assignFrameLoad, assignJointLoad, assignShellLoad, deletePattern, frameLoadKey, partialUniform, patternUse, removeLoad, renamePattern, shellLoadKey, usedLoadValues } from './loads';
 import { emptyModel, type FrameLoad, type Model, type ShellLoad } from './types';
 import { jointKeys, toPayload } from '../etabs/mapping';
 
@@ -198,5 +198,21 @@ describe('finding loads', () => {
     expect(loads).toHaveLength(2);
     expect(loads.some((t) => t.includes('sits on no column'))).toBe(true);
     expect(loads.some((t) => t.includes('“Ghost” is not defined'))).toBe(true);
+  });
+});
+
+describe('used load values', () => {
+  it('lists distinct values per unit, the most used first', () => {
+    let m = frame();
+    const [b, c] = [m.beams[0].id, m.columns[0].id];
+    m = assignFrameLoad(m, [b], udl('SDL', 5), 'add');
+    m = assignFrameLoad(m, [b, c], udl('Live', 3), 'add');
+    m = assignFrameLoad(m, [b], { ...udl('Live', 20), kind: 'point', d1: 0.5, d2: 0.5 }, 'add');
+    m = assignShellLoad(m, ['s1'], sdl(1.5), 'add');
+    const u = usedLoadValues(m);
+    expect(u.frame['kN/m']).toEqual([3, 5]);
+    expect(u.frame.kN).toEqual([20]);
+    expect(u.shell).toEqual([1.5]);
+    expect(u.joint).toEqual([]);
   });
 });

@@ -1119,3 +1119,11 @@ table.grid tr.group-row td {
 .issue-marks {
   pointer-events: none;
 }
+.chips.recent {
+  align-items: center;
+  margin: -2px 0 5px 68px;
+}
+.chips.recent button {
+  padding: 1px 7px;
+  font-size: 11.5px;
+}

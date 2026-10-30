@@ -183,3 +183,27 @@ export function shortFrameLoad(l: FrameLoad): string {
   if (l.kind === 'point') return `P${n(l.v1)}`;
   return l.v1 === l.v2 ? n(l.v1) : `${n(l.v1)}→${n(l.v2)}`;
 }
+
+/** Unit of a frame load's value: line or point, force or moment. */
+export const frameLoadUnit = (l: Pick<FrameLoad, 'kind' | 'force'>) => (l.kind === 'point' ? (l.force === 'F' ? 'kN' : 'kN·m') : l.force === 'F' ? 'kN/m' : 'kN·m/m');
+
+/** Distinct non-zero values (or joint vectors) that `items` yields, the most used first, at most `max`. */
+function byUse<T>(items: T[], max: number): T[] {
+  const count = new Map<string, { v: T; n: number }>();
+  for (const v of items) {
+    const k = JSON.stringify(v);
+    count.set(k, { v, n: (count.get(k)?.n ?? 0) + 1 });
+  }
+  return [...count.values()].sort((a, b) => b.n - a.n).slice(0, max).map((c) => c.v);
+}
+
+/** Load values already assigned in the model: frame values per unit, shell values, joint vectors. */
+export function usedLoadValues(m: Model, max = 8) {
+  const frame: Record<string, number[]> = {};
+  for (const f of [...m.columns, ...m.beams]) for (const l of f.loads ?? []) for (const v of l.kind === 'point' ? [l.v1] : [l.v1, l.v2]) if (v) (frame[frameLoadUnit(l)] ??= []).push(+v.toFixed(3));
+  return {
+    frame: Object.fromEntries(Object.entries(frame).map(([u, vs]) => [u, byUse(vs, max)])) as Record<string, number[]>,
+    shell: byUse(m.slabs.flatMap((s) => (s.loads ?? []).map((l) => +l.value.toFixed(3)).filter(Boolean)), max),
+    joint: byUse(m.jointLoads.map((j) => j.f).filter((f) => f.some(Boolean)), max),
+  };
+}
