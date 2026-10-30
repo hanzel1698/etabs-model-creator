@@ -92,8 +92,24 @@ export async function saveUnderlayMeta() {
     // remembered per file name, so loading the drawing again after removing it keeps its units
     const scales = ((await idbGet('dxfScales')) as Record<string, number> | undefined) ?? {};
     if (scales[s.fileName] !== s.dxfScale) await idbSet('dxfScales', { ...scales, [s.fileName]: s.dxfScale });
+    // likewise its story regions and hidden layers, stored with the scale their coordinates are in
+    const files = ((await idbGet('dxfFileSetup')) as Record<string, DxfFileSetup> | undefined) ?? {};
+    await idbSet('dxfFileSetup', { ...files, [s.fileName]: { scale: s.dxfScale, regions: s.regions, hiddenLayers: s.hiddenLayers } });
   }
 }
+
+interface DxfFileSetup {
+  scale: number;
+  regions: Region[];
+  hiddenLayers: string[];
+}
+
+const scaleRegions = (regions: Region[], f: number): Region[] =>
+  regions.map((r) => ({
+    ...r,
+    rect: { minX: r.rect.minX * f, minY: r.rect.minY * f, maxX: r.rect.maxX * f, maxY: r.rect.maxY * f },
+    ref: { x: r.ref.x * f, y: r.ref.y * f },
+  }));
 
 function parseDxfWith(text: string, scale: number, hiddenLayers: string[]) {
   const dxf = parseDxf(text, scale);
@@ -127,8 +143,13 @@ export async function loadDxfFile(file: File) {
     dxf = parseDxf(text, 1);
     toast(`The DXF says its units are ${units === 1 ? 'inches' : 'code ' + units}, but that makes the plan ${(size / 1000).toFixed(0)} m across, so mm is used. Change it in Underlay → Setup if needed.`);
   }
+  const setup = ((await idbGet('dxfFileSetup')) as Record<string, DxfFileSetup> | undefined)?.[file.name];
+  const regions = setup ? scaleRegions(setup.regions, scale / setup.scale) : [];
+  const hiddenLayers = setup?.hiddenLayers ?? [];
+  if (hiddenLayers.length) dxf.layers.forEach((l) => (l.visible = !hiddenLayers.includes(l.name)));
+  if (regions.length) toast(`Restored the story regions last defined for ${file.name}.`);
   clearPdf();
-  useUnderlay.getState().set({ ...defaultMeta, kind: 'dxf', fileName: file.name, dxfScale: scale, dxf, dxfText: text, setupMode: true });
+  useUnderlay.getState().set({ ...defaultMeta, kind: 'dxf', fileName: file.name, dxfScale: scale, dxf, dxfText: text, regions, hiddenLayers, setupMode: !regions.length });
   await idbSet('underlayFile', text);
   await saveUnderlayMeta();
 }
@@ -136,12 +157,7 @@ export async function loadDxfFile(file: File) {
 export function rescaleDxf(scale: number) {
   const s = useUnderlay.getState();
   if (!s.dxfText) return;
-  const f = scale / s.dxfScale;
-  const regions = s.regions.map((r) => ({
-    ...r,
-    rect: { minX: r.rect.minX * f, minY: r.rect.minY * f, maxX: r.rect.maxX * f, maxY: r.rect.maxY * f },
-    ref: { x: r.ref.x * f, y: r.ref.y * f },
-  }));
+  const regions = scaleRegions(s.regions, scale / s.dxfScale);
   s.set({ dxfScale: scale, dxf: parseDxfWith(s.dxfText, scale, s.hiddenLayers), regions });
   saveUnderlayMeta();
 }
