@@ -345,6 +345,23 @@ def get_patterns(m):
     return out
 
 
+def use_etabs_pattern_names(m, p):
+    """
+    ETABS pattern names are case-insensitive ("Dead" is taken when ETABS has "DEAD"), the app's comparisons are not:
+    rewrite every pattern name in the payload to the spelling ETABS already uses.
+    """
+    have = {x["name"].lower(): x["name"] for x in get_patterns(m)}
+    fix = lambda n: have.get(n.lower(), n)
+    for pt in p.get("patterns", []):
+        pt["name"] = fix(pt["name"])
+    p["loadPatterns"] = [fix(n) for n in p.get("loadPatterns", [])]
+    for obj in p["frames"] + p["areas"]:
+        for l in obj.get("loads", []):
+            l["pattern"] = fix(l["pattern"])
+    for j in p.get("jointLoads", []):
+        j["pattern"] = fix(j["pattern"])
+
+
 def push_patterns(m, pats, log):
     """Create the app's patterns (each with its linear static case) and bring type and self-weight up to date."""
     have = {x["name"]: x for x in get_patterns(m)}
@@ -1003,6 +1020,7 @@ def do_push(p):
         push_sections(m, p, log)
         if p.get("loads"):
             trace("load patterns")
+            use_etabs_pattern_names(m, p)
             push_patterns(m, p.get("patterns", []), log)
         trace("guid maps")
 
@@ -1180,6 +1198,8 @@ def do_verify(p):
             if not same_area(area_geom(m, n), a) or m.AreaObj.GetProperty(n, "")[0] != a["section"]:
                 wrong += 1
                 log.append(f"Mismatch slab {n}")
+        if p.get("loads"):
+            use_etabs_pattern_names(m, p)
         loads = verify_loads(m, p, fmap, amap, log) if p.get("loads") else 0
         planes_ok = p.get("refPlanes") is None or ref_planes_match(m, p["refPlanes"], log)
         log.insert(0, f"Checked {len(p['frames'])} frames and {len(p['areas'])} slabs: {missing} missing, {wrong} different"
