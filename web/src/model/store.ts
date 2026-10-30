@@ -35,6 +35,9 @@ export interface ShowFlags {
   underlay: boolean;
   columns: boolean;
   beams: boolean;
+  /** beams running mostly along X / mostly along Y; only matter while `beams` is on */
+  beamsX: boolean;
+  beamsY: boolean;
   slabs: boolean;
   nodes: boolean;
   /** load values of the active load pattern */
@@ -204,12 +207,12 @@ export const useApp = create<AppState>((set, get) => ({
   toggleAutoBeam: () => set((s) => ({ autoBeam: !s.autoBeam })),
   autoSplitSlabs: false,
   toggleAutoSplitSlabs: () => set((s) => ({ autoSplitSlabs: !s.autoSplitSlabs })),
-  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, slabs: true, nodes: false, loads: false },
+  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false },
   toggleShow: (k) =>
     set((s) => {
       const show = { ...s.show, [k]: !s.show[k] };
       // switching a type off also drops it from the selection, so Delete can't reach what isn't shown
-      const off = (['columns', 'beams', 'slabs'] as const).filter((t) => !show[t]).flatMap((t) => s.model[t].map((x) => x.id));
+      const off = switchedOff(s.model, show);
       if (!off.length) return { show };
       const gone = new Set(off);
       return { show, selection: s.selection.filter((id) => !gone.has(id)) };
@@ -234,7 +237,7 @@ export const useApp = create<AppState>((set, get) => ({
   restoreSelection: () =>
     set((s) => {
       // leave out what has been hidden since, like toggleShow/hideIds do
-      const off = new Set([...s.hidden, ...(['columns', 'beams', 'slabs'] as const).filter((t) => !s.show[t]).flatMap((t) => s.model[t].map((x) => x.id))]);
+      const off = new Set([...s.hidden, ...switchedOff(s.model, s.show)]);
       const ids = s.prevSelection.filter((id) => !off.has(id));
       return ids.length ? { selection: ids } : {};
     }),
@@ -277,6 +280,15 @@ useApp.subscribe((s, p) => {
 
 const elementIds = (m: Model) => [...m.columns, ...m.beams, ...m.slabs].map((x) => x.id);
 
+/** Whether the View switches show beam `b`: beams on, and its direction (X when it runs mostly along X) on. */
+const beamOn = (b: Model['beams'][number], show: ShowFlags) => show.beams && (Math.abs(b.x2 - b.x1) >= Math.abs(b.y2 - b.y1) ? show.beamsX : show.beamsY);
+
+/** Ids of the columns, beams and slabs the View switches leave out. */
+const switchedOff = (m: Model, show: ShowFlags) => [
+  ...(['columns', 'slabs'] as const).filter((t) => !show[t]).flatMap((t) => m[t].map((x) => x.id)),
+  ...m.beams.filter((b) => !beamOn(b, show)).map((b) => b.id),
+];
+
 let visCache: { m: Model; show: ShowFlags; hidden: string[]; v: Model } | null = null;
 /**
  * The model as shown: columns, beams and slabs that are switched off or hidden are left out.
@@ -284,16 +296,16 @@ let visCache: { m: Model; show: ShowFlags; hidden: string[]; v: Model } | null =
  */
 export function visibleModel(s: Pick<AppState, 'model' | 'show' | 'hidden'>): Model {
   const c = visCache;
-  if (c && c.m === s.model && c.hidden === s.hidden && c.show.columns === s.show.columns && c.show.beams === s.show.beams && c.show.slabs === s.show.slabs) return c.v;
+  if (c && c.m === s.model && c.hidden === s.hidden && c.show.columns === s.show.columns && c.show.beams === s.show.beams && c.show.beamsX === s.show.beamsX && c.show.beamsY === s.show.beamsY && c.show.slabs === s.show.slabs) return c.v;
   const m = s.model;
   const h = new Set(s.hidden);
   const v =
-    !h.size && s.show.columns && s.show.beams && s.show.slabs
+    !h.size && s.show.columns && s.show.beams && s.show.beamsX && s.show.beamsY && s.show.slabs
       ? m
       : {
           ...m,
           columns: s.show.columns ? m.columns.filter((x) => !h.has(x.id)) : [],
-          beams: s.show.beams ? m.beams.filter((x) => !h.has(x.id)) : [],
+          beams: m.beams.filter((x) => beamOn(x, s.show) && !h.has(x.id)),
           slabs: s.show.slabs ? m.slabs.filter((x) => !h.has(x.id)) : [],
         };
   visCache = { m, show: s.show, hidden: s.hidden, v };

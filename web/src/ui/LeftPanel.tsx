@@ -277,11 +277,31 @@ function ViewControls() {
   ];
   return (
     <>
-      {toggles.map(([k, l]) => (
-        <label key={k} className="small">
-          <input type="checkbox" checked={show[k]} onChange={() => st.toggleShow(k)} /> {l}
-        </label>
-      ))}
+      {toggles.map(([k, l]) =>
+        k === 'beams' ? (
+          <div key={k} className="beam-dirs">
+            <label className="small">
+              <input type="checkbox" checked={show.beams} onChange={() => st.toggleShow('beams')} /> {l}
+            </label>
+            {(['beamsX', 'beamsY'] as const).map((d) => (
+              <button
+                key={d}
+                className={show[d] ? 'dir on' : 'dir'}
+                aria-pressed={show[d]}
+                title={`Show beams running along ${d.slice(-1)}`}
+                disabled={!show.beams}
+                onClick={() => st.toggleShow(d)}
+              >
+                {d.slice(-1)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <label key={k} className="small">
+            <input type="checkbox" checked={show[k]} onChange={() => st.toggleShow(k)} /> {l}
+          </label>
+        ),
+      )}
       <div className="chips">
         <button title="Hide the selected columns, beams and slabs (H)" onClick={() => (st.selection.length ? st.hideIds(st.selection) : st.setToast('Select the elements to hide.'))}>
           Hide selected

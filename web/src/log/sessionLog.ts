@@ -269,6 +269,8 @@ const SHOW_NAMES: Record<keyof ShowFlags, string> = {
   underlay: 'underlay',
   columns: 'columns',
   beams: 'beams',
+  beamsX: 'beams along X',
+  beamsY: 'beams along Y',
   slabs: 'slabs',
   nodes: 'nodes',
   loads: 'loads',
