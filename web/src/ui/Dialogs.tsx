@@ -893,7 +893,7 @@ function EtabsDialog() {
           <label className="small" title="Create the load patterns and write the frame, slab and joint loads. In the app's patterns, the app's loads replace what ETABS has on the app's elements.">
             <input type="checkbox" checked={push.loads} onChange={() => setPush({ ...push, loads: !push.loads })} /> Loads
           </label>
-          <label className="small" title="Restraint assigned to the bottom joint of every column at the base elevation">
+          <label className="small" style={{ marginLeft: 12 }} title="Restraint assigned to the bottom joint of every column at the base elevation">
             Supports
             <select value={push.supports} onChange={(e) => setPush({ ...push, supports: e.target.value as Supports })}>
               <option value="fixed">Fixed</option>
