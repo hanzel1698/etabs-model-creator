@@ -161,6 +161,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
   const panel = useApp((s) => s.panel);
   const ortho = useApp((s) => s.ortho);
   const sel = useApp((s) => s.selection);
+  const prevSel = useApp((s) => s.prevSelection.length);
   const hidden = useApp((s) => s.hidden.length);
   const stories = useApp((s) => s.model.stories);
   const active = useApp((s) => s.activeStory);
@@ -196,6 +197,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
         { label: 'Redo', kbd: 'Ctrl+Y', run: () => st().redo() },
         'sep',
         { label: 'Select by…', run: () => openDialog({ kind: 'selectBy' }) },
+        { label: 'Get previous selection', kbd: 'Ctrl+P', disabled: !prevSel, title: 'Bring back the selection before the last click or change replaced it', run: () => st().restoreSelection() },
         { label: 'Replicate…', kbd: 'E', disabled: none, run: () => openDialog({ kind: 'replicate' }) },
         { label: 'Move…', disabled: none, run: () => openDialog({ kind: 'move' }) },
         { label: 'Delete', kbd: 'Del', disabled: none, run: () => (st().commit((m) => deleteIds(m, sel)), st().setSelection([])) },

@@ -36,3 +36,28 @@ describe('undo and redo', () => {
     expect(useApp.getState().model.pushedIds).toEqual(['a', 'b']);
   });
 });
+
+describe('previous selection', () => {
+  it('comes back after a click replaces or clears it, and swaps on a second restore', () => {
+    useApp.setState({ selection: [], prevSelection: [], hidden: [] });
+    const st = useApp.getState;
+    st().setSelection(['a', 'b', 'c']);
+    st().setSelection(['d']); // accidental click
+    st().setSelection([]); // click on empty space
+    expect(st().prevSelection).toEqual(['d']);
+    st().setSelection(['a', 'b', 'c']);
+    st().setSelection(['x']);
+    st().restoreSelection();
+    expect(st().selection).toEqual(['a', 'b', 'c']);
+    st().restoreSelection();
+    expect(st().selection).toEqual(['x']);
+  });
+
+  it('skips elements hidden since', () => {
+    useApp.setState({ selection: ['a', 'b'], prevSelection: [], hidden: [] });
+    useApp.getState().setSelection([]);
+    useApp.setState({ hidden: ['b'] });
+    useApp.getState().restoreSelection();
+    expect(useApp.getState().selection).toEqual(['a']);
+  });
+});

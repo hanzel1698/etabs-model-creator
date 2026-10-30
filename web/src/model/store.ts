@@ -83,6 +83,10 @@ interface AppState {
 
   selection: string[];
   setSelection: (ids: string[]) => void;
+  /** the selection before the last change that replaced or cleared it (view only, not saved) */
+  prevSelection: string[];
+  /** bring back the previous selection; doing it again swaps back */
+  restoreSelection: () => void;
 
   viewRotation: number; // degrees, view only
   setViewRotation: (r: number) => void;
@@ -215,6 +219,14 @@ export const useApp = create<AppState>((set, get) => ({
 
   selection: [],
   setSelection: (ids) => set({ selection: ids }),
+  prevSelection: [],
+  restoreSelection: () =>
+    set((s) => {
+      // leave out what has been hidden since, like toggleShow/hideIds do
+      const off = new Set([...s.hidden, ...(['columns', 'beams', 'slabs'] as const).filter((t) => !s.show[t]).flatMap((t) => s.model[t].map((x) => x.id))]);
+      const ids = s.prevSelection.filter((id) => !off.has(id));
+      return ids.length ? { selection: ids } : {};
+    }),
 
   viewRotation: 0,
   setViewRotation: (r) => set({ viewRotation: ((r % 360) + 360) % 360 }),
@@ -243,6 +255,14 @@ export const useApp = create<AppState>((set, get) => ({
   toast: '',
   setToast: (t) => set({ toast: t }),
 }));
+
+// remember the last non-empty selection whenever something replaces it, so an accidental click can be undone
+useApp.subscribe((s, p) => {
+  if (s.selection === p.selection || !p.selection.length) return;
+  const now = new Set(s.selection);
+  if (p.selection.length === now.size && p.selection.every((id) => now.has(id))) return;
+  useApp.setState({ prevSelection: p.selection });
+});
 
 const elementIds = (m: Model) => [...m.columns, ...m.beams, ...m.slabs].map((x) => x.id);
 

@@ -54,6 +54,7 @@ export function App() {
       if (e.ctrlKey && e.key.toLowerCase() === 'z' && !inInput) return e.preventDefault(), st.undo();
       if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z')) && !inInput) return e.preventDefault(), st.redo();
       if (e.ctrlKey && e.key.toLowerCase() === 's') return e.preventDefault(), downloadProject();
+      if (e.ctrlKey && e.key.toLowerCase() === 'p' && !inInput) return e.preventDefault(), st.restoreSelection();
       if (e.key === 'F8') return e.preventDefault(), st.toggleOrtho();
       if (e.key === '`' && !inInput) return e.preventDefault(), toggleLog();
       if (e.key === 'Escape') {
