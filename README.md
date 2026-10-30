@@ -27,12 +27,13 @@ The hosted Pages build works the same way: it calls the bridge on `127.0.0.1:876
    - **DXF** (recommended): vector, real units, snapping. All plans can sit in one model space. Use **Define story region**: box a plan, click its reference point (e.g. grid A/1), then tick the stories it applies to. The reference point maps to the model origin, so every story lines up.
    - **PDF**: one page per story. In **Setup**, assign the pages to stories. Then on each story use **Calibrate + origin**: click two points, type their real distance, then click the reference point.
 2. **Grids** (G): draw them, or use **Generate grids…** with spacings like `3@6000, 4500`.
-   **Reference planes…** (Draw menu) adds horizontal planes at any elevation, such as a landing or a mezzanine. Type the elevation, or add one at a story level plus an offset. They show in the Elevation view.
+   **Reference planes…** (Draw menu) adds horizontal planes at any elevation, such as a landing or a mezzanine. Type the elevation, or add one at a story level plus an offset. They show in the Elevation view. Move… and Replicate can put elements on them (see below).
 3. **Columns** (C): click a point (snaps to intersections), or drag a window to fill every intersection inside it.
 4. **Beams** (B): chained drawing that snaps to columns, faces, ends, midpoints, perpendiculars and underlay vertices. Type `dx,dy`, `@dist<angle` or a length, relative to the last point (or the last snap point you hovered). **Offset beam** (O): pick a grid or beam, then type a distance or click a side. **Beams on grids** places beams between consecutive columns along every grid.
 5. **Slabs**: **Slab (bay)** (S) fills the closed bay you click. **Draw slab** (P) lets you draw a polygon.
 6. **Measure**: distance (M, chainable), angle (A), area (R).
-7. **Select** (V): a left-to-right window selects what's fully inside; right-to-left selects anything crossing. **Replicate** (E) copies linearly by dx/dy or onto other stories (tick boxes or a range such as `3-10`). **Move…** and Del are also available.
+7. **Select** (V): a left-to-right window selects what's fully inside; right-to-left selects anything crossing. **Replicate** (E) copies linearly by dx/dy or onto other stories and reference planes (tick boxes or a range such as `3-10`). **Move…** shifts by dx/dy (**⌖ Pick dx, dy on plan**: click a base point, then its destination) and to another story or reference plane. Del deletes.
+   - An element on a reference plane belongs to the story the plane lies in, as ETABS assigns it, and sits that far below the story level (above it, for a plane over the top story). A column there runs from the story level below up to the plane. Labels show `@ RP1` after the section, and the right panel names the plane. Joined columns move only between story levels.
 8. Ticking stories in the left panel draws on all of them at once.
 9. The view controls rotate the plan (the model itself is unchanged), show the story below as a ghost, toggle section labels, colour by section, and set text size. **Split** or **3D** opens the three.js view.
 10. **Loads** (top bar):
@@ -45,7 +46,7 @@ The hosted Pages build works the same way: it calls the bridge on `127.0.0.1:876
     - Loads follow Replicate, Move, Split slabs and Undo. Joining or merging keeps a load only when every piece carried the same one; if the pieces differ, the toast says the loads were dropped.
     - **Select by…** can pick elements that carry a load in a given pattern, or no loads at all.
 11. **ETABS…**:
-    - **Import** reads stories, grids, reference planes, materials, frame sections, slab sections and load patterns. With **Columns, beams, slabs** ticked it also brings in the frame and area objects on the story levels, with their frame and uniform slab loads in the app's patterns. Braces, walls, openings and objects between story levels are skipped. Elements the app already has (same GUID, or same place on the same story) are left as they are.
+    - **Import** reads stories, grids, reference planes, materials, frame sections, slab sections and load patterns. With **Columns, beams, slabs** ticked it also brings in the frame and area objects, with their frame and uniform slab loads in the app's patterns. Beams, slabs and column tops between story levels come in on the story they lie in, with that offset. Braces, walls, openings and columns that don't stand on a story level are skipped. Elements the app already has (same GUID, or same place on the same story) are left as they are.
     - **Push** sends sections, grids, reference planes and stories (each optional), elements, and (with **Loads** ticked) load patterns and loads.
     - **Verify** reads everything back and compares it with the app, loads included.
 

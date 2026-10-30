@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo } from 'react';
 import { useApp, sectionColor } from '../model/store';
-import { columnOn, type Beam, type Column, type FrameSection, type Grid, type Model, type Slab } from '../model/types';
+import { columnOn, levelTag, type Beam, type Column, type FrameSection, type Grid, type Model, type Slab } from '../model/types';
 import { angleDeg, fmt, polyArea } from '../model/geom';
 import { gridDimensions } from '../model/ops';
 import { describeJointLoad, shortFrameLoad } from '../model/loads';
@@ -182,6 +182,8 @@ export const ColumnLayer = memo(function ColumnLayer({ cols, secs, sel, ghost, c
 export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, showSlabs }: { m: Model; story: string; viewRot: number; ts: number; showSlabs: boolean }) {
   const h = 160 * ts;
   const secs = useMemo(() => new Map(m.frameSections.map((s) => [s.name, s])), [m.frameSections]);
+  // elements on a reference plane name it (or their offset) after the section
+  const tag = (x: { story: string; dz?: number }) => (x.dz ? ` @ ${levelTag(m, x)}` : '');
   return (
     <g className="labels nosel" fontSize={h}>
       {m.beams.map((b) => {
@@ -190,6 +192,7 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, show
         return (
           <text key={b.id} transform={textTransform((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2, viewRot, a)} dy={-h * 0.45} textAnchor="middle" fill="var(--label)">
             {b.section}
+            {tag(b)}
           </text>
         );
       })}
@@ -200,6 +203,7 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, show
         return (
           <text key={c.id} transform={textTransform(c.x + off, c.y - off, viewRot)} dominantBaseline="hanging" fill="var(--labelCol)">
             {c.section}
+            {c.story === story && tag(c)}
           </text>
         );
       })}
@@ -210,6 +214,7 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, show
           return (
             <text key={s.id} transform={textTransform(c.x, c.y, viewRot)} textAnchor="middle" dominantBaseline="central" fill="var(--labelSlab)">
               {s.section}
+              {tag(s)}
             </text>
           );
         })}

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
-import { columnOn, columnSpan, storyElevations, type Column, type Model } from '../model/types';
+import { columnOn, columnSpan, levelZ, storyElevations, type Column, type Model } from '../model/types';
 import SectionSlider, { type Mark } from './SectionSlider';
 
 const S = 0.001; // mm → m in the scene
@@ -121,17 +121,17 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     if (labels.has('column')) g.add(label(c.section, sectionColor(c.section), new THREE.Vector3(x, (e.bottom + e.top) * 0.5 * S, z), new THREE.Vector3(0, 1, 0), false));
   }
   for (const b of m.beams) {
-    const e = el[b.story];
-    if (!e || !vis(b.story)) continue;
-    const y = e.top * S;
+    const z = levelZ(el, b);
+    if (z === null || !vis(b.story)) continue;
+    const y = z * S;
     line([new THREE.Vector3(b.x1 * S, y, -b.y1 * S), new THREE.Vector3(b.x2 * S, y, -b.y2 * S)], sel.has(b.id) ? selMat : mat('b' + b.section, sectionColor(b.section)), b.id);
     if (labels.has('beam'))
       g.add(label(b.section, sectionColor(b.section), new THREE.Vector3(((b.x1 + b.x2) / 2) * S, y, (-(b.y1 + b.y2) / 2) * S), new THREE.Vector3(b.x2 - b.x1, 0, -(b.y2 - b.y1)), false));
   }
   for (const sl of m.slabs) {
-    const e = el[sl.story];
-    if (!e || !vis(sl.story) || !sl.pts.length) continue;
-    const y = e.top * S;
+    const z = levelZ(el, sl);
+    if (z === null || !vis(sl.story) || !sl.pts.length) continue;
+    const y = z * S;
     const color = sel.has(sl.id) ? '#39ff9a' : sectionColor(sl.section);
     line(
       sl.pts.map((p) => new THREE.Vector3(p.x * S, y, -p.y * S)),
@@ -195,28 +195,28 @@ function build(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE
     g.add(mesh);
   }
   for (const b of m.beams) {
-    const e = el[b.story];
-    if (!e || !vis(b.story)) continue;
+    const z = levelZ(el, b);
+    if (z === null || !vis(b.story)) continue;
     const s = secs.get(b.section);
     const L = Math.hypot(b.x2 - b.x1, b.y2 - b.y1) * S;
     const d = (s?.t3 || 500) * S,
       w = (s?.shape === 'Circle' ? s.t3 : s?.t2 || 300) * S;
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(L, d, w), sel.has(b.id) ? selMat : mat('b' + b.section, sectionColor(b.section)));
-    mesh.position.set(((b.x1 + b.x2) / 2) * S, e.top * S - d / 2, (-(b.y1 + b.y2) / 2) * S);
+    mesh.position.set(((b.x1 + b.x2) / 2) * S, z * S - d / 2, (-(b.y1 + b.y2) / 2) * S);
     mesh.rotation.y = Math.atan2(b.y2 - b.y1, b.x2 - b.x1);
     mesh.userData.id = b.id;
     g.add(mesh);
   }
   for (const sl of m.slabs) {
-    const e = el[sl.story];
-    if (!e || !vis(sl.story)) continue;
+    const z = levelZ(el, sl);
+    if (z === null || !vis(sl.story)) continue;
     const t = (slabSecs.get(sl.section)?.thickness || 150) * S;
     const shape = new THREE.Shape(sl.pts.map((p) => new THREE.Vector2(p.x * S, p.y * S)));
     const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
     // shape lies in XY (model plan); rotate so plan Y → -Z and extrude goes down from the story level
     geo.rotateX(-Math.PI / 2);
     const mesh = new THREE.Mesh(geo, sel.has(sl.id) ? selMat : mat('s' + sl.section, sectionColor(sl.section), 0.45));
-    mesh.position.y = e.top * S - t;
+    mesh.position.y = z * S - t;
     mesh.userData.id = sl.id;
     g.add(mesh);
   }

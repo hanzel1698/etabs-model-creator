@@ -1,6 +1,6 @@
 import { toast, useApp } from '../model/store';
 import { cachedStoryNodes, deleteIds, joinBeams, joinColumns, mergeSlabs, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
-import { columnOn, type Beam } from '../model/types';
+import { columnOn, levelTag, type Beam } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
 import { useEffect, useState } from 'react';
 import { openDialog } from './dialogState';
@@ -109,6 +109,11 @@ function Properties() {
               <option key={x.name}>{x.name}</option>
             ))}
           </select>
+        </div>
+      )}
+      {[...frames, ...slabs].some((x) => x.dz) && (
+        <div className="small muted">
+          Off the story level: {[...new Set([...frames, ...slabs].map((x) => levelTag(model, x) || `${x.story} level`))].join(', ')}. Changing the story puts it on that story's level.
         </div>
       )}
       {cols.length === 1 && cols[0].base && <div className="small muted">Joined column: {cols[0].base} – {cols[0].story}. Changing its story makes it a one-story column there.</div>}

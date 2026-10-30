@@ -1,5 +1,5 @@
 import type { FrameLoad, JointLoad, LoadPattern, Model, Pt, ShellLoad, Vec6 } from './types';
-import { uid } from './types';
+import { uid, withDz } from './types';
 
 const TOL = 1; // mm
 
@@ -43,14 +43,14 @@ export function assignShellLoad(m: Model, ids: string[], load: ShellLoad, mode: 
   return { ...m, slabs: m.slabs.map((sl) => (s.has(sl.id) ? withLoads(sl, combine(sl.loads, load, mode)) : sl)) };
 }
 
-const at = (j: JointLoad, story: string, p: Pt) => j.story === story && Math.abs(j.x - p.x) < TOL && Math.abs(j.y - p.y) < TOL;
+const at = (j: JointLoad, story: string, p: Pt, dz = 0) => j.story === story && Math.abs((j.dz ?? 0) - dz) < TOL && Math.abs(j.x - p.x) < TOL && Math.abs(j.y - p.y) < TOL;
 
-/** Assign a joint load at plan points of a story (on each of `stories`). */
-export function assignJointLoad(m: Model, stories: string[], pts: Pt[], load: { pattern: string; f: Vec6 }, mode: AssignMode): Model {
+/** Assign a joint load at plan points of a story (on each of `stories`), `dz` mm off its level. */
+export function assignJointLoad(m: Model, stories: string[], pts: Pt[], load: { pattern: string; f: Vec6 }, mode: AssignMode, dz = 0): Model {
   let jl = m.jointLoads;
   for (const story of stories)
     for (const p of pts) {
-      const old = jl.find((j) => at(j, story, p) && j.pattern === load.pattern);
+      const old = jl.find((j) => at(j, story, p, dz) && j.pattern === load.pattern);
       if (old && mode !== 'add') jl = jl.filter((j) => j !== old);
       if (mode === 'delete') continue;
       if (old && mode === 'add') {
@@ -58,12 +58,12 @@ export function assignJointLoad(m: Model, stories: string[], pts: Pt[], load: { 
         jl = jl.map((j) => (j === old ? { ...j, f: j.f.map((v, i) => v + load.f[i]) as Vec6 } : j));
         continue;
       }
-      jl = [...jl, { id: uid(), story, x: p.x, y: p.y, pattern: load.pattern, f: [...load.f] as Vec6 }];
+      jl = [...jl, withDz({ id: uid(), story, x: p.x, y: p.y, pattern: load.pattern, f: [...load.f] as Vec6 }, dz)];
     }
   return jl === m.jointLoads ? m : { ...m, jointLoads: jl };
 }
 
-export const jointLoadsAt = (m: Model, story: string, p: Pt) => m.jointLoads.filter((j) => at(j, story, p));
+export const jointLoadsAt = (m: Model, story: string, p: Pt, dz = 0) => m.jointLoads.filter((j) => at(j, story, p, dz));
 
 /** Remove the load with the given key (see *LoadKey) from the elements in `ids`, and joint loads by id. */
 export function removeLoad(m: Model, ids: string[], key: string): Model {
@@ -138,12 +138,12 @@ export function mergedLoads<L>(pieces: { loads?: L[] }[], key: (l: L) => string)
   return { loads: undefined, mixed: true };
 }
 
-/** Joint loads at the old positions of moved columns, carried by (dx,dy) and to their new story. */
-export function moveJointLoads(m: Model, moved: { story: string; from: Pt; to: Pt; toStory: string }[]): JointLoad[] {
+/** Joint loads at the old tops of moved columns, carried by (dx,dy) and to their new story and level offset. */
+export function moveJointLoads(m: Model, moved: { story: string; dz?: number; from: Pt; to: Pt; toStory: string; toDz?: number }[]): JointLoad[] {
   if (!moved.length || !m.jointLoads.length) return m.jointLoads;
   return m.jointLoads.map((j) => {
-    const mv = moved.find((c) => at(j, c.story, c.from));
-    return mv ? { ...j, story: mv.toStory, x: mv.to.x, y: mv.to.y } : j;
+    const mv = moved.find((c) => at(j, c.story, c.from, c.dz));
+    return mv ? withDz({ ...j, story: mv.toStory, x: mv.to.x, y: mv.to.y }, mv.toDz ?? 0) : j;
   });
 }
 

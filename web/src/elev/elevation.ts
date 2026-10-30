@@ -1,4 +1,4 @@
-import { columnSpan, storyElevations, type Grid, type Model, type Pt } from '../model/types';
+import { columnSpan, levelZ, storyElevations, type Grid, type Model, type Pt } from '../model/types';
 import { cross, dot, len, sub } from '../model/geom';
 import { columnOutline } from '../plan/snap';
 
@@ -72,8 +72,8 @@ export function elevationAt(m: Model, g: Grid, tol: number): Elevation {
   const beams: ElevBeam[] = [];
   const cuts: ElevCut[] = [];
   for (const b of m.beams) {
-    const e = el[b.story];
-    if (!e) continue;
+    const z = levelZ(el, b);
+    if (z === null) continue;
     const p1: Pt = { x: b.x1, y: b.y1 },
       p2: Pt = { x: b.x2, y: b.y2 };
     const sec = frame.get(b.section);
@@ -82,25 +82,25 @@ export function elevationAt(m: Model, g: Grid, tol: number): Elevation {
       d2 = off(p2);
     if (Math.abs(d1) <= tol && Math.abs(d2) <= tol) {
       const [s0, s1] = [st(p1), st(p2)].sort((a, b) => a - b);
-      if (s1 - s0 > 1) beams.push({ id: b.id, section: b.section, s0, s1, z: e.top, depth });
+      if (s1 - s0 > 1) beams.push({ id: b.id, section: b.section, s0, s1, z, depth });
     } else if ((d1 < -tol && d2 > tol) || (d1 > tol && d2 < -tol)) {
       const t = d1 / (d1 - d2);
       const s = st({ x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t });
       // a skewed beam cuts a wider section
       const sin = Math.abs(cross(u, sub(p2, p1))) / (len(sub(p2, p1)) || 1);
       const w = Math.min((sec?.t2 || 300) / Math.max(sin, 0.2), 5 * (sec?.t2 || 300));
-      cuts.push({ id: b.id, section: b.section, s0: s - w / 2, s1: s + w / 2, z: e.top, depth });
+      cuts.push({ id: b.id, section: b.section, s0: s - w / 2, s1: s + w / 2, z, depth });
     }
   }
 
   const slabs: ElevSlab[] = [];
   for (const sl of m.slabs) {
-    const e = el[sl.story];
-    if (!e || sl.pts.length < 3) continue;
+    const z = levelZ(el, sl);
+    if (z === null || sl.pts.length < 3) continue;
     // the grid often runs along a slab edge, so cut just either side of it and merge
     const spans = mergeSpans([...chord(sl.pts, off, st, 1), ...chord(sl.pts, off, st, -1)]);
     const t = slabT.get(sl.section) || 150;
-    for (const [s0, s1] of spans) slabs.push({ id: sl.id, section: sl.section, s0, s1, z: e.top, t });
+    for (const [s0, s1] of spans) slabs.push({ id: sl.id, section: sl.section, s0, s1, z, t });
   }
 
   return { levels, refPlanes, grids, columns, beams, cuts, slabs };

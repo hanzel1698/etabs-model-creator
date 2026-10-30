@@ -4,9 +4,9 @@ import { bySize, sectionGroup } from './sectionGroups';
 import { SelectByDialog } from './SelectByDialog';
 import { FrameLoadDialog, JointLoadDialog, LoadPatternsDialog, ShellLoadDialog } from './LoadDialogs';
 import { useApp, toast } from '../model/store';
-import { generateGrids, moveIds, oppositeLabelStart, replicate, storyAtOffset } from '../model/ops';
+import { generateGrids, lift, moveIds, oppositeLabelStart, replicate } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
-import { columnStories, uid, storyElevations, type Column, type FrameSection, type Model, type RefPlane, type SlabSection, type Story } from '../model/types';
+import { columnStories, levelZ, uid, storyElevations, type Column, type FrameSection, type Model, type RefPlane, type SlabSection, type Story } from '../model/types';
 import { useUnderlay, saveUnderlayMeta, rescaleDxf, rectOf, withStories } from '../underlay/store';
 import type { DxfLayer } from '../underlay/dxf';
 import { setTool, redrawRegion, startMovePick, endMovePick, movePicking } from '../plan/tools';
@@ -189,12 +189,15 @@ function ReplicateDialog() {
   const [dy, setDy] = useState(0);
   const [n, setN] = useState(1);
   const [stories, setStories] = useState<string[]>([]);
+  const [planes, setPlanes] = useState<string[]>([]);
+  const refPlanes = useApp((s) => s.model.refPlanes);
   const run = () => {
     const st = useApp.getState();
     const ids = sel.filter((id) => !st.model.grids.some((g) => g.id === id));
+    const zs = st.model.refPlanes.filter((r) => planes.includes(r.id)).map((r) => r.z);
     let created: string[] = [];
     st.commit((m) => {
-      const r = replicate(m, ids, mode === 'linear' ? { dx, dy, n, stories: null } : { dx, dy, n: 1, stories });
+      const r = replicate(m, ids, mode === 'linear' ? { dx, dy, n, stories: null } : { dx, dy, n: 1, stories, planes: zs });
       created = r.created;
       return r.model;
     });
@@ -202,9 +205,9 @@ function ReplicateDialog() {
     closeDialog();
   };
   return (
-    <Modal title={`Replicate ${sel.length} selected`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={run} disabled={mode === 'stories' && !stories.length}>Replicate</button></>}>
+    <Modal title={`Replicate ${sel.length} selected`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={run} disabled={mode === 'stories' && !stories.length && !planes.length}>Replicate</button></>}>
       <div className="chips">
-        <button className={mode === 'stories' ? 'on' : ''} onClick={() => setMode('stories')}>To stories (Z)</button>
+        <button className={mode === 'stories' ? 'on' : ''} onClick={() => setMode('stories')}>To levels (Z)</button>
         <button className={mode === 'linear' ? 'on' : ''} onClick={() => setMode('linear')}>Linear (X / Y)</button>
       </div>
       <div className="row"><span>dx (mm)</span><input type="number" value={dx} onChange={(e) => setDx(+e.target.value)} /></div>
@@ -213,8 +216,21 @@ function ReplicateDialog() {
         <div className="row"><span>Copies</span><input type="number" min={1} value={n} onChange={(e) => setN(Math.max(1, +e.target.value))} /></div>
       ) : (
         <>
-          <div className="small muted">Copies the selection (from {active}) onto the ticked stories, shifted by dx/dy (usually 0). Elements that already exist are skipped.</div>
+          <div className="small muted">Copies the selection (from {active}) onto the ticked stories and reference planes, shifted by dx/dy (usually 0). Elements that already exist are skipped.</div>
           <StoryChecks value={stories} onChange={setStories} />
+          {refPlanes.length > 0 && (
+            <>
+              <div className="small muted">Reference planes: copies sit off the story they lie in; a column runs from the story level below up to the plane.</div>
+              <div className="storycheck">
+                {[...refPlanes].sort((a, b) => b.z - a.z).map((r) => (
+                  <label key={r.id} className="small">
+                    <input type="checkbox" checked={planes.includes(r.id)} onChange={(e) => setPlanes(e.target.checked ? [...planes, r.id] : planes.filter((x) => x !== r.id))} />
+                    {r.name} ({fmt(r.z)})
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
     </Modal>
@@ -225,13 +241,27 @@ function MoveDialog() {
   const sel = useApp((s) => s.selection);
   const [dx, setDx] = useState(0);
   const [dy, setDy] = useState(0);
-  const [dz, setDz] = useState(0);
+  const [to, setTo] = useState('');
+  const model = useApp((s) => s.model);
+  const el = storyElevations(model);
+  const ids = new Set(sel);
+  // the selection's levels (a column's top), low → high: the lowest goes to the chosen level, the others keep their height above it
+  const zs = [...new Set([...model.columns, ...model.beams, ...model.slabs].flatMap((x) => (ids.has(x.id) ? levelZ(el, x) ?? [] : [])))].sort((a, b) => a - b);
+  const levels = [
+    ...model.stories.map((s) => ({ key: 's:' + s.name, name: s.name, z: el[s.name].top, plane: false })),
+    ...model.refPlanes.map((r) => ({ key: 'p:' + r.id, name: r.name, z: r.z, plane: true })),
+  ].sort((a, b) => b.z - a.z);
+  const nameAt = (z: number) => levels.find((l) => Math.abs(l.z - z) <= 1)?.name ?? `${fmt(z)} mm`;
+  const target = levels.find((l) => l.key === to);
+  const dz = target && zs.length ? target.z - zs[0] : 0;
+  const choices = levels.filter((l) => !zs.length || Math.abs(l.z - zs[0]) > 1);
   const run = () => {
     const st = useApp.getState();
     if (dz) {
-      const s = new Set(sel);
-      const stuck = [...st.model.columns, ...st.model.beams, ...st.model.slabs].filter((x) => s.has(x.id) && (!storyAtOffset(st.model, x.story, dz) || ('base' in x && x.base && !storyAtOffset(st.model, x.base, dz))));
-      if (stuck.length) return toast(`No story level ${fmt(dz)} mm from ${[...new Set(stuck.map((x) => x.story))].join(', ')}. dz must land exactly on a story level.`);
+      const cols = new Set(st.model.columns.map((c) => c.id));
+      const stuck = [...st.model.columns, ...st.model.beams, ...st.model.slabs].filter((x) => ids.has(x.id) && !lift(st.model, x, dz, cols.has(x.id)));
+      if (stuck.length)
+        return toast(`${stuck.length} of the selection cannot go to ${target!.name} (from ${[...new Set(stuck.map((x) => x.story))].join(', ')}): a column top needs a story under it, and a joined column moves only between story levels.`);
     }
     st.commit((m) => moveIds(m, sel, dx, dy, dz));
     closeDialog();
@@ -248,9 +278,32 @@ function MoveDialog() {
   return (
     <Modal hidden={hidden} title={`Move ${sel.length} selected`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={run}>Move</button></>}>
       <div className="row"><span>dx (mm)</span><input type="number" value={dx} onChange={(e) => setDx(+e.target.value)} /></div>
-      <div className="row"><span>dy (mm)</span><input type="number" value={dy} onChange={(e) => setDy(+e.target.value)} /><button onClick={pick} title="Pick on plan: click a base point, then its destination; dx and dy fill from the two points (snaps to grids, columns, beam ends...)">⌖ Pick</button></div>
-      <div className="row"><span>dz (mm)</span><input type="number" value={dz} onChange={(e) => setDz(+e.target.value)} /></div>
-      <div className="small muted">dz moves elements up (+) or down (−) to the story at that level; it must match a story level exactly. Grids ignore dz.</div>
+      <div className="row"><span>dy (mm)</span><input type="number" value={dy} onChange={(e) => setDy(+e.target.value)} /></div>
+      <div className="row"><button onClick={pick} title="Click a base point, then its destination; dx and dy fill from the two points (snaps to grids, columns, beam ends...)">⌖ Pick dx, dy on plan</button></div>
+      {zs.length > 0 && (
+        <>
+          <div className="row">
+            <span>To level</span>
+            <select value={to} onChange={(e) => setTo(e.target.value)}>
+              <option value="">{zs.length > 1 ? 'Same levels' : `${nameAt(zs[0])} (stay)`}</option>
+              <optgroup label="Stories">
+                {choices.filter((l) => !l.plane).map((l) => <option key={l.key} value={l.key}>{l.name}</option>)}
+              </optgroup>
+              {choices.some((l) => l.plane) && (
+                <optgroup label="Reference planes">
+                  {choices.filter((l) => l.plane).map((l) => <option key={l.key} value={l.key}>{l.name} ({fmt(l.z)})</option>)}
+                </optgroup>
+              )}
+            </select>
+          </div>
+          <div className="small muted">
+            {zs.length > 1 ? `The selection spans ${nameAt(zs[0])} to ${nameAt(zs[zs.length - 1])}: ${nameAt(zs[0])} moves to the chosen level and the rest keep their height above it. ` : ''}
+            {dz ? `That is ${dz > 0 ? 'up' : 'down'} ${fmt(Math.abs(dz))} mm. ` : ''}
+            {target?.plane ? 'On a reference plane, elements sit off the story they lie in; a column runs from the story level below up to the plane. ' : ''}
+            Grids stay in place vertically.
+          </div>
+        </>
+      )}
     </Modal>
   );
 }

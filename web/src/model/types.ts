@@ -32,6 +32,8 @@ export interface Column {
   story: string; // spans from story below to this story
   /** lowest story of a joined column that spans several stories (from below `base` up to `story`); absent = `story` */
   base?: string;
+  /** top sits `dz` mm off its story's level (on a reference plane); the bottom stays on the level below. Absent = 0 */
+  dz?: number;
   x: number;
   y: number;
   section: string;
@@ -42,6 +44,7 @@ export interface Column {
 export interface Beam {
   id: string;
   story: string;
+  dz?: number; // mm off the story level (on a reference plane); absent = 0
   x1: number;
   y1: number;
   x2: number;
@@ -53,6 +56,7 @@ export interface Beam {
 export interface Slab {
   id: string;
   story: string;
+  dz?: number; // mm off the story level (on a reference plane); absent = 0
   pts: Pt[];
   section: string;
   loads?: ShellLoad[];
@@ -98,6 +102,7 @@ export type Vec6 = [number, number, number, number, number, number];
 export interface JointLoad {
   id: string;
   story: string;
+  dz?: number; // mm off the story level, for a joint at the top of an offset column; absent = 0
   x: number;
   y: number;
   pattern: string;
@@ -216,5 +221,51 @@ export function columnSpan(el: ReturnType<typeof storyElevations>, c: Column): {
   const top = el[c.story];
   if (!top) return null;
   const bot = c.base && el[c.base] && el[c.base].index <= top.index ? el[c.base] : top;
-  return { bottom: bot.bottom, top: top.top };
+  return { bottom: bot.bottom, top: top.top + (c.dz ?? 0) };
+}
+
+/** The column runs up to or through the level of `x` (a beam or slab, on its story level or a reference plane). */
+export function columnReaches(m: Model, c: Column, x: { story: string; dz?: number }): boolean {
+  const el = storyElevations(m);
+  const span = columnSpan(el, c),
+    z = levelZ(el, x);
+  return !!span && z !== null && z > span.bottom + LEVEL_TOL && z <= span.top + LEVEL_TOL;
+}
+
+/** Elevation of a beam, slab or joint load (its story level plus its offset), or null if its story is missing. */
+export const levelZ = (el: ReturnType<typeof storyElevations>, x: { story: string; dz?: number }): number | null => (el[x.story] ? el[x.story].top + (x.dz ?? 0) : null);
+
+/**
+ * Story and offset for something at elevation `z`: the story whose level it is (offset 0), else the story it lies in,
+ * as ETABS assigns it (above the level below, up to this level), with a negative offset. Below the first story's level
+ * it is the first story; above the top story, the top story with a positive offset. Null with no stories.
+ */
+export function placeAt(m: Pick<Model, 'baseElevation' | 'stories'>, z: number): { story: string; dz: number } | null {
+  let top = m.baseElevation;
+  for (const s of m.stories) {
+    top += s.height;
+    if (z <= top + LEVEL_TOL) return { story: s.name, dz: Math.abs(z - top) <= LEVEL_TOL ? 0 : z - top };
+  }
+  const last = m.stories[m.stories.length - 1];
+  return last ? { story: last.name, dz: z - top } : null;
+}
+
+/**
+ * Where an element off its story level sits, for labels: the reference plane at that elevation, else its offset
+ * ("−1500"). Empty for an element on its story level.
+ */
+export function levelTag(m: Model, x: { story: string; dz?: number }): string {
+  if (!x.dz) return '';
+  const z = levelZ(storyElevations(m), x);
+  const rp = z === null ? undefined : m.refPlanes.find((r) => Math.abs(r.z - z) <= LEVEL_TOL);
+  return rp ? rp.name : `${x.dz > 0 ? '+' : '−'}${Math.round(Math.abs(x.dz))}`;
+}
+
+/** Elevations closer than this (mm) are the same level. */
+export const LEVEL_TOL = 1;
+
+/** `x` with offset `dz`; an offset of 0 is left out, so on-level elements keep their usual shape. */
+export function withDz<T extends object>(x: T, dz: number): T {
+  const { dz: _, ...rest } = x as T & { dz?: number };
+  return (Math.abs(dz) > 1e-6 ? { ...rest, dz } : rest) as T;
 }

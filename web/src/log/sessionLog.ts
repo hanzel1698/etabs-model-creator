@@ -73,6 +73,8 @@ function moved(pa: Pt[], pb: Pt[]): string | null {
   return pa.every((q, i) => Math.abs(pb[i].x - q.x - dx) < 0.5 && Math.abs(pb[i].y - q.y - dy) < 0.5) ? `moved by ${pt(dx, dy)}` : null;
 }
 const field = (label: string, a: unknown, b: unknown, unit = '') => (a !== b ? [`${label} ${a}${unit} → ${b}${unit}`] : []);
+/** ", 1500 mm below its level" for an element on a reference plane */
+const off = (x: { dz?: number }) => (x.dz ? `, ${mm(Math.abs(x.dz))} mm ${x.dz > 0 ? 'above' : 'below'} its level` : '');
 /** "loads now: …" when the loads an element carries changed */
 function loadsField<L extends { pattern: string }>(a: L[] | undefined, b: L[] | undefined, say: (l: L) => string): string[] {
   if (JSON.stringify(a ?? []) === JSON.stringify(b ?? [])) return [];
@@ -80,10 +82,11 @@ function loadsField<L extends { pattern: string }>(a: L[] | undefined, b: L[] | 
 }
 
 const columnWords: Words<Column> = {
-  describe: (c) => `column ${c.section} on ${c.base ? `${c.base}–${c.story}` : c.story} at ${pt(c.x, c.y)}${c.angle ? `, rotated ${c.angle}°` : ''}`,
+  describe: (c) => `column ${c.section} on ${c.base ? `${c.base}–${c.story}` : c.story} at ${pt(c.x, c.y)}${off(c)}${c.angle ? `, rotated ${c.angle}°` : ''}`,
   compare: (a, b) => [
     ...field('story', a.story, b.story),
     ...field('base story', a.base ?? a.story, b.base ?? b.story),
+    ...field('level offset', a.dz ?? 0, b.dz ?? 0, ' mm'),
     ...field('section', a.section, b.section),
     ...(a.x !== b.x || a.y !== b.y ? [`moved ${pt(a.x, a.y)} → ${pt(b.x, b.y)}`] : []),
     ...field('angle', a.angle, b.angle, '°'),
@@ -91,12 +94,13 @@ const columnWords: Words<Column> = {
   ],
 };
 const beamWords: Words<Beam> = {
-  describe: (b) => `beam ${b.section} on ${b.story} from ${pt(b.x1, b.y1)} to ${pt(b.x2, b.y2)}, ${metres(beamLen(b))} long`,
+  describe: (b) => `beam ${b.section} on ${b.story} from ${pt(b.x1, b.y1)} to ${pt(b.x2, b.y2)}${off(b)}, ${metres(beamLen(b))} long`,
   compare: (a, b) => {
     const ends = (x: Beam) => [{ x: x.x1, y: x.y1 }, { x: x.x2, y: x.y2 }];
     const geo = a.x1 !== b.x1 || a.y1 !== b.y1 || a.x2 !== b.x2 || a.y2 !== b.y2;
     return [
       ...field('story', a.story, b.story),
+      ...field('level offset', a.dz ?? 0, b.dz ?? 0, ' mm'),
       ...field('section', a.section, b.section),
       ...(geo ? [moved(ends(a), ends(b)) ?? `now ${pt(b.x1, b.y1)} to ${pt(b.x2, b.y2)}, length ${metres(beamLen(a))} → ${metres(beamLen(b))}`] : []),
       ...loadsField(a.loads, b.loads, describeFrameLoad),
@@ -104,9 +108,10 @@ const beamWords: Words<Beam> = {
   },
 };
 const slabWords: Words<Slab> = {
-  describe: (s) => `slab ${s.section} on ${s.story}, ${s.pts.length} corners, ${area(s.pts)}`,
+  describe: (s) => `slab ${s.section} on ${s.story}${off(s)}, ${s.pts.length} corners, ${area(s.pts)}`,
   compare: (a, b) => [
     ...field('story', a.story, b.story),
+    ...field('level offset', a.dz ?? 0, b.dz ?? 0, ' mm'),
     ...field('section', a.section, b.section),
     ...(JSON.stringify(a.pts) !== JSON.stringify(b.pts) ? [moved(a.pts, b.pts) ?? `reshaped to ${b.pts.length} corners, area ${area(a.pts)} → ${area(b.pts)}`] : []),
     ...loadsField(a.loads, b.loads, describeShellLoad),
@@ -147,11 +152,11 @@ const patternWords: Words<LoadPattern> = {
   compare: (a, b) => [...field('type', a.type, b.type), ...field('self-weight', a.selfWeight, b.selfWeight)],
 };
 const jointLoadWords: Words<JointLoad> = {
-  describe: (j) => `joint load ${j.pattern} ${describeJointLoad(j.f)} on ${j.story} at ${pt(j.x, j.y)}`,
+  describe: (j) => `joint load ${j.pattern} ${describeJointLoad(j.f)} on ${j.story} at ${pt(j.x, j.y)}${off(j)}`,
   compare: (a, b) => [
     ...field('pattern', a.pattern, b.pattern),
     ...(JSON.stringify(a.f) !== JSON.stringify(b.f) ? [`now ${describeJointLoad(b.f)}`] : []),
-    ...(a.x !== b.x || a.y !== b.y || a.story !== b.story ? [`moved to ${b.story} ${pt(b.x, b.y)}`] : []),
+    ...(a.x !== b.x || a.y !== b.y || a.story !== b.story || a.dz !== b.dz ? [`moved to ${b.story} ${pt(b.x, b.y)}${off(b)}`] : []),
   ],
 };
 const materialWords: Words<Material> = {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addBeams, addColumns, anyFilter, autoBeamsOnGrids, findBay, generateGrids, gridDimensions, joinBeams, joinColumns, matchElements, mergeSlabs, moveIds, nextGridLabel, oppositeLabelStart, panelSize, addSlab, patchIds, replicate, setBeamEnd, slabsUnderBeams, splitSlabsByBeams, storyAtOffset, storyNodes } from './ops';
 import { parseRelative, parseSpacing, polyArea } from './geom';
-import { emptyModel, type Model } from './types';
+import { emptyModel, placeAt, type Model } from './types';
 import { toPayload } from '../etabs/mapping';
 
 describe('geom', () => {
@@ -350,5 +350,60 @@ describe('joinColumns', () => {
     const up = moveIds(r.model, r.ids, 0, 0, 3000);
     expect(up.columns[0]).toMatchObject({ base: 'Story2', story: 'Story3' });
     expect(moveIds(r.model, r.ids, 0, 0, 6000).columns[0]).toMatchObject({ base: 'Story1', story: 'Story2' });
+  });
+});
+
+describe('reference planes: elements off the story levels', () => {
+  // stories at 3000, 6000, 9000; a plane at 4500 lies in Story2, one at 7500 in Story3
+  const base = () => {
+    let m = addColumns(emptyModel(), [{ x: 0, y: 0 }], ['Story1'], 'C400x400', 0);
+    m = addBeams(m, [[{ x: 0, y: 0 }, { x: 6000, y: 0 }]], ['Story1'], 'B300x500');
+    return m;
+  };
+  const z = (m: Model) => toPayload(m, { updateStories: false, pushGrids: false }).frames.map((f) => [f.kind, f.z1, f.z2]);
+
+  it('places a level on the story it lies in, as an offset from that story level', () => {
+    const m = emptyModel();
+    expect(placeAt(m, 4500)).toEqual({ story: 'Story2', dz: -1500 });
+    expect(placeAt(m, 6000)).toEqual({ story: 'Story2', dz: 0 });
+    expect(placeAt(m, 10000)).toEqual({ story: 'Story3', dz: 1000 });
+  });
+
+  it('moves a beam and a column to a plane and back to a story level', () => {
+    const m = base();
+    const ids = [...m.columns, ...m.beams].map((x) => x.id);
+    const up = moveIds(m, ids, 0, 0, 1500);
+    expect(up.beams[0]).toMatchObject({ story: 'Story2', dz: -1500 });
+    expect(up.columns[0]).toMatchObject({ story: 'Story2', dz: -1500 });
+    // the column runs from the story level below (3000) up to the plane
+    expect(z(up)).toEqual([['column', 3000, 4500], ['beam', 4500, 4500]]);
+    const back = moveIds(up, ids, 0, 0, 1500);
+    expect(back.beams[0].story).toBe('Story2');
+    expect('dz' in back.beams[0]).toBe(false);
+    expect(z(back)).toEqual([['column', 3000, 6000], ['beam', 6000, 6000]]);
+  });
+
+  it('carries a joint load on a column top to the plane', () => {
+    let m = base();
+    m = { ...m, jointLoads: [{ id: 'j', story: 'Story1', x: 0, y: 0, pattern: 'Dead', f: [0, 0, -10, 0, 0, 0] }] };
+    const up = moveIds(m, [m.columns[0].id], 0, 0, 1500);
+    expect(up.jointLoads[0]).toMatchObject({ story: 'Story2', dz: -1500 });
+    expect(toPayload(up, { updateStories: false, pushGrids: false }).jointLoads[0].z).toBe(4500);
+  });
+
+  it('replicates onto a plane, filling the storeys in between for an unshifted column, and skips copies already there', () => {
+    const m = base();
+    const ids = [...m.columns, ...m.beams].map((x) => x.id);
+    const r = replicate(m, ids, { dx: 0, dy: 0, n: 1, stories: [], planes: [7500] });
+    expect(r.model.columns.map((c) => [c.story, c.dz ?? 0])).toEqual([['Story1', 0], ['Story2', 0], ['Story3', -1500]]);
+    expect(r.model.beams.map((b) => [b.story, b.dz ?? 0])).toEqual([['Story1', 0], ['Story3', -1500]]);
+    expect(z(r.model)).toContainEqual(['beam', 7500, 7500]);
+    expect(replicate(r.model, ids, { dx: 0, dy: 0, n: 1, stories: [], planes: [7500] }).created).toEqual([]);
+  });
+
+  it('keeps a joined column on story levels', () => {
+    const m = addColumns(emptyModel(), [{ x: 0, y: 0 }], ['Story1', 'Story2'], 'C400x400', 0);
+    const r = joinColumns(m, m.columns.map((c) => c.id));
+    expect(moveIds(r.model, r.ids, 0, 0, 1500).columns[0]).toMatchObject({ base: 'Story1', story: 'Story2' });
   });
 });

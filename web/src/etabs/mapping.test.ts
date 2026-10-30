@@ -63,7 +63,7 @@ describe('importElements', () => {
     }
   });
 
-  it('skips what the app already has, braces, walls, loads in unknown patterns and elements off the levels', () => {
+  it('skips what the app already has, braces, walls and loads in unknown patterns; brings beams between levels in with an offset', () => {
     const imp = asImport(src);
     imp.frames.push(
       { name: 'br', guid: g(5), section: 'B300x500', angle: 0, pts: [{ x: 0, y: 0, z: 0 }, { x: 6000, y: 0, z: 3000 }], loads: [] },
@@ -73,7 +73,8 @@ describe('importElements', () => {
     imp.areas.push({ name: 'w', guid: g(8), section: 'W200', pts: [{ x: 0, y: 0, z: 0 }, { x: 6000, y: 0, z: 0 }, { x: 6000, y: 0, z: 3000 }, { x: 0, y: 0, z: 3000 }], loads: [] });
     imp.areas[0].loads.push({ pattern: 'Wind', dir: 10, value: 1e-6 });
     const r = importElements(emptyModel(), imp);
-    expect(r.skipped).toEqual({ 'braces (the app has none)': 1, 'not at a story level': 1, 'already in the app': 1, 'walls (the app has none)': 1 });
+    expect(r.skipped).toEqual({ 'braces (the app has none)': 1, 'already in the app': 1, 'walls (the app has none)': 1 });
+    expect(r.model.beams.find((b) => b.id === g(6))).toMatchObject({ story: 'Story1', dz: -1500 });
     expect(r.model.slabs[0].loads).toEqual([{ pattern: 'Live', dir: 'Gravity', value: 2.5 }]);
     const again = importElements(r.model, imp);
     expect(again.columns + again.beams + again.slabs).toBe(0);

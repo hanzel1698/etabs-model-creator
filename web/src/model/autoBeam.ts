@@ -1,4 +1,4 @@
-import { columnOn, type Beam, type Column, type FrameSection, type Model, type Pt } from './types';
+import { columnReaches, type Beam, type Column, type FrameSection, type Model, type Pt } from './types';
 import { cross, dist, distToSeg, dot, norm, sub } from './geom';
 
 // Auto beam sizing (beam tool "Auto" mode).
@@ -41,11 +41,13 @@ const ends = (b: Beam): [Pt, Pt] => [
 ];
 const dir = (b: Beam) => norm(sub({ x: b.x2, y: b.y2 }, { x: b.x1, y: b.y1 }));
 const parallel = (a: Beam, b: Beam) => Math.abs(cross(dir(a), dir(b))) < PAR;
+/** on the same story and level (beams on a reference plane only meet beams on that plane) */
+const sameLevel = (a: Beam, b: Beam) => a.story === b.story && Math.abs((a.dz ?? 0) - (b.dz ?? 0)) < TOL;
 
-function columnAt(m: Model, story: string, p: Pt): Column | undefined {
+function columnAt(m: Model, b: Beam, p: Pt): Column | undefined {
   const secs = new Map(m.frameSections.map((s) => [s.name, s]));
   return m.columns.find((c) => {
-    if (!columnOn(m, c, story)) return false;
+    if (!columnReaches(m, c, b)) return false;
     const s = secs.get(c.section);
     const r = s ? Math.max(s.t2, s.t3) / 2 : 200;
     return dist(c, p) <= r + TOL;
@@ -57,7 +59,7 @@ function columnAt(m: Model, story: string, p: Pt): Column | undefined {
  * ending there (an L corner, e.g. `b` on the tip of a cantilever). Parallel beams never carry.
  */
 function supportsAt(m: Model, b: Beam, p: Pt): Beam[] {
-  return m.beams.filter((o) => o.id !== b.id && o.story === b.story && !parallel(o, b) && distToSeg(p, ...ends(o)) < TOL);
+  return m.beams.filter((o) => o.id !== b.id && sameLevel(o, b) && !parallel(o, b) && distToSeg(p, ...ends(o)) < TOL);
 }
 
 const endsAt = (o: Beam, p: Pt) => ends(o).some((e) => dist(e, p) <= TOL);
@@ -75,7 +77,7 @@ function bestSupport(m: Model, b: Beam, p: Pt, seen: Set<string>): { rank: BeamR
 
 export function beamRank(m: Model, b: Beam, seen = new Set<string>()): BeamRank {
   const [a, c] = ends(b);
-  if (columnAt(m, b.story, a) || columnAt(m, b.story, c)) return 1;
+  if (columnAt(m, b, a) || columnAt(m, b, c)) return 1;
   seen.add(b.id);
   let worst = 0;
   for (const p of [a, c]) worst = Math.max(worst, bestSupport(m, b, p, seen)?.rank ?? 0);
@@ -86,7 +88,7 @@ export function beamRank(m: Model, b: Beam, seen = new Set<string>()): BeamRank 
 /** The rank `b` is sized by: 0 when no column and no beam carries either end. */
 export function sizeRank(m: Model, b: Beam): SizeRank {
   const [a, c] = ends(b);
-  if (columnAt(m, b.story, a) || columnAt(m, b.story, c)) return 1;
+  if (columnAt(m, b, a) || columnAt(m, b, c)) return 1;
   const seen = new Set([b.id]);
   return [a, c].some((p) => bestSupport(m, b, p, seen)) ? beamRank(m, b) : 0;
 }
@@ -117,7 +119,7 @@ export function isPeriphery(m: Model, b: Beam): boolean {
     if (sq) has[sq] = true;
   }
   for (const col of m.columns) {
-    if (!columnOn(m, col, b.story)) continue;
+    if (!columnReaches(m, col, b)) continue;
     const tc = t(col);
     const s = sideOf(col);
     if (s && tc > eps && tc < 1 - eps) has[s] = true;
@@ -188,7 +190,7 @@ const NEAR = 500; // mm: how far to look for what nearly carries a free end
 function nearMiss(m: Model, b: Beam, p: Pt): string {
   const words: string[] = [];
   const beams = m.beams
-    .filter((o) => o.id !== b.id && o.story === b.story)
+    .filter((o) => o.id !== b.id && sameLevel(o, b))
     .map((o) => ({ o, d: distToSeg(p, ...ends(o)) }))
     .filter(({ d }) => d < NEAR)
     .sort((x, y) => x.d - y.d);
@@ -198,7 +200,7 @@ function nearMiss(m: Model, b: Beam, p: Pt): string {
   if (off) words.push(`beam ${off.o.section} is ${Math.round(off.d)} mm away (it must be within ${TOL} mm)`);
   const secs = new Map(m.frameSections.map((s) => [s.name, s]));
   const col = m.columns
-    .filter((x) => columnOn(m, x, b.story))
+    .filter((x) => columnReaches(m, x, b))
     .map((x) => {
       const s = secs.get(x.section);
       return { x, gap: dist(x, p) - (s ? Math.max(s.t2, s.t3) / 2 : 200) };
@@ -213,7 +215,7 @@ function nearMiss(m: Model, b: Beam, p: Pt): string {
 function rankReason(m: Model, b: Beam): string {
   const [a, c] = ends(b);
   for (const p of [a, c]) {
-    const col = columnAt(m, b.story, p);
+    const col = columnAt(m, b, p);
     if (col) return `primary: the end at ${at(p)} sits on column ${col.section} at ${at(col)}`;
   }
   const seen = new Set([b.id]);

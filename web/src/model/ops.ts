@@ -1,5 +1,5 @@
 import type { Beam, Column, FrameLoad, Grid, Model, Pt, Slab } from './types';
-import { columnOn, columnStories, uid, storyElevations } from './types';
+import { columnOn, columnStories, uid, storyElevations, levelZ, placeAt, withDz } from './types';
 import { assignJointLoad, frameLoadKey, jointLoadsAt, mergedLoads, moveJointLoads, shellLoadKey } from './loads';
 import { alphaLabel, dist, distToSeg, lineIntersect, polyArea, pointInPoly, segIntersect, sub, cross } from './geom';
 
@@ -128,27 +128,31 @@ export function oppositeLabelStart(label: string): string {
 
 // ---------- elements ----------
 
-export function addColumns(m: Model, pts: Pt[], stories: string[], section: string, angle: number): Model {
+/** Columns on each of `stories`, their tops `dz` mm off the story level. A place that already has a column on that story is skipped. */
+export function addColumns(m: Model, pts: Pt[], stories: string[], section: string, angle: number, dz = 0): Model {
   const cols = [...m.columns];
   for (const story of stories)
     for (const p of pts) {
       if (cols.some((c) => columnOn(m, c, story) && Math.abs(c.x - p.x) < TOL && Math.abs(c.y - p.y) < TOL)) continue;
-      cols.push({ id: uid(), story, x: p.x, y: p.y, section, angle });
+      cols.push(withDz({ id: uid(), story, x: p.x, y: p.y, section, angle }, dz));
     }
   return cols.length === m.columns.length ? m : { ...m, columns: cols };
 }
+
+const sameDz = (x: { dz?: number }, dz: number) => Math.abs((x.dz ?? 0) - dz) < TOL;
 
 const sameBeam = (b: Beam, a: Pt, c: Pt) =>
   (dist({ x: b.x1, y: b.y1 }, a) < TOL && dist({ x: b.x2, y: b.y2 }, c) < TOL) ||
   (dist({ x: b.x1, y: b.y1 }, c) < TOL && dist({ x: b.x2, y: b.y2 }, a) < TOL);
 
-export function addBeams(m: Model, segs: [Pt, Pt][], stories: string[], section: string): Model {
+/** Beams on each of `stories`, `dz` mm off the story level. A beam already at that place and level is skipped. */
+export function addBeams(m: Model, segs: [Pt, Pt][], stories: string[], section: string, dz = 0): Model {
   const beams = [...m.beams];
   for (const story of stories)
     for (const [a, b] of segs) {
       if (dist(a, b) < TOL) continue;
-      if (beams.some((x) => x.story === story && sameBeam(x, a, b))) continue;
-      beams.push({ id: uid(), story, x1: a.x, y1: a.y, x2: b.x, y2: b.y, section });
+      if (beams.some((x) => x.story === story && sameDz(x, dz) && sameBeam(x, a, b))) continue;
+      beams.push(withDz({ id: uid(), story, x1: a.x, y1: a.y, x2: b.x, y2: b.y, section }, dz));
     }
   return beams.length === m.beams.length ? m : { ...m, beams };
 }
@@ -199,8 +203,9 @@ export function storyNodes(m: Model, story: string): PlanNode[] {
     } else out.push({ id: '', x: p.x, y: p.y, from: [src] });
   };
   gridIntersections(m.grids).forEach((p) => add(p, 'grid'));
-  m.columns.forEach((c) => columnOn(m, c, story) && add(c, 'column'));
-  const beams = m.beams.filter((b) => b.story === story);
+  // elements off the story level (on a reference plane) have no joints at it
+  m.columns.forEach((c) => columnOn(m, c, story) && !(c.story === story && c.dz) && add(c, 'column'));
+  const beams = m.beams.filter((b) => b.story === story && !b.dz);
   for (let i = 0; i < beams.length; i++)
     for (let j = i + 1; j < beams.length; j++) {
       const a = beams[i],
@@ -245,87 +250,115 @@ export function storyAtOffset(m: Model, story: string, dz: number): string | nul
   return m.stories.find((s) => Math.abs(el[s.name].top - target) < TOL)?.name ?? null;
 }
 
-/** Move by (dx,dy) in plan and dz mm up/down to the story at that level (grids ignore dz). Elements with no story at the new level stay on theirs. */
+/**
+ * Where an element lands when its level (a column's top) goes `dz` mm up or down: the story it then lies in and its offset
+ * from that story's level (see placeAt). A joined column keeps its number of stories, so it only moves from level to
+ * story level. Null when it has nowhere to go: a column top at or below the base, or a joined column that would leave
+ * the story levels or run out of stories.
+ */
+export function lift<T extends { story: string; dz?: number; base?: string }>(m: Model, x: T, dz: number, column = false): T | null {
+  const z = levelZ(storyElevations(m), x);
+  if (z === null) return null;
+  if (column && z + dz <= m.baseElevation + TOL) return null;
+  const p = placeAt(m, z + dz);
+  if (!p) return null;
+  const out = withDz({ ...x, story: p.story }, p.dz);
+  if (!x.base) return out;
+  if (p.dz) return null;
+  const names = m.stories.map((s) => s.name);
+  const b = names.indexOf(x.base) + names.indexOf(p.story) - names.indexOf(x.story);
+  return b >= 0 && b < names.length ? { ...out, base: names[b] } : null;
+}
+
+/**
+ * Move by (dx,dy) in plan and dz mm up/down (grids ignore dz). Elements land on whatever level that is: a story level,
+ * or between levels (a reference plane) as an offset from the story they then lie in. Those with nowhere to go (see lift) stay on theirs.
+ */
 export function moveIds(m: Model, ids: string[], dx: number, dy: number, dz = 0): Model {
   const s = new Set(ids);
-  const st = <T extends { story: string }>(x: T): T => (dz ? { ...x, story: storyAtOffset(m, x.story, dz) ?? x.story } : x);
+  const up = <T extends { story: string; dz?: number; base?: string }>(x: T, column = false): T => (dz ? lift(m, x, dz, column) ?? x : x);
   const out = {
     ...m,
     grids: m.grids.map((x) => (s.has(x.id) ? mvGrid(x, dx, dy) : x)),
-    columns: m.columns.map((x) => {
-      if (!s.has(x.id)) return x;
-      const c = mvCol(x, dx, dy);
-      // a joined column moves only when both its ends land on a story
-      if (!dz || !c.base) return st(c);
-      const top = storyAtOffset(m, c.story, dz),
-        base = storyAtOffset(m, c.base, dz);
-      return top && base ? { ...c, story: top, base } : c;
-    }),
-    beams: m.beams.map((x) => (s.has(x.id) ? st(mvBeam(x, dx, dy)) : x)),
-    slabs: m.slabs.map((x) => (s.has(x.id) ? st(mvSlab(x, dx, dy)) : x)),
+    columns: m.columns.map((x) => (s.has(x.id) ? up(mvCol(x, dx, dy), true) : x)),
+    beams: m.beams.map((x) => (s.has(x.id) ? up(mvBeam(x, dx, dy)) : x)),
+    slabs: m.slabs.map((x) => (s.has(x.id) ? up(mvSlab(x, dx, dy)) : x)),
   };
-  // joint loads ride on the columns they sit on
+  // joint loads ride on the tops of the columns they sit on
   const moved = m.columns.flatMap((c, i) => {
     const n = out.columns[i];
-    return s.has(c.id) && (n.x !== c.x || n.y !== c.y || n.story !== c.story) ? [{ story: c.story, from: { x: c.x, y: c.y }, to: { x: n.x, y: n.y }, toStory: n.story }] : [];
+    return s.has(c.id) && (n.x !== c.x || n.y !== c.y || n.story !== c.story || n.dz !== c.dz) ? [{ story: c.story, dz: c.dz, from: { x: c.x, y: c.y }, to: { x: n.x, y: n.y }, toStory: n.story, toDz: n.dz }] : [];
   });
   return moved.length ? { ...out, jointLoads: moveJointLoads(m, moved) } : out;
 }
 
-/** Replicate linearly n times by (dx,dy), optionally also onto other stories. Duplicates are skipped. */
-export function replicate(m: Model, ids: string[], opts: { dx: number; dy: number; n: number; stories: string[] | null }): { model: Model; created: string[] } {
+/**
+ * Replicate linearly n times by (dx,dy), or onto other levels: `stories` and reference planes at elevations `planes`
+ * (copies there sit off the story they lie in, see placeAt). Duplicates are skipped.
+ */
+export function replicate(m: Model, ids: string[], opts: { dx: number; dy: number; n: number; stories: string[] | null; planes?: number[] }): { model: Model; created: string[] } {
   const s = new Set(ids);
   const created: string[] = [];
   let out = m;
   const cols = m.columns.filter((x) => s.has(x.id));
   const beams = m.beams.filter((x) => s.has(x.id));
   const slabs = m.slabs.filter((x) => s.has(x.id));
-  const steps = opts.stories ? [0] : Array.from({ length: Math.max(1, opts.n) }, (_, i) => i + 1);
-  const targets = (orig: string) => (opts.stories ? opts.stories.filter((st) => st !== orig || opts.dx || opts.dy) : [orig]);
-  // A column only spans one storey, so an unshifted copy to a story further up or down also fills the storeys in between,
+  const toLevels = !!opts.stories || !!opts.planes?.length;
+  type Level = { story: string; dz: number };
+  const levels: Level[] = [
+    ...(opts.stories ?? []).map((story) => ({ story, dz: 0 })),
+    ...(opts.planes ?? []).flatMap((z) => placeAt(m, z) ?? []),
+  ];
+  const steps = toLevels ? [0] : Array.from({ length: Math.max(1, opts.n) }, (_, i) => i + 1);
+  const same = (a: Level, b: { story: string; dz?: number }) => a.story === b.story && Math.abs(a.dz - (b.dz ?? 0)) < TOL;
+  const targets = (orig: { story: string; dz?: number }): Level[] => (toLevels ? levels.filter((l) => !same(l, orig) || opts.dx || opts.dy) : [{ story: orig.story, dz: orig.dz ?? 0 }]);
+  // A column only spans one storey, so an unshifted copy to a level further up or down also fills the storeys in between,
   // otherwise it would float above (or hang below) the original with a gap.
   const names = m.stories.map((x) => x.name);
-  const colTargets = (orig: string) => {
-    const t = targets(orig);
-    const o = names.indexOf(orig);
-    if (!opts.stories || opts.dx || opts.dy || o < 0) return t;
-    const idx = new Set<number>();
-    for (const st of t) {
-      const i = names.indexOf(st);
+  const colTargets = (c: Column): Level[] => {
+    const t = targets(c);
+    const o = names.indexOf(c.story);
+    if (!toLevels || opts.dx || opts.dy || o < 0) return t;
+    const fill = new Map<string, Level>();
+    for (const l of t) {
+      const i = names.indexOf(l.story);
       if (i < 0) continue;
-      for (let j = Math.min(o, i); j <= Math.max(o, i); j++) if (j !== o) idx.add(j);
+      for (let j = Math.min(o, i); j <= Math.max(o, i); j++) {
+        const at = j === i ? l : { story: names[j], dz: 0 };
+        if (!same(at, c)) fill.set(`${at.story}|${at.dz}`, at);
+      }
     }
-    return [...idx].sort((a, b) => a - b).map((i) => names[i]);
+    return [...fill.values()].sort((a, b) => names.indexOf(a.story) - names.indexOf(b.story) || a.dz - b.dz);
   };
   for (const k of steps) {
-    const dx = opts.stories ? opts.dx : opts.dx * k,
-      dy = opts.stories ? opts.dy : opts.dy * k;
+    const dx = toLevels ? opts.dx : opts.dx * k,
+      dy = toLevels ? opts.dy : opts.dy * k;
     for (const c of cols)
-      for (const st of colTargets(c.story)) {
+      for (const l of colTargets(c)) {
         const before = out.columns.length;
-        out = addColumns(out, [{ x: c.x + dx, y: c.y + dy }], [st], c.section, c.angle);
+        out = addColumns(out, [{ x: c.x + dx, y: c.y + dy }], [l.story], c.section, c.angle, l.dz);
         if (out.columns.length === before) continue;
         const copy = out.columns[out.columns.length - 1];
-        // a joined column copied on its own story keeps its span; loads and the joint loads on it come along
-        const full = { ...copy, ...(c.base && st === c.story ? { base: c.base } : {}), ...(c.loads ? { loads: c.loads } : {}) };
+        // a joined column copied on its own level keeps its span; loads and the joint loads on it come along
+        const full = { ...copy, ...(c.base && same(l, c) ? { base: c.base } : {}), ...(c.loads ? { loads: c.loads } : {}) };
         out = { ...out, columns: [...out.columns.slice(0, -1), full] };
-        for (const j of jointLoadsAt(m, c.story, c)) out = assignJointLoad(out, [st], [{ x: c.x + dx, y: c.y + dy }], j, 'replace');
+        for (const j of jointLoadsAt(m, c.story, c, c.dz)) out = assignJointLoad(out, [l.story], [{ x: c.x + dx, y: c.y + dy }], j, 'replace', l.dz);
         created.push(copy.id);
       }
     for (const b of beams)
-      for (const st of targets(b.story)) {
+      for (const l of targets(b)) {
         const before = out.beams.length;
-        out = addBeams(out, [[{ x: b.x1 + dx, y: b.y1 + dy }, { x: b.x2 + dx, y: b.y2 + dy }]], [st], b.section);
+        out = addBeams(out, [[{ x: b.x1 + dx, y: b.y1 + dy }, { x: b.x2 + dx, y: b.y2 + dy }]], [l.story], b.section, l.dz);
         if (out.beams.length === before) continue;
         if (b.loads) out = { ...out, beams: [...out.beams.slice(0, -1), { ...out.beams[out.beams.length - 1], loads: b.loads }] };
         created.push(out.beams[out.beams.length - 1].id);
       }
     for (const sl of slabs)
-      for (const st of targets(sl.story)) {
+      for (const l of targets(sl)) {
         const pts = sl.pts.map((p) => ({ x: p.x + dx, y: p.y + dy }));
-        const dup = out.slabs.some((o) => o.story === st && o.pts.length === pts.length && o.pts.every((p, i) => dist(p, pts[i]) < TOL));
+        const dup = out.slabs.some((o) => same(l, o) && o.pts.length === pts.length && o.pts.every((p, i) => dist(p, pts[i]) < TOL));
         if (dup) continue;
-        out = { ...out, slabs: [...out.slabs, { id: uid(), story: st, pts, section: sl.section, ...(sl.loads ? { loads: sl.loads } : {}) }] };
+        out = { ...out, slabs: [...out.slabs, withDz({ id: uid(), story: l.story, pts, section: sl.section, ...(sl.loads ? { loads: sl.loads } : {}) }, l.dz)] };
         created.push(out.slabs[out.slabs.length - 1].id);
       }
   }
@@ -351,6 +384,7 @@ export function patchIds(m: Model, ids: string[], patch: { section?: string; sto
     if (patch.story !== undefined) {
       n.story = patch.story;
       delete n.base;
+      delete n.dz;
     }
     if (patch.section !== undefined) n.section = patch.section;
     if (patch.angle !== undefined && 'angle' in o) n.angle = patch.angle;
