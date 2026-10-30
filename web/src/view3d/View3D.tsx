@@ -4,24 +4,30 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
 import { columnOn, columnSpan, levelZ, storyElevations, type Column, type Model } from '../model/types';
+import { describeJointLoad, shortFrameLoad } from '../model/loads';
+import { activePattern } from '../ui/LoadDialogs';
 import SectionSlider, { type Mark } from './SectionSlider';
 
 const S = 0.001; // mm → m in the scene
 const OPEN = 1e9; // clip-plane constant that clips nothing
+const LOAD_COLOR = '#ff9f43'; // --load, as in the plan
 
-export type LabelKind = 'column' | 'beam' | 'slab';
+export type LabelKind = 'column' | 'beam' | 'slab' | 'load';
 const LABEL_KINDS: { kind: LabelKind; name: string }[] = [
   { kind: 'column', name: 'Columns' },
   { kind: 'beam', name: 'Beams' },
   { kind: 'slab', name: 'Slabs' },
+  { kind: 'load', name: 'Loads' },
 ];
 
 const LABEL_PX = 14; // label height on screen at the orbit target, as of the last Fit
 const labelGeo = new THREE.PlaneGeometry(1, 1);
 
-// a section-name tag drawn on a canvas, as a plane mesh laid along its member: the text runs along
-// `axis`; frames turn only about their own axis to face the camera, slabs (`flat`) lie in their plane
-function label(text: string, color: string, at: THREE.Vector3, axis: THREE.Vector3, flat: boolean): THREE.Mesh {
+// a name tag drawn on a canvas, as a plane mesh laid along its member: the text runs along
+// `axis`; frames turn only about their own axis to face the camera, slabs (`flat`) lie in their plane,
+// and a `null` axis (a joint) faces the camera square on. `shift` moves the tag across its text by that
+// many tag heights, so a load tag sits clear of the section tag on the same member.
+function label(text: string, color: string, at: THREE.Vector3, axis: THREE.Vector3 | null, flat: boolean, shift = 0): THREE.Mesh {
   const px = 40,
     pad = 12;
   const cv = document.createElement('canvas');
@@ -49,7 +55,7 @@ function label(text: string, color: string, at: THREE.Vector3, axis: THREE.Vecto
   o.renderOrder = 10;
   o.position.copy(at);
   o.raycast = () => {}; // labels are never picked
-  o.userData = { label: true, aspect: cv.width / cv.height, axis: axis.normalize(), flat };
+  o.userData = { label: true, aspect: cv.width / cv.height, axis: axis?.normalize() ?? null, flat, at: at.clone(), shift };
   return o;
 }
 
@@ -73,12 +79,14 @@ function orientLabels(group: THREE.Group | null, camera: THREE.PerspectiveCamera
   for (const o of group.children) {
     if (!o.userData.label) continue;
     // hide labels of members cut away by the section planes
-    o.visible = clip.every((p) => p.distanceToPoint(o.position) >= -1e-6);
+    const at = o.userData.at as THREE.Vector3;
+    o.visible = clip.every((p) => p.distanceToPoint(at) >= -1e-6);
     if (!o.visible) continue;
-    _u.copy(o.userData.axis);
-    _n.subVectors(camera.position, o.position);
-    if (o.userData.flat) _n.set(0, Math.sign(_n.y) || 1, 0);
+    _n.subVectors(camera.position, at);
+    if (!o.userData.axis) _u.copy(_r), _n.copy(_fw).negate();
+    else if (o.userData.flat) _u.copy(o.userData.axis), _n.set(0, Math.sign(_n.y) || 1, 0);
     else {
+      _u.copy(o.userData.axis);
       _n.addScaledVector(_u, -_u.dot(_n));
       if (_n.lengthSq() < 1e-12) _n.copy(_fw).negate();
       _n.normalize();
@@ -88,11 +96,12 @@ function orientLabels(group: THREE.Group | null, camera: THREE.PerspectiveCamera
     _v.crossVectors(_n, _u);
     o.quaternion.setFromRotationMatrix(_m.makeBasis(_u, _v, _n));
     o.scale.set(h * o.userData.aspect, h, 1);
+    o.position.copy(at).addScaledVector(_v, o.userData.shift * h);
   }
 }
 
 // wireframe draws every member as its centreline (slabs as their outline) instead of solids
-function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE.Plane[], labels: Set<LabelKind>): THREE.Group {
+function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE.Plane[], labels: Set<LabelKind>, pattern: string): THREE.Group {
   const g = new THREE.Group();
   const el = storyElevations(m);
   const mats = new Map<string, THREE.LineBasicMaterial>();
@@ -111,6 +120,11 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     o.userData.id = id;
     g.add(o);
   };
+  // the active pattern's loads, tagged as in the plan; below the section tag when that's shown too
+  const loads = labels.has('load');
+  const mine = <L extends { pattern: string }>(ls?: L[]) => (loads ? (ls ?? []).filter((l) => l.pattern === pattern) : []);
+  const loadTag = (text: string, kind: LabelKind, at: THREE.Vector3, axis: THREE.Vector3 | null, flat = false) =>
+    g.add(label(text, LOAD_COLOR, at, axis, flat, labels.has(kind) ? -1.15 : 0));
 
   for (const c of m.columns) {
     const e = columnSpan(el, c);
@@ -118,15 +132,21 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     const x = c.x * S,
       z = -c.y * S;
     line([new THREE.Vector3(x, e.bottom * S, z), new THREE.Vector3(x, e.top * S, z)], sel.has(c.id) ? selMat : mat('c' + c.section, sectionColor(c.section)), c.id);
-    if (labels.has('column')) g.add(label(c.section, sectionColor(c.section), new THREE.Vector3(x, (e.bottom + e.top) * 0.5 * S, z), new THREE.Vector3(0, 1, 0), false));
+    const mid = new THREE.Vector3(x, (e.bottom + e.top) * 0.5 * S, z);
+    if (labels.has('column')) g.add(label(c.section, sectionColor(c.section), mid, new THREE.Vector3(0, 1, 0), false));
+    const cl = mine(c.loads);
+    if (cl.length) loadTag(cl.map(shortFrameLoad).join(' + '), 'column', mid, new THREE.Vector3(0, 1, 0));
   }
   for (const b of m.beams) {
     const z = levelZ(el, b);
     if (z === null || !vis(b.story)) continue;
     const y = z * S;
     line([new THREE.Vector3(b.x1 * S, y, -b.y1 * S), new THREE.Vector3(b.x2 * S, y, -b.y2 * S)], sel.has(b.id) ? selMat : mat('b' + b.section, sectionColor(b.section)), b.id);
-    if (labels.has('beam'))
-      g.add(label(b.section, sectionColor(b.section), new THREE.Vector3(((b.x1 + b.x2) / 2) * S, y, (-(b.y1 + b.y2) / 2) * S), new THREE.Vector3(b.x2 - b.x1, 0, -(b.y2 - b.y1)), false));
+    const mid = new THREE.Vector3(((b.x1 + b.x2) / 2) * S, y, (-(b.y1 + b.y2) / 2) * S),
+      ax = new THREE.Vector3(b.x2 - b.x1, 0, -(b.y2 - b.y1));
+    if (labels.has('beam')) g.add(label(b.section, sectionColor(b.section), mid, ax.clone(), false));
+    const bl = mine(b.loads);
+    if (bl.length) loadTag(bl.map(shortFrameLoad).join(' + '), 'beam', mid, ax);
   }
   for (const sl of m.slabs) {
     const z = levelZ(el, sl);
@@ -148,7 +168,8 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     plane.position.y = y;
     plane.userData.id = sl.id;
     g.add(plane);
-    if (labels.has('slab')) {
+    const sll = mine(sl.loads);
+    if (labels.has('slab') || sll.length) {
       const cx = sl.pts.reduce((a, p) => a + p.x, 0) / sl.pts.length,
         cy = sl.pts.reduce((a, p) => a + p.y, 0) / sl.pts.length;
       // text runs along the slab's longest edge
@@ -159,8 +180,15 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
           len = Math.hypot(q.x - p.x, q.y - p.y);
         if (len > best) (best = len), (ax = new THREE.Vector3(q.x - p.x, 0, -(q.y - p.y)));
       });
-      g.add(label(sl.section, sectionColor(sl.section), new THREE.Vector3(cx * S, y, -cy * S), ax, true));
+      const at = new THREE.Vector3(cx * S, y, -cy * S);
+      if (labels.has('slab')) g.add(label(sl.section, sectionColor(sl.section), at, ax.clone(), true));
+      if (sll.length) loadTag(`${sll.map((l) => Math.round(l.value * 1000) / 1000).join(' + ')} kN/m²`, 'slab', at, ax, true);
     }
+  }
+  for (const j of loads ? m.jointLoads : []) {
+    const z = levelZ(el, j);
+    if (z === null || j.pattern !== pattern || !vis(j.story)) continue;
+    g.add(label(`↓ ${describeJointLoad(j.f)}`, LOAD_COLOR, new THREE.Vector3(j.x * S, z * S, -j.y * S), null, false));
   }
   return g;
 }
@@ -340,6 +368,7 @@ export default function View3D() {
   const model = useApp(visibleModel);
   const selection = useApp((s) => s.selection);
   const activeStory = useApp((s) => s.activeStory);
+  const pattern = useApp(activePattern);
   const [onlyStory, setOnlyStory] = useState(false);
   const [wire, setWire] = useState(false);
   const [labels, setLabels] = useState<Set<LabelKind>>(new Set());
@@ -482,7 +511,7 @@ export default function View3D() {
       c.caps = null;
     }
     const story = onlyStory ? activeStory : null;
-    c.group = wire ? buildWire(model, new Set(selection), story, c.clip, labels) : build(model, new Set(selection), story, c.clip);
+    c.group = wire ? buildWire(model, new Set(selection), story, c.clip, labels, pattern) : build(model, new Set(selection), story, c.clip);
     c.scene.add(c.group);
     if (!wire) {
       c.caps = buildCaps(c.group, c.clip);
@@ -494,7 +523,7 @@ export default function View3D() {
       fitted.current = true;
     }
     c.render();
-  }, [model, selection, onlyStory, activeStory, wire, labels]);
+  }, [model, selection, onlyStory, activeStory, wire, labels, pattern]);
 
   useEffect(() => {
     const c = ctx.current;
@@ -557,7 +586,7 @@ export default function View3D() {
           <span className="label-picks" title="Show section names">
             Names:
             {LABEL_KINDS.map(({ kind, name }) => (
-              <button key={kind} className={labels.has(kind) ? 'on' : ''} onClick={() => toggleLabel(kind)}>
+              <button key={kind} className={labels.has(kind) ? 'on' : ''} title={kind === 'load' ? `Show the loads of the active pattern (${pattern})` : undefined} onClick={() => toggleLabel(kind)}>
                 {name}
               </button>
             ))}
