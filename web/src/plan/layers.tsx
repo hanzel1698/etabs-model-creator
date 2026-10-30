@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo } from 'react';
 import { useApp, sectionColor } from '../model/store';
-import { columnOn, levelTag, type Beam, type Column, type FrameSection, type Grid, type Model, type Slab } from '../model/types';
+import { columnOn, levelTag, type Beam, type Column, type FrameLoad, type FrameSection, type Grid, type Model, type Slab } from '../model/types';
 import { angleDeg, fmt, polyArea } from '../model/geom';
 import { gridDimensions } from '../model/ops';
 import { describeJointLoad, shortFrameLoad } from '../model/loads';
@@ -225,8 +225,8 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, show
 // ---------------- loads ----------------
 
 /**
- * Values of the active pattern's loads on a story, in the load colour: under each beam (kN/m; P = point load in kN),
- * beside columns, at slab centroids (kN/m²) and at loaded joints (↓ with components).
+ * Values of the active pattern's loads on a story, in the load colour: under each beam (kN/m; P = point load in kN,
+ * with a band over the loaded length when a distributed load covers only part of the beam), beside columns, at slab centroids (kN/m²) and at loaded joints (↓ with components).
  */
 export const LoadLayer = memo(function LoadLayer({ m, story, pattern, viewRot, ts }: { m: Model; story: string; pattern: string; viewRot: number; ts: number }) {
   const h = 150 * ts;
@@ -237,18 +237,50 @@ export const LoadLayer = memo(function LoadLayer({ m, story, pattern, viewRot, t
         const ls = mine(b.loads);
         if (b.story !== story || !ls.length) return null;
         const a = readableAngle(angleDeg({ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }), viewRot);
+        const L = Math.hypot(b.x2 - b.x1, b.y2 - b.y1) || 1;
+        const at = (t: number) => ({ x: b.x1 + (b.x2 - b.x1) * t, y: b.y1 + (b.y2 - b.y1) * t });
+        // unit normal, for the ticks that close off a partly loaded length
+        const nx = -(b.y2 - b.y1) / L,
+          ny = (b.x2 - b.x1) / L;
+        // distributed loads over part of the beam: highlighted over that length and labelled at its middle
+        const span = (l: FrameLoad) => [Math.max(0, l.rel ? l.d1 : l.d1 / L), Math.min(1, l.rel ? l.d2 : l.d2 / L)];
+        const partial = (l: FrameLoad) => {
+          const [t1, t2] = span(l);
+          return l.kind === 'dist' && t2 > t1 && (t1 > 1e-3 || t2 < 1 - 1e-3);
+        };
+        const rest = ls.filter((l) => !partial(l));
+        const label = (t: number, txt: string, key: string) => {
+          const c = at(t);
+          return (
+            <text key={key} transform={textTransform(c.x, c.y, viewRot, a)} dy={h * 1.05} textAnchor="middle">
+              {txt}
+            </text>
+          );
+        };
         return (
           <g key={b.id}>
-            <text transform={textTransform((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2, viewRot, a)} dy={h * 1.05} textAnchor="middle">
-              {ls.map(shortFrameLoad).join(' + ')}
-            </text>
+            {ls.filter(partial).map((l, i) => {
+              const [t1, t2] = span(l);
+              const p = at(t1),
+                q = at(t2),
+                k = h * 0.45;
+              return (
+                <g key={`d${i}`}>
+                  <g stroke="var(--loadSpan)">
+                    <line x1={p.x} y1={p.y} x2={q.x} y2={q.y} strokeWidth={9} strokeOpacity={0.6} strokeLinecap="butt" style={NS} />
+                    {[p, q].map((e, j) => (
+                      <line key={j} x1={e.x - nx * k} y1={e.y - ny * k} x2={e.x + nx * k} y2={e.y + ny * k} strokeWidth={1.8} style={NS} />
+                    ))}
+                  </g>
+                  {label((t1 + t2) / 2, shortFrameLoad(l), 't')}
+                </g>
+              );
+            })}
+            {rest.length > 0 && label(0.5, rest.map(shortFrameLoad).join(' + '), 'mid')}
             {ls
               .filter((l) => l.kind === 'point')
               .map((l, i) => {
-                const L = Math.hypot(b.x2 - b.x1, b.y2 - b.y1) || 1;
-                const t = l.rel ? l.d1 : l.d1 / L;
-                const x = b.x1 + (b.x2 - b.x1) * t,
-                  y = b.y1 + (b.y2 - b.y1) * t;
+                const { x, y } = at(l.rel ? l.d1 : l.d1 / L);
                 return <circle key={i} cx={x} cy={y} r={h * 0.3} />;
               })}
           </g>

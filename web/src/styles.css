@@ -27,6 +27,7 @@
   --labelCol: #ffb3c4;
   --labelSlab: #8fe3f2;
   --load: #ff9f43;
+  --loadSpan: #b57bff; /* length a part-length frame load covers; violet to stand off the yellow beams */
   color-scheme: dark;
 }
 
