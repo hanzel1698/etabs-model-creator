@@ -12,6 +12,7 @@
   "dependencies": {
     "dxf-parser": "^1.1.2",
     "idb-keyval": "^6.2.1",
+    "jspdf": "^2.5.2",
     "pdfjs-dist": "^4.10.38",
     "rbush": "^4.0.1",
     "react": "^18.3.1",

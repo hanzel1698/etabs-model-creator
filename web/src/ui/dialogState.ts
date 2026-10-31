@@ -13,6 +13,7 @@ export type Dialog =
   | { kind: 'refPlanes' }
   | { kind: 'underlay' }
   | { kind: 'etabs' }
+  | { kind: 'planSheets' }
   | { kind: 'rotate' }
   | { kind: 'loadPatterns' }
   | { kind: 'frameLoad'; edit?: LoadEdit }

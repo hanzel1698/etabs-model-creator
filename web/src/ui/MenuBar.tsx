@@ -189,6 +189,8 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
         'sep',
         { label: 'Load underlay…', run: onUnderlay, title: 'Load a DXF (all stories in model space) or a PDF (one page per story)' },
         { label: 'Underlay setup…', run: () => openDialog({ kind: 'underlay' }) },
+        'sep',
+        { label: 'Export plan sheets (PDF)…', title: 'Framing, column layout, line-load and shell-load plans of every story region on A2 sheets', run: () => openDialog({ kind: 'planSheets' }) },
       ],
     },
     {

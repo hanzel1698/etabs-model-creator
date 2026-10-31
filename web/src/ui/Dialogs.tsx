@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useDialog, openDialog, closeDialog, useMovePick, type Dialog } from './dialogState';
 import { bySize, sectionGroup } from './sectionGroups';
 import { SelectByDialog } from './SelectByDialog';
+import { PlanSheetsDialog } from './PlanSheetsDialog';
 import { FrameLoadDialog, JointLoadDialog, LoadPatternsDialog, ShellLoadDialog } from './LoadDialogs';
 import { useApp, toast } from '../model/store';
 import { generateGrids, lift, moveIds, oppositeLabelStart, replicate } from '../model/ops';
@@ -58,6 +59,8 @@ export function Dialogs() {
       return <UnderlayDialog />;
     case 'etabs':
       return <EtabsDialog />;
+    case 'planSheets':
+      return <PlanSheetsDialog />;
     case 'loadPatterns':
       return <LoadPatternsDialog />;
     case 'frameLoad':

@@ -250,6 +250,7 @@ const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   replicate: 'Replicate',
   move: 'Move',
   selectBy: 'Select by',
+  planSheets: 'Export plan sheets',
   sections: 'Sections',
   stories: 'Stories',
   refPlanes: 'Reference planes',
