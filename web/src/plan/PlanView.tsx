@@ -4,7 +4,7 @@ import { cachedStoryNodes, isNodeId, type PanelSize } from '../model/ops';
 import { fmt } from '../model/geom';
 import { columnOn, type Beam, type Pt } from '../model/types';
 import { viewport } from './viewport';
-import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer } from './layers';
+import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
 import { activePattern } from '../ui/LoadDialogs';
 import { onMove, onClick, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, type Grip } from './tools';
 import { columnOutline } from './snap';
@@ -82,7 +82,7 @@ export function PlanView() {
   const tool = useApp((s) => s.tool);
   const ts = useApp((s) => s.textScale);
   const bubble = useApp((s) => s.gridBubble);
-  const colorBy = useApp((s) => s.colorBySection);
+  const colorBy = useApp((s) => s.colorBy);
   // the setup view shows the raw DXF: place this story's model on its region (reference point = model 0,0)
   const setupRef = useUnderlay((u) => (u.kind === 'dxf' && u.setupMode ? u.regions.find((r) => r.stories.includes(story))?.ref ?? null : null));
   // the cropped view names the story in a fixed banner at the top of the canvas, so it stays put while zooming
@@ -119,6 +119,7 @@ export function PlanView() {
   const cols = useMemo(() => model.columns.filter((c) => columnOn(model, c, story)), [model, story]);
   const beams = useMemo(() => model.beams.filter((b) => b.story === story), [model.beams, story]);
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
+  const legendItems = useMemo(() => [...cols, ...beams, ...(show.slabs ? slabs : [])], [cols, beams, slabs, show.slabs]);
   const gCols = useMemo(() => (below && show.ghostBelow ? model.columns.filter((c) => columnOn(model, c, below)) : []), [model, below, show.ghostBelow]);
   const gBeams = useMemo(() => (below && show.ghostBelow ? model.beams.filter((b) => b.story === below) : []), [model.beams, below, show.ghostBelow]);
   const empty = useMemo(() => new Set<string>(), []);
@@ -274,13 +275,13 @@ export function PlanView() {
         <g ref={worldRef}>
           {show.underlay && <UnderlayLayer story={story} viewRot={viewRot} />}
           <g transform={setupRef ? `translate(${setupRef.x} ${setupRef.y})` : undefined}>
-            {show.slabs && <SlabLayer slabs={slabs} sel={sel} colorBy={colorBy} />}
+            {show.slabs && <SlabLayer slabs={slabs} sel={sel} colorBy={colorBy} pattern={pattern} />}
             <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} bubble={bubble} />
             {show.gridDims && <GridDimLayer grids={model.grids} viewRot={viewRot} bubble={bubble} />}
-            {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy={false} />}
-            {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy={false} />}
-            <BeamLayer beams={beams} sel={sel} colorBy={colorBy} />
-            <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} />
+            {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy="none" />}
+            {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy="none" />}
+            <BeamLayer beams={beams} sel={sel} colorBy={colorBy} pattern={pattern} />
+            <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} pattern={pattern} />
             {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} showSlabs={show.slabs} />}
             {show.loads && <LoadLayer m={model} story={story} pattern={pattern} viewRot={viewRot} ts={ts} />}
           </g>
@@ -291,6 +292,7 @@ export function PlanView() {
         <Overlay />
       </svg>
       <Compass rot={viewRot} />
+      <ColorLegend items={legendItems} colorBy={colorBy} pattern={pattern} />
       {show.underlay && hasRegion && <div className="story-banner nosel">{story}</div>}
       <button className="zoom-ext" title="Zoom extents: the whole story region" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={fitStory}>
         <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6}>

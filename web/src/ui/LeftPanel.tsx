@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { toast, useApp } from '../model/store';
+import { toast, useApp, COLOR_BY, type ColorBy } from '../model/store';
 import { storyElevations } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
 import { openDialog } from './dialogState';
@@ -260,7 +260,7 @@ function ViewControls() {
   const show = useApp((s) => s.show);
   const rot = useApp((s) => s.viewRotation);
   const ts = useApp((s) => s.textScale);
-  const colorBy = useApp((s) => s.colorBySection);
+  const colorBy = useApp((s) => s.colorBy);
   const hidden = useApp((s) => s.hidden.length);
   const st = useApp.getState();
   const toggles: [keyof typeof show, string][] = [
@@ -313,9 +313,14 @@ function ViewControls() {
           Show all{hidden ? ` (${hidden} hidden)` : ''}
         </button>
       </div>
-      <label className="small">
-        <input type="checkbox" checked={colorBy} onChange={st.toggleColorBySection} /> Colour by section
-      </label>
+      <div className="row">
+        <span>View by</span>
+        <select value={colorBy} onChange={(e) => st.setColorBy(e.target.value as ColorBy)}>
+          {COLOR_BY.map(([k, l]) => (
+            <option key={k} value={k}>{l}</option>
+          ))}
+        </select>
+      </div>
       <div className="row" style={{ marginTop: 6 }}>
         <span>Text size</span>
         <input type="range" min={0.4} max={3} step={0.1} value={ts} onChange={(e) => st.setTextScale(+e.target.value)} />

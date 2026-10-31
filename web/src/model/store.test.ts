@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { useApp } from './store';
+import { useApp, colorKey } from './store';
 import { emptyModel, type FrameSection } from './types';
 
 const rect = (name: string, t2: number, t3: number): FrameSection => ({ name, shape: 'Rectangle', t2, t3, material: '4000Psi', fromEtabs: false });
@@ -59,5 +59,19 @@ describe('previous selection', () => {
     useApp.setState({ hidden: ['b'] });
     useApp.getState().restoreSelection();
     expect(useApp.getState().selection).toEqual(['a']);
+  });
+});
+
+describe('colorKey', () => {
+  const fl = (pattern: string, v: number) => ({ pattern, kind: 'dist' as const, force: 'F' as const, dir: 'Gravity' as const, rel: true, d1: 0, d2: 1, v1: v, v2: v });
+  const beam = { section: 'B300x600', loads: [fl('SDL', 5), fl('Live', 3)] };
+  it('keys by section, pattern set or active-pattern value', () => {
+    expect(colorKey(beam, 'section', 'Live')).toBe('B300x600');
+    expect(colorKey(beam, 'pattern', 'Live')).toBe('Live + SDL');
+    expect(colorKey(beam, 'value', 'Live')).toBe('3 kN/m');
+    expect(colorKey({ section: 'S150', loads: [{ pattern: 'Live', dir: 'Gravity', value: 2.5 }] }, 'value', 'Live')).toBe('2.5 kN/m²');
+    expect(colorKey(beam, 'value', 'Dead')).toBeNull();
+    expect(colorKey({ section: 'C1' }, 'pattern', 'Live')).toBeNull();
+    expect(colorKey(beam, 'none', 'Live')).toBeNull();
   });
 });

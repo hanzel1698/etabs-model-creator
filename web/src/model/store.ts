@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { emptyModel, type Model, type Pt } from './types';
+import { emptyModel, type FrameLoad, type Model, type Pt, type ShellLoad } from './types';
+import { shortFrameLoad, frameLoadUnit } from './loads';
 import type { PanelSize } from './ops';
 import { defaultLoadFilter, type LoadFilterState } from './loadFilter';
 import { firstSection } from '../ui/sectionGroups';
@@ -114,8 +115,9 @@ interface AppState {
   gridBubble: number;
   setGridBubble: (v: number) => void;
   setTextScale: (v: number) => void;
-  colorBySection: boolean;
-  toggleColorBySection: () => void;
+  /** what elements are coloured by in the plan and elevation */
+  colorBy: ColorBy;
+  setColorBy: (c: ColorBy) => void;
   invertPdf: boolean;
   toggleInvertPdf: () => void;
 
@@ -261,8 +263,8 @@ export const useApp = create<AppState>((set, get) => ({
     set({ gridBubble: d });
   },
   setTextScale: (v) => set({ textScale: v }),
-  colorBySection: false,
-  toggleColorBySection: () => set((s) => ({ colorBySection: !s.colorBySection })),
+  colorBy: 'none',
+  setColorBy: (colorBy) => set({ colorBy }),
   invertPdf: true,
   toggleInvertPdf: () => set((s) => ({ invertPdf: !s.invertPdf })),
 
@@ -317,6 +319,25 @@ export const drawStories = () => {
   const s = useApp.getState();
   return [s.activeStory, ...s.alsoStories.filter((x) => x !== s.activeStory && s.model.stories.some((st) => st.name === x))];
 };
+
+export type ColorBy = 'none' | 'section' | 'pattern' | 'value';
+export const COLOR_BY: [ColorBy, string][] = [
+  ['none', 'None'],
+  ['section', 'Section'],
+  ['pattern', 'Assigned load patterns'],
+  ['value', 'Load values (active pattern)'],
+];
+
+const r3 = (v: number) => String(Math.round(v * 1000) / 1000);
+/** What an element is coloured by under `mode` (its section, its patterns, or its loads in `pattern`), or null for the plain colour. */
+export function colorKey(x: { section: string; loads?: (FrameLoad | ShellLoad)[] }, mode: ColorBy, pattern: string): string | null {
+  if (mode === 'section') return x.section;
+  const ls = x.loads ?? [];
+  if (mode === 'pattern') return ls.length ? [...new Set(ls.map((l) => l.pattern))].sort().join(' + ') : null;
+  if (mode !== 'value') return null;
+  const mine = ls.filter((l) => l.pattern === pattern);
+  return mine.length ? mine.map((l) => ('kind' in l ? `${shortFrameLoad(l)} ${frameLoadUnit(l)}` : `${r3(l.value)} kN/m²`)).join(', ') : null;
+}
 
 export function sectionColor(name: string) {
   let h = 0;

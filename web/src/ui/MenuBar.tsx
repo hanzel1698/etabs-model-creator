@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useApp, type ToolName } from '../model/store';
+import { useApp, COLOR_BY, type ToolName } from '../model/store';
 import { setTool } from '../plan/tools';
 import { fitAll } from '../plan/PlanView';
 import { downloadProject } from '../model/persist';
@@ -168,6 +168,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
   const patterns = useApp((s) => s.model.loadPatterns);
   const pat = useApp((s) => activePattern(s));
   const logOpen = useLog((s) => s.open);
+  const colorBy = useApp((s) => s.colorBy);
   const { frames, slabs, joints } = useLoadTargets();
   const st = useApp.getState;
   const none = !sel.length;
@@ -235,6 +236,8 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
         view('split', 'Split (plan + 3D)'),
         view('3d', '3D'),
         view('elev', 'Elevation'),
+        'sep',
+        { label: 'View by', title: 'Colour columns, beams and slabs in the plan and elevation by…', sub: COLOR_BY.map(([k, l]) => ({ label: l, checked: colorBy === k, run: () => st().setColorBy(k) })) },
         'sep',
         { label: 'Fit all', kbd: 'F', run: () => fitAll() },
         { label: up ? `Story up (${up})` : 'Story up', disabled: !up, run: () => up && st().setActiveStory(up) },

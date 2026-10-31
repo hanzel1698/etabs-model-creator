@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useApp, sectionColor, visibleModel } from '../model/store';
+import { useApp, sectionColor, colorKey, visibleModel } from '../model/store';
+import { activePattern } from '../ui/LoadDialogs';
+import { ColorLegend } from '../plan/layers';
 import { fmt } from '../model/geom';
 import { elevationAt } from './elevation';
 
@@ -11,7 +13,8 @@ export function ElevView() {
   const grids = useApp((s) => s.model.grids);
   const gridId = useApp((s) => s.elevGrid);
   const selection = useApp((s) => s.selection);
-  const colorBy = useApp((s) => s.colorBySection);
+  const colorBy = useApp((s) => s.colorBy);
+  const pattern = useApp(activePattern);
   const [tol, setTol] = useState(300);
   const [names, setNames] = useState(true);
   const host = useRef<HTMLDivElement>(null);
@@ -57,7 +60,13 @@ export function ElevView() {
     const st = useApp.getState();
     st.setSelection(ev.shiftKey ? (st.selection.includes(id) ? st.selection.filter((x) => x !== id) : [...st.selection, id]) : [id]);
   };
-  const fill = (id: string, section: string, def: string) => (sel.has(id) ? 'var(--sel)' : colorBy ? sectionColor(section) : def);
+  const byId = useMemo(() => new Map([...model.columns, ...model.beams, ...model.slabs].map((x) => [x.id, x])), [model]);
+  const shown = useMemo(() => (e ? [...e.columns, ...e.beams, ...e.cuts].flatMap((x) => byId.get(x.id) ?? []) : []), [e, byId]);
+  const fill = (id: string, def: string) => {
+    if (sel.has(id)) return 'var(--sel)';
+    const k = colorKey(byId.get(id) ?? { section: '' }, colorBy, pattern);
+    return k === null ? def : sectionColor(k);
+  };
 
   const x = extent();
   const sl = x ? X(x.s0) - 30 : 0,
@@ -170,13 +179,13 @@ export function ElevView() {
             <rect key={s.id + i} x={X(s.s0)} y={Y(s.z)} width={view.k * (s.s1 - s.s0)} height={Math.max(view.k * s.t, 1.5)} fill={sel.has(s.id) ? 'var(--sel)' : 'var(--slabEdge)'} onPointerUp={(ev) => pick(s.id, ev)} style={{ cursor: 'pointer' }} />
           ))}
           {e.beams.map((b) => (
-            <rect key={b.id} x={X(b.s0)} y={Y(b.z)} width={view.k * (b.s1 - b.s0)} height={view.k * b.depth} fill={fill(b.id, b.section, 'var(--beam)')} fillOpacity={0.75} stroke="var(--colEdge)" onPointerUp={(ev) => pick(b.id, ev)} style={{ cursor: 'pointer' }} />
+            <rect key={b.id} x={X(b.s0)} y={Y(b.z)} width={view.k * (b.s1 - b.s0)} height={view.k * b.depth} fill={fill(b.id, 'var(--beam)')} fillOpacity={0.75} stroke="var(--colEdge)" onPointerUp={(ev) => pick(b.id, ev)} style={{ cursor: 'pointer' }} />
           ))}
           {e.cuts.map((b) => (
-            <rect key={b.id} x={X(b.s0)} y={Y(b.z)} width={view.k * (b.s1 - b.s0)} height={view.k * b.depth} fill={fill(b.id, b.section, 'var(--beam)')} fillOpacity={0.9} stroke="var(--text)" strokeDasharray="3 2" onPointerUp={(ev) => pick(b.id, ev)} style={{ cursor: 'pointer' }} />
+            <rect key={b.id} x={X(b.s0)} y={Y(b.z)} width={view.k * (b.s1 - b.s0)} height={view.k * b.depth} fill={fill(b.id, 'var(--beam)')} fillOpacity={0.9} stroke="var(--text)" strokeDasharray="3 2" onPointerUp={(ev) => pick(b.id, ev)} style={{ cursor: 'pointer' }} />
           ))}
           {e.columns.map((c) => (
-            <rect key={c.id} x={X(c.s0)} y={Y(c.z1)} width={view.k * (c.s1 - c.s0)} height={view.k * (c.z1 - c.z0)} fill={fill(c.id, c.section, 'var(--col)')} fillOpacity={0.75} stroke="var(--colEdge)" onPointerUp={(ev) => pick(c.id, ev)} style={{ cursor: 'pointer' }} />
+            <rect key={c.id} x={X(c.s0)} y={Y(c.z1)} width={view.k * (c.s1 - c.s0)} height={view.k * (c.z1 - c.z0)} fill={fill(c.id, 'var(--col)')} fillOpacity={0.75} stroke="var(--colEdge)" onPointerUp={(ev) => pick(c.id, ev)} style={{ cursor: 'pointer' }} />
           ))}
           {names && (
             <g className="nosel" fontSize={11}>
@@ -194,6 +203,7 @@ export function ElevView() {
           )}
         </svg>
       )}
+      <ColorLegend items={shown} colorBy={colorBy} pattern={pattern} />
     </div>
   );
 }

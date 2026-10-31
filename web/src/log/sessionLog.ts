@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { useApp, type ShowFlags, type ToolName } from '../model/store';
+import { useApp, COLOR_BY, type ShowFlags, type ToolName } from '../model/store';
 import { useDialog, type Dialog } from '../ui/dialogState';
 import { explainAutoSize } from '../model/autoBeam';
 import type { Beam, Column, FrameSection, Grid, JointLoad, LoadPattern, Material, Model, Pt, RefPlane, Slab, SlabSection, Story } from '../model/types';
@@ -335,7 +335,7 @@ export function startSessionLog() {
     if (s.autoBeam !== p.autoBeam) log('setting', `Auto beam size ${s.autoBeam ? 'on: new beams sized from span and supports' : `off: new beams use ${s.active.beam}`}`);
     if (s.autoSplitSlabs !== p.autoSplitSlabs) log('setting', `Split slabs at new beams ${s.autoSplitSlabs ? 'on' : 'off'}`);
     if (s.loadPattern !== p.loadPattern) log('setting', `Active load pattern ${p.loadPattern} → ${s.loadPattern}`);
-    if (s.colorBySection !== p.colorBySection) log('setting', `Colour by section ${s.colorBySection ? 'on' : 'off'}`);
+    if (s.colorBy !== p.colorBy) log('view', `Colour by ${COLOR_BY.find(([k]) => k === s.colorBy)?.[1].toLowerCase()}`);
     if (s.active !== p.active)
       for (const k of ['column', 'beam', 'slab'] as const) if (s.active[k] !== p.active[k]) log('setting', `Active ${k} section ${p.active[k]} → ${s.active[k]}`);
     if (s.show !== p.show)
