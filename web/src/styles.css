@@ -474,18 +474,46 @@ label {
   gap: 6px;
   white-space: nowrap;
 }
-.view-by .row label {
-  flex: 1;
+.vb-item {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 2px 4px;
+  margin: 0 -4px;
+  border-radius: 4px;
+  font-size: 11.5px;
+}
+.vb-item:hover {
+  background: var(--panel2);
+}
+.vb-item > label {
+  flex: 1;
   min-width: 0;
+  cursor: pointer;
+}
+.vb-item .vb-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.view-by .row button {
-  padding: 1px 6px;
+.vb-item.off .vb-name,
+.vb-item.off .swatch {
+  opacity: 0.45;
+}
+.vb-item .vb-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 2ch;
+  text-align: right;
+}
+.vb-item button {
+  padding: 0 6px;
+  font-size: 11px;
+  visibility: hidden;
+}
+.vb-item:hover button,
+.vb-item button:focus-visible {
+  visibility: visible;
 }
 .view-by .swatch,
 .color-legend .swatch {

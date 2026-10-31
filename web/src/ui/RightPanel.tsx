@@ -50,13 +50,13 @@ function ViewByFilter() {
       {groups.map(({ key, ids }) => {
         const shown = ids.some((id) => !off.has(id));
         return (
-          <div key={key ?? ''} className="row small">
-            <label>
+          <div key={key ?? ''} className={shown ? 'vb-item' : 'vb-item off'}>
+            <label title={key ?? none}>
               <input type="checkbox" checked={shown} onChange={() => (shown ? st.hideIds(ids) : st.unhideIds(ids))} />
               <span className="swatch" style={{ background: key === null ? 'var(--muted)' : sectionColor(key) }} />
-              {key ?? none}
+              <span className="vb-name">{key ?? none}</span>
             </label>
-            <span className="muted">{ids.length}</span>
+            <span className="vb-count">{ids.length}</span>
             <button title="Show only these" onClick={() => st.showOnlyIds(ids)}>
               Only
             </button>
