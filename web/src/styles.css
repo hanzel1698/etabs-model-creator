@@ -474,6 +474,10 @@ label {
   gap: 6px;
   white-space: nowrap;
 }
+.vb-story {
+  text-transform: none;
+  letter-spacing: 0;
+}
 .vb-item {
   display: flex;
   align-items: center;

@@ -33,7 +33,13 @@ function ViewByFilter() {
   const model = useApp((s) => s.model);
   const pattern = useApp(activePattern);
   const hidden = useApp((s) => s.hidden);
-  const groups = useMemo(() => colorGroups(model, colorBy, pattern), [model, colorBy, pattern]);
+  // the plan shows one story, so its list (and Only) covers just that story; split, 3D and elevation cover all
+  const story = useApp((s) => (s.panel === 'plan' ? s.activeStory : null));
+  const scoped = useMemo(
+    () => (story === null ? model : { ...model, columns: model.columns.filter((c) => columnOn(model, c, story)), beams: model.beams.filter((b) => b.story === story), slabs: model.slabs.filter((x) => x.story === story) }),
+    [model, story],
+  );
+  const groups = useMemo(() => colorGroups(scoped, colorBy, pattern), [scoped, colorBy, pattern]);
   const off = useMemo(() => new Set(hidden), [hidden]);
   if (colorBy === 'none') return null;
   const st = useApp.getState();
@@ -41,21 +47,30 @@ function ViewByFilter() {
   // like a window pick: only what is shown on the active story; Shift adds to the selection
   const select = (ids: string[], name: string, add: boolean) => {
     const v = visibleModel(st);
-    const story = st.activeStory;
-    const on = new Set([...v.columns.filter((c) => columnOn(v, c, story)), ...v.beams.filter((b) => b.story === story), ...v.slabs.filter((x) => x.story === story)].map((x) => x.id));
+    const at = st.activeStory;
+    const on = new Set([...v.columns.filter((c) => columnOn(v, c, at)), ...v.beams.filter((b) => b.story === at), ...v.slabs.filter((x) => x.story === at)].map((x) => x.id));
     const pick = ids.filter((id) => on.has(id));
-    if (!pick.length) return toast(`Nothing shown on ${story} is ${name}.`);
+    if (!pick.length) return toast(`Nothing shown on ${at} is ${name}.`);
     st.setSelection(add ? [...new Set([...useApp.getState().selection, ...pick])] : pick);
+  };
+  const only = (ids: string[]) => {
+    if (story === null) return st.showOnlyIds(ids);
+    const keep = new Set(ids);
+    st.unhideIds(ids);
+    st.hideIds(groups.flatMap((g) => g.ids).filter((id) => !keep.has(id)));
   };
   return (
     <div className="section view-by">
       <h4>
-        View by {COLOR_BY.find(([k]) => k === colorBy)?.[1].toLowerCase()}{' '}
+        <span>
+          View by {COLOR_BY.find(([k]) => k === colorBy)?.[1].toLowerCase()}
+          {story !== null && <span className="vb-story"> · {story}</span>}
+        </span>{' '}
         <button disabled={!hidden.length} onClick={st.showAll} title="Show every column, beam and slab">
           All
         </button>
       </h4>
-      {!groups.length && <div className="muted small">No columns, beams or slabs yet.</div>}
+      {!groups.length && <div className="muted small">No columns, beams or slabs{story === null ? ' yet' : ` on ${story}`}.</div>}
       {groups.map(({ key, ids }) => {
         const shown = ids.some((id) => !off.has(id));
         return (
@@ -69,7 +84,7 @@ function ViewByFilter() {
             <button title="Select these on the active story (Shift: add to the selection)" onClick={(e) => select(ids, key ?? none, e.shiftKey)}>
               Select
             </button>
-            <button title="Show only these" onClick={() => st.showOnlyIds(ids)}>
+            <button title={story === null ? 'Show only these' : `Show only these on ${story}`} onClick={() => only(ids)}>
               Only
             </button>
           </div>
