@@ -474,6 +474,20 @@ label {
   gap: 6px;
   white-space: nowrap;
 }
+.view-by .row label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.view-by .row button {
+  padding: 1px 6px;
+}
+.view-by .swatch,
 .color-legend .swatch {
   width: 10px;
   height: 10px;

@@ -1,8 +1,8 @@
-import { toast, useApp } from '../model/store';
+import { toast, useApp, colorGroups, sectionColor, COLOR_BY } from '../model/store';
 import { cachedStoryNodes, deleteIds, joinBeams, joinColumns, mergeSlabs, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
 import { columnOn, levelTag, type Beam } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { openDialog } from './dialogState';
 import { SectionOptions } from './sectionGroups';
 import { useUnderlay, saveUnderlayMeta, removeUnderlay } from '../underlay/store';
@@ -11,17 +11,58 @@ import { fitAll } from '../plan/PlanView';
 import { dist, fmt } from '../model/geom';
 import { autoSizeBeams, noFitNote } from '../model/autoBeam';
 import { ChecksSection } from './Checks';
-import { LoadsSection } from './LoadDialogs';
+import { LoadsSection, activePattern } from './LoadDialogs';
 import { LoadFilterSection } from './LoadFilterSection';
 
 export function RightPanel() {
   return (
     <div className="side right">
       <LoadFilterSection />
+      <ViewByFilter />
       <Properties />
       <LoadsSection />
       <ChecksSection />
       <UnderlayPanel />
+    </div>
+  );
+}
+
+/** The View by legend as a filter: untick a section / pattern set / load value to hide its elements (on every story). */
+function ViewByFilter() {
+  const colorBy = useApp((s) => s.colorBy);
+  const model = useApp((s) => s.model);
+  const pattern = useApp(activePattern);
+  const hidden = useApp((s) => s.hidden);
+  const groups = useMemo(() => colorGroups(model, colorBy, pattern), [model, colorBy, pattern]);
+  const off = useMemo(() => new Set(hidden), [hidden]);
+  if (colorBy === 'none') return null;
+  const st = useApp.getState();
+  const none = colorBy === 'section' ? '' : colorBy === 'pattern' ? 'No loads' : `No ${pattern} loads`;
+  return (
+    <div className="section view-by">
+      <h4>
+        View by {COLOR_BY.find(([k]) => k === colorBy)?.[1].toLowerCase()}{' '}
+        <button disabled={!hidden.length} onClick={st.showAll} title="Show every column, beam and slab">
+          All
+        </button>
+      </h4>
+      {!groups.length && <div className="muted small">No columns, beams or slabs yet.</div>}
+      {groups.map(({ key, ids }) => {
+        const shown = ids.some((id) => !off.has(id));
+        return (
+          <div key={key ?? ''} className="row small">
+            <label>
+              <input type="checkbox" checked={shown} onChange={() => (shown ? st.hideIds(ids) : st.unhideIds(ids))} />
+              <span className="swatch" style={{ background: key === null ? 'var(--muted)' : sectionColor(key) }} />
+              {key ?? none}
+            </label>
+            <span className="muted">{ids.length}</span>
+            <button title="Show only these" onClick={() => st.showOnlyIds(ids)}>
+              Only
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

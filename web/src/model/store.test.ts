@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { useApp, colorKey } from './store';
+import { useApp, colorKey, colorGroups } from './store';
 import { emptyModel, type FrameSection } from './types';
 
 const rect = (name: string, t2: number, t3: number): FrameSection => ({ name, shape: 'Rectangle', t2, t3, material: '4000Psi', fromEtabs: false });
@@ -73,5 +73,22 @@ describe('colorKey', () => {
     expect(colorKey(beam, 'value', 'Dead')).toBeNull();
     expect(colorKey({ section: 'C1' }, 'pattern', 'Live')).toBeNull();
     expect(colorKey(beam, 'none', 'Live')).toBeNull();
+  });
+});
+
+describe('colorGroups', () => {
+  it('groups elements by colour key, uncoloured last', () => {
+    const fl = { pattern: 'Live', kind: 'dist' as const, force: 'F' as const, dir: 'Gravity' as const, rel: true, d1: 0, d2: 1, v1: 3, v2: 3 };
+    const m = { ...emptyModel(), beams: [
+      { id: 'b1', story: 'S1', x1: 0, y1: 0, x2: 1, y2: 0, section: 'B', loads: [fl] },
+      { id: 'b2', story: 'S1', x1: 0, y1: 1, x2: 1, y2: 1, section: 'B' },
+      { id: 'b3', story: 'S2', x1: 0, y1: 0, x2: 1, y2: 0, section: 'B', loads: [fl] },
+    ] };
+    expect(colorGroups(m, 'pattern', 'Live')).toEqual([{ key: 'Live', ids: ['b1', 'b3'] }, { key: null, ids: ['b2'] }]);
+  });
+  it('unhideIds brings back only those ids', () => {
+    useApp.setState({ hidden: ['a', 'b', 'c'] });
+    useApp.getState().unhideIds(['a', 'c']);
+    expect(useApp.getState().hidden).toEqual(['b']);
   });
 });

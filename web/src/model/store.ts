@@ -90,6 +90,7 @@ interface AppState {
   hideIds: (ids: string[]) => void;
   /** hide every column, beam and slab not in `ids` */
   showOnlyIds: (ids: string[]) => void;
+  unhideIds: (ids: string[]) => void;
   showAll: () => void;
 
   selection: string[];
@@ -231,6 +232,11 @@ export const useApp = create<AppState>((set, get) => ({
       const keep = new Set(ids);
       return { hidden: elementIds(s.model).filter((id) => !keep.has(id)) };
     }),
+  unhideIds: (ids) =>
+    set((s) => {
+      const back = new Set(ids);
+      return { hidden: s.hidden.filter((id) => !back.has(id)) };
+    }),
   showAll: () => set({ hidden: [] }),
 
   selection: [],
@@ -337,6 +343,16 @@ export function colorKey(x: { section: string; loads?: (FrameLoad | ShellLoad)[]
   if (mode !== 'value') return null;
   const mine = ls.filter((l) => l.pattern === pattern);
   return mine.length ? mine.map((l) => ('kind' in l ? `${shortFrameLoad(l)} ${frameLoadUnit(l)}` : `${r3(l.value)} kN/m²`)).join(', ') : null;
+}
+
+/** Columns, beams and slabs grouped by their colour key (all stories), keys sorted, the uncoloured group (null) last. */
+export function colorGroups(m: Model, mode: ColorBy, pattern: string): { key: string | null; ids: string[] }[] {
+  const g = new Map<string | null, string[]>();
+  for (const x of [...m.columns, ...m.beams, ...m.slabs]) {
+    const k = colorKey(x, mode, pattern);
+    g.set(k, [...(g.get(k) ?? []), x.id]);
+  }
+  return [...g].map(([key, ids]) => ({ key, ids })).sort((a, b) => (a.key === null ? 1 : b.key === null ? -1 : a.key.localeCompare(b.key, undefined, { numeric: true })));
 }
 
 export function sectionColor(name: string) {
