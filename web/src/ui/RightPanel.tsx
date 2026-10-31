@@ -1,4 +1,4 @@
-import { toast, useApp, colorGroups, sectionColor, COLOR_BY } from '../model/store';
+import { toast, useApp, colorGroups, sectionColor, visibleModel, COLOR_BY } from '../model/store';
 import { cachedStoryNodes, deleteIds, joinBeams, joinColumns, mergeSlabs, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
 import { columnOn, levelTag, type Beam } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
@@ -38,6 +38,15 @@ function ViewByFilter() {
   if (colorBy === 'none') return null;
   const st = useApp.getState();
   const none = colorBy === 'section' ? '' : colorBy === 'pattern' ? 'No loads' : `No ${pattern} loads`;
+  // like a window pick: only what is shown on the active story; Shift adds to the selection
+  const select = (ids: string[], name: string, add: boolean) => {
+    const v = visibleModel(st);
+    const story = st.activeStory;
+    const on = new Set([...v.columns.filter((c) => columnOn(v, c, story)), ...v.beams.filter((b) => b.story === story), ...v.slabs.filter((x) => x.story === story)].map((x) => x.id));
+    const pick = ids.filter((id) => on.has(id));
+    if (!pick.length) return toast(`Nothing shown on ${story} is ${name}.`);
+    st.setSelection(add ? [...new Set([...useApp.getState().selection, ...pick])] : pick);
+  };
   return (
     <div className="section view-by">
       <h4>
@@ -57,6 +66,9 @@ function ViewByFilter() {
               <span className="vb-name">{key ?? none}</span>
             </label>
             <span className="vb-count">{ids.length}</span>
+            <button title="Select these on the active story (Shift: add to the selection)" onClick={(e) => select(ids, key ?? none, e.shiftKey)}>
+              Select
+            </button>
             <button title="Show only these" onClick={() => st.showOnlyIds(ids)}>
               Only
             </button>
