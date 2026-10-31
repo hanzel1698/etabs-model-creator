@@ -159,7 +159,7 @@ function beamText(b: Beam, s: string, color: string): Prim {
   if (ang > 90.01) ang -= 180;
   if (ang <= -89.99) ang += 180;
   const r = (ang * Math.PI) / 180;
-  return { t: 'text', p: { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 }, s, size: 2, color, rot: ang, bold: true, off: { x: -Math.sin(r) * 1.5, y: Math.cos(r) * 1.5 } };
+  return { t: 'text', p: { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 }, s, size: 2.8, color, rot: ang, bold: true, off: { x: -Math.sin(r) * 1.9, y: Math.cos(r) * 1.9 } };
 }
 const beamLine = (b: Beam, color: string, w: number): Prim => ({ t: 'line', a: { x: b.x1, y: b.y1 }, b: { x: b.x2, y: b.y2 }, color, w });
 
@@ -198,12 +198,16 @@ function boxOf(prims: Prim[]): Box {
 const beamLen = (b: Beam) => Math.hypot(b.x2 - b.x1, b.y2 - b.y1) / 1000;
 const lineLoadKey = (b: Beam, p: string) => (b.loads ?? []).filter((l) => l.pattern === p).map((l) => `${shortFrameLoad(l)} ${frameLoadUnit(l)}`).join(', ');
 const lineLoadText = (b: Beam, p: string) => (b.loads ?? []).filter((l) => l.pattern === p).map(shortFrameLoad).join(', ');
-/** A slab's shell loads, one "PATTERN value" line each, in load pattern order. */
+// shortcut: short names for this project's finishes/live patterns are fixed here; make them editable per pattern if other projects name them differently
+export const SHORT: Record<string, string> = { 'FIN+PAR+FIL': 'FIN', 'LIVE[<3]': 'LL', 'LIVE[>3]': 'LL', 'LIVE[ROOF]': 'LL(ROOF)' };
+const short = (p: string) => SHORT[p] ?? p;
+
+/** A slab's shell loads, one "PATTERN value" line each (short pattern names), in load pattern order. */
 function shellLines(m: Model, s: Slab): string[] {
   const order = m.loadPatterns.map((p) => p.name);
   return [...(s.loads ?? [])]
     .sort((a, b) => order.indexOf(a.pattern) - order.indexOf(b.pattern))
-    .map((l) => `${l.pattern} ${l.value.toFixed(2)}${l.dir === 'Gravity' ? '' : ` (${l.dir})`}`);
+    .map((l) => `${short(l.pattern)} ${l.value.toFixed(2)}${l.dir === 'Gravity' ? '' : ` (${l.dir})`}`);
 }
 
 // ---------- drawings ----------
@@ -227,7 +231,7 @@ export function buildDrawings(m: Model, u: UnderlayIn): Drawing[] {
     const prims: Prim[] = [
       ...slabs.flatMap((s): Prim[] => {
         const i = sk.indexOf(s.section) + 7;
-        return [{ t: 'poly', pts: s.pts, fill: light(i), op: 0.55 }, { t: 'text', p: labelPoint(s.pts), s: s.section, size: 2.4, color: strong(i), bold: true }];
+        return [{ t: 'poly', pts: s.pts, fill: light(i), op: 0.55 }, { t: 'text', p: labelPoint(s.pts), s: s.section, size: 3.4, color: strong(i), bold: true }];
       }),
       ...beams.map((b) => beamLine(b, strong(bk.indexOf(b.section)), 0.8)),
       ...beams.map((b) => beamText(b, b.section, strong(bk.indexOf(b.section)))),
@@ -262,7 +266,7 @@ export function buildDrawings(m: Model, u: UnderlayIn): Drawing[] {
       ...onStory(m, rep.stories[0]).beams.map((b) => beamLine(b, '#b5bac1', 0.25)),
       ...[...locs.values()].flatMap(({ c, secs }): Prim[] => [
         colPoly(m, c, strong(ck.indexOf(secs[0]))),
-        { t: 'text', p: { x: c.x, y: c.y }, s: secs.map(mark).join('/'), size: 2.1, color: strong(ck.indexOf(secs[0])), bold: true, off: { x: 4, y: 3 } },
+        { t: 'text', p: { x: c.x, y: c.y }, s: secs.map(mark).join('/'), size: 2.8, color: strong(ck.indexOf(secs[0])), bold: true, off: { x: 4.5, y: 3.5 } },
       ]),
     ];
     const count = (s: string) => [...locs.values()].filter((l) => l.secs.includes(s)).length;
@@ -303,7 +307,7 @@ export function buildDrawings(m: Model, u: UnderlayIn): Drawing[] {
     const prims: Prim[] = [
       ...slabs.flatMap((s): Prim[] => {
         if (!s.loads?.length) return [{ t: 'poly', pts: s.pts, fill: '#ffffff', op: 0, stroke: '#c4c8ce' }];
-        return [{ t: 'poly', pts: s.pts, fill: light(keys.indexOf(key(s))), op: 0.8 }, { t: 'text', p: labelPoint(s.pts), s: key(s), size: 2.1, color: INK, bold: true }];
+        return [{ t: 'poly', pts: s.pts, fill: light(keys.indexOf(key(s))), op: 0.8 }, { t: 'text', p: labelPoint(s.pts), s: key(s), size: 2.8, color: INK, bold: true }];
       }),
       ...beams.map((b) => beamLine(b, '#6b727b', 0.25)),
       ...cols.map((c) => colPoly(m, c, COL)),
@@ -311,7 +315,9 @@ export function buildDrawings(m: Model, u: UnderlayIn): Drawing[] {
     const area = (k: string) => loaded.filter((s) => key(s) === k).reduce((a, s) => a + Math.abs(polyArea(s.pts)), 0) / 1e6;
     const rows: LegendRow[] = keys.map((k, i) => ({ kind: 'fill', color: light(i), label: k.split('\n'), sub: `${fmt(+area(k).toFixed(1))} m²` }));
     if (loaded.length < slabs.length) rows.push({ kind: 'fill', color: '#ffffff', label: ['No shell load'] });
-    out.push(make(unit, 'SHELL LOADS PLAN', prims, [{ title: 'SHELL LOADS (kN/m²)', rows }]));
+    const used = keysOf(loaded.flatMap((s) => (s.loads ?? []).map((l) => l.pattern)).filter((p) => SHORT[p]));
+    const abbr: LegendGroup[] = used.length ? [{ title: 'ABBREVIATIONS', rows: [{ kind: 'line', color: '#ffffff', label: used.map((p) => `${SHORT[p]} = ${p}`) }] }] : [];
+    out.push(make(unit, 'SHELL LOADS PLAN', prims, [{ title: 'SHELL LOADS (kN/m²)', rows }, ...abbr]));
   }
   return out;
 }

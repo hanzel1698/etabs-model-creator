@@ -11,14 +11,14 @@ const noUnderlay = { dxf: null, regions: [], showText: true };
 
 /** Two bays, 3 stories: Story2 and Story3 identical, Story1 different (no loads). */
 function model(): Model {
-  let m: Model = { ...emptyModel(), loadPatterns: [{ name: 'WALL LOAD', type: 'Dead', selfWeight: 0 }, { name: 'SHADE+CAN', type: 'Dead', selfWeight: 0 }, { name: 'FIN', type: 'Dead', selfWeight: 0 }, { name: 'LIVE', type: 'Live', selfWeight: 0 }] };
+  let m: Model = { ...emptyModel(), loadPatterns: [{ name: 'WALL LOAD', type: 'Dead', selfWeight: 0 }, { name: 'SHADE+CAN', type: 'Dead', selfWeight: 0 }, { name: 'FIN+PAR+FIL', type: 'Dead', selfWeight: 0 }, { name: 'LIVE[<3]', type: 'Live', selfWeight: 0 }] };
   m = { ...m, grids: generateGrids({ xSpacing: [6000, 6000], ySpacing: [5000], x0: 0, y0: 0, xLabelStart: 'A', yLabelStart: '1', extend: 1000 }) };
   const segs: [any, any][] = [[{ x: 0, y: 0 }, { x: 6000, y: 0 }], [{ x: 6000, y: 0 }, { x: 12000, y: 0 }], [{ x: 0, y: 5000 }, { x: 12000, y: 5000 }]];
   m = addBeams(m, segs, ['Story1', 'Story2', 'Story3'], 'B300x500');
   m = addColumns(m, [{ x: 0, y: 0 }, { x: 12000, y: 0 }], ['Story1', 'Story2', 'Story3'], 'C400x400', 0);
   m = { ...m, beams: m.beams.map((b) => (b.story !== 'Story1' && b.y1 === 0 ? { ...b, loads: [udl('WALL LOAD', b.x1 === 0 ? 6.9 : 3.5), ...(b.x1 === 0 ? [udl('SHADE+CAN', 1.5)] : [])] } : b)) };
   const slab = (story: string, x: number, loads?: ShellLoad[]) => ({ id: `${story}${x}`, story, pts: bay(x, 6000), section: 'S150', loads });
-  for (const st of ['Story2', 'Story3']) m.slabs.push(slab(st, 0, [sl('LIVE', 2), sl('FIN', 1.5)]), slab(st, 6000, [sl('FIN', 1.5), sl('LIVE', 2)]));
+  for (const st of ['Story2', 'Story3']) m.slabs.push(slab(st, 0, [sl('LIVE[<3]', 2), sl('FIN+PAR+FIL', 1.5)]), slab(st, 6000, [sl('FIN+PAR+FIL', 1.5), sl('LIVE[<3]', 2)]));
   m.slabs.push(slab('Story1', 0));
   return m;
 }
@@ -43,7 +43,8 @@ describe('plan sheets', () => {
     // same loads in a different order are one group, printed in pattern order
     const shell = ds[5].legend[0].rows;
     expect(shell).toHaveLength(1);
-    expect(shell[0].label).toEqual(['FIN 1.50', 'LIVE 2.00']);
+    expect(ds[5].legend[1].rows[0].label).toEqual(['FIN = FIN+PAR+FIL', 'LL = LIVE[<3]']);
+    expect(shell[0].label).toEqual(['FIN 1.50', 'LL 2.00']);
     expect(shell[0].sub).toBe('60 m²');
   });
 
