@@ -119,6 +119,9 @@ interface AppState {
   /** what elements are coloured by in the plan and elevation */
   colorBy: ColorBy;
   setColorBy: (c: ColorBy) => void;
+  /** patterns View by load values shows; empty = the active pattern */
+  viewPatterns: string[];
+  setViewPatterns: (p: string[]) => void;
   invertPdf: boolean;
   toggleInvertPdf: () => void;
 
@@ -271,6 +274,8 @@ export const useApp = create<AppState>((set, get) => ({
   setTextScale: (v) => set({ textScale: v }),
   colorBy: 'none',
   setColorBy: (colorBy) => set({ colorBy }),
+  viewPatterns: [],
+  setViewPatterns: (viewPatterns) => set({ viewPatterns }),
   invertPdf: true,
   toggleInvertPdf: () => set((s) => ({ invertPdf: !s.invertPdf })),
 
@@ -331,25 +336,27 @@ export const COLOR_BY: [ColorBy, string][] = [
   ['none', 'None'],
   ['section', 'Section'],
   ['pattern', 'Assigned load patterns'],
-  ['value', 'Load values (active pattern)'],
+  ['value', 'Load values'],
 ];
 
 const r3 = (v: number) => String(Math.round(v * 1000) / 1000);
-/** What an element is coloured by under `mode` (its section, its patterns, or its loads in `pattern`), or null for the plain colour. */
-export function colorKey(x: { section: string; loads?: (FrameLoad | ShellLoad)[] }, mode: ColorBy, pattern: string): string | null {
+/** What an element is coloured by under `mode` (its section, its patterns, or its loads in `patterns`), or null for the plain colour. */
+export function colorKey(x: { section: string; loads?: (FrameLoad | ShellLoad)[] }, mode: ColorBy, patterns: string[]): string | null {
   if (mode === 'section') return x.section;
   const ls = x.loads ?? [];
   if (mode === 'pattern') return ls.length ? [...new Set(ls.map((l) => l.pattern))].sort().join(' + ') : null;
   if (mode !== 'value') return null;
-  const mine = ls.filter((l) => l.pattern === pattern);
-  return mine.length ? mine.map((l) => ('kind' in l ? `${shortFrameLoad(l)} ${frameLoadUnit(l)}` : `${r3(l.value)} kN/m²`)).join(', ') : null;
+  const mine = ls.filter((l) => patterns.includes(l.pattern));
+  // with several patterns each value is named by its pattern
+  const tag = (p: string) => (patterns.length > 1 ? `${p} ` : '');
+  return mine.length ? mine.map((l) => tag(l.pattern) + ('kind' in l ? `${shortFrameLoad(l)} ${frameLoadUnit(l)}` : `${r3(l.value)} kN/m²`)).join(', ') : null;
 }
 
 /** Columns, beams and slabs grouped by their colour key (all stories), keys sorted, the uncoloured group (null) last. */
-export function colorGroups(m: Model, mode: ColorBy, pattern: string): { key: string | null; ids: string[] }[] {
+export function colorGroups(m: Model, mode: ColorBy, patterns: string[]): { key: string | null; ids: string[] }[] {
   const g = new Map<string | null, string[]>();
   for (const x of [...m.columns, ...m.beams, ...m.slabs]) {
-    const k = colorKey(x, mode, pattern);
+    const k = colorKey(x, mode, patterns);
     g.set(k, [...(g.get(k) ?? []), x.id]);
   }
   return [...g].map(([key, ids]) => ({ key, ids })).sort((a, b) => (a.key === null ? 1 : b.key === null ? -1 : a.key.localeCompare(b.key, undefined, { numeric: true })));

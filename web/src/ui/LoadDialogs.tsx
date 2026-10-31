@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { closeDialog, openDialog, useFramePick, type LoadEdit } from './dialogState';
 import { endFramePick, picking, startFramePick } from '../plan/tools';
 import { Modal, StoryChecks } from './Dialogs';
@@ -32,6 +32,17 @@ import { recentValues, rememberValues } from './recentValues';
 /** The active load pattern, or the first one if it was renamed or deleted. */
 export function activePattern(s: { loadPattern: string; model: Model }): string {
   return s.model.loadPatterns.some((p) => p.name === s.loadPattern) ? s.loadPattern : s.model.loadPatterns[0]?.name ?? '';
+}
+
+/** Patterns View by load values shows: the ones picked that still exist, else the active pattern. */
+export function useViewPatterns(): string[] {
+  const active = useApp(activePattern);
+  const picked = useApp((s) => s.viewPatterns);
+  const pats = useApp((s) => s.model.loadPatterns);
+  return useMemo(() => {
+    const p = picked.filter((n) => pats.some((x) => x.name === n));
+    return p.length ? p : [active];
+  }, [active, picked, pats]);
 }
 
 const PATTERN_LABEL: Record<string, string> = { SuperDead: 'Superimposed dead', ReduceLive: 'Reducible live', Rooflive: 'Roof live', Quake: 'Seismic' };

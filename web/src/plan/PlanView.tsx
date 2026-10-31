@@ -5,7 +5,7 @@ import { fmt } from '../model/geom';
 import { columnOn, type Beam, type Pt } from '../model/types';
 import { viewport } from './viewport';
 import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
-import { activePattern } from '../ui/LoadDialogs';
+import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
 import { onMove, onClick, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, type Grip } from './tools';
 import { columnOutline } from './snap';
 import { useUnderlay, regionFor } from '../underlay/store';
@@ -78,6 +78,7 @@ export function PlanView() {
   const selection = useApp((s) => s.selection);
   const show = useApp((s) => s.show);
   const pattern = useApp(activePattern);
+  const viewPats = useViewPatterns();
   const viewRot = useApp((s) => s.viewRotation);
   const tool = useApp((s) => s.tool);
   const ts = useApp((s) => s.textScale);
@@ -275,13 +276,13 @@ export function PlanView() {
         <g ref={worldRef}>
           {show.underlay && <UnderlayLayer story={story} viewRot={viewRot} />}
           <g transform={setupRef ? `translate(${setupRef.x} ${setupRef.y})` : undefined}>
-            {show.slabs && <SlabLayer slabs={slabs} sel={sel} colorBy={colorBy} pattern={pattern} />}
+            {show.slabs && <SlabLayer slabs={slabs} sel={sel} colorBy={colorBy} patterns={viewPats} />}
             <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} bubble={bubble} />
             {show.gridDims && <GridDimLayer grids={model.grids} viewRot={viewRot} bubble={bubble} />}
             {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy="none" />}
             {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy="none" />}
-            <BeamLayer beams={beams} sel={sel} colorBy={colorBy} pattern={pattern} />
-            <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} pattern={pattern} />
+            <BeamLayer beams={beams} sel={sel} colorBy={colorBy} patterns={viewPats} />
+            <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} />
             {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} showSlabs={show.slabs} />}
             {show.loads && <LoadLayer m={model} story={story} pattern={pattern} viewRot={viewRot} ts={ts} />}
           </g>
@@ -292,7 +293,7 @@ export function PlanView() {
         <Overlay />
       </svg>
       <Compass rot={viewRot} />
-      <ColorLegend items={legendItems} colorBy={colorBy} pattern={pattern} />
+      <ColorLegend items={legendItems} colorBy={colorBy} patterns={viewPats} />
       {show.underlay && hasRegion && <div className="story-banner nosel">{story}</div>}
       <button className="zoom-ext" title="Zoom extents: the whole story region" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={fitStory}>
         <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6}>

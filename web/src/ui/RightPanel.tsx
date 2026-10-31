@@ -11,7 +11,7 @@ import { fitAll } from '../plan/PlanView';
 import { dist, fmt } from '../model/geom';
 import { autoSizeBeams, noFitNote } from '../model/autoBeam';
 import { ChecksSection } from './Checks';
-import { LoadsSection, activePattern } from './LoadDialogs';
+import { LoadsSection, useViewPatterns } from './LoadDialogs';
 import { LoadFilterSection } from './LoadFilterSection';
 
 export function RightPanel() {
@@ -31,7 +31,8 @@ export function RightPanel() {
 function ViewByFilter() {
   const colorBy = useApp((s) => s.colorBy);
   const model = useApp((s) => s.model);
-  const pattern = useApp(activePattern);
+  const patterns = useViewPatterns();
+  const allPatterns = useApp((s) => s.model.loadPatterns);
   const hidden = useApp((s) => s.hidden);
   // the plan shows one story, so its list (and Only) covers just that story; split, 3D and elevation cover all
   const story = useApp((s) => (s.panel === 'plan' ? s.activeStory : null));
@@ -39,11 +40,13 @@ function ViewByFilter() {
     () => (story === null ? model : { ...model, columns: model.columns.filter((c) => columnOn(model, c, story)), beams: model.beams.filter((b) => b.story === story), slabs: model.slabs.filter((x) => x.story === story) }),
     [model, story],
   );
-  const groups = useMemo(() => colorGroups(scoped, colorBy, pattern), [scoped, colorBy, pattern]);
+  const groups = useMemo(() => colorGroups(scoped, colorBy, patterns), [scoped, colorBy, patterns]);
   const off = useMemo(() => new Set(hidden), [hidden]);
   if (colorBy === 'none') return null;
   const st = useApp.getState();
-  const none = colorBy === 'section' ? '' : colorBy === 'pattern' ? 'No loads' : `No ${pattern} loads`;
+  const none = colorBy === 'section' ? '' : colorBy === 'pattern' ? 'No loads' : `No ${patterns.join(', ')} loads`;
+  // none left ticked goes back to the active pattern
+  const togglePattern = (p: string) => st.setViewPatterns(patterns.includes(p) ? patterns.filter((x) => x !== p) : [...patterns, p]);
   // like a window pick: only what is shown on the active story; Shift adds to the selection
   const select = (ids: string[], name: string, add: boolean) => {
     const v = visibleModel(st);
@@ -70,6 +73,15 @@ function ViewByFilter() {
           All
         </button>
       </h4>
+      {colorBy === 'value' && (
+        <div className="chips" style={{ marginBottom: 6 }} title="Load patterns whose values are shown (none ticked: the active pattern)">
+          {allPatterns.map((p) => (
+            <button key={p.name} className={patterns.includes(p.name) ? 'on' : ''} onClick={() => togglePattern(p.name)}>
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
       {!groups.length && <div className="muted small">No columns, beams or slabs{story === null ? ' yet' : ` on ${story}`}.</div>}
       {groups.map(({ key, ids }) => {
         const shown = ids.some((id) => !off.has(id));

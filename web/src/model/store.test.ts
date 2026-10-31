@@ -66,13 +66,14 @@ describe('colorKey', () => {
   const fl = (pattern: string, v: number) => ({ pattern, kind: 'dist' as const, force: 'F' as const, dir: 'Gravity' as const, rel: true, d1: 0, d2: 1, v1: v, v2: v });
   const beam = { section: 'B300x600', loads: [fl('SDL', 5), fl('Live', 3)] };
   it('keys by section, pattern set or active-pattern value', () => {
-    expect(colorKey(beam, 'section', 'Live')).toBe('B300x600');
-    expect(colorKey(beam, 'pattern', 'Live')).toBe('Live + SDL');
-    expect(colorKey(beam, 'value', 'Live')).toBe('3 kN/m');
-    expect(colorKey({ section: 'S150', loads: [{ pattern: 'Live', dir: 'Gravity', value: 2.5 }] }, 'value', 'Live')).toBe('2.5 kN/m²');
-    expect(colorKey(beam, 'value', 'Dead')).toBeNull();
-    expect(colorKey({ section: 'C1' }, 'pattern', 'Live')).toBeNull();
-    expect(colorKey(beam, 'none', 'Live')).toBeNull();
+    expect(colorKey(beam, 'section', ['Live'])).toBe('B300x600');
+    expect(colorKey(beam, 'pattern', ['Live'])).toBe('Live + SDL');
+    expect(colorKey(beam, 'value', ['Live'])).toBe('3 kN/m');
+    expect(colorKey({ section: 'S150', loads: [{ pattern: 'Live', dir: 'Gravity', value: 2.5 }] }, 'value', ['Live'])).toBe('2.5 kN/m²');
+    expect(colorKey(beam, 'value', ['Dead'])).toBeNull();
+    expect(colorKey({ section: 'C1' }, 'pattern', ['Live'])).toBeNull();
+    expect(colorKey(beam, 'none', ['Live'])).toBeNull();
+    expect(colorKey(beam, 'value', ['Live', 'SDL'])).toBe('SDL 5 kN/m, Live 3 kN/m');
   });
 });
 
@@ -84,7 +85,7 @@ describe('colorGroups', () => {
       { id: 'b2', story: 'S1', x1: 0, y1: 1, x2: 1, y2: 1, section: 'B' },
       { id: 'b3', story: 'S2', x1: 0, y1: 0, x2: 1, y2: 0, section: 'B', loads: [fl] },
     ] };
-    expect(colorGroups(m, 'pattern', 'Live')).toEqual([{ key: 'Live', ids: ['b1', 'b3'] }, { key: null, ids: ['b2'] }]);
+    expect(colorGroups(m, 'pattern', ['Live'])).toEqual([{ key: 'Live', ids: ['b1', 'b3'] }, { key: null, ids: ['b2'] }]);
   });
   it('unhideIds brings back only those ids', () => {
     useApp.setState({ hidden: ['a', 'b', 'c'] });

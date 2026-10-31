@@ -122,8 +122,8 @@ export const GridLayer = memo(function GridLayer({ grids, sel, viewRot, showLabe
 const keyColor = (k: string | null, def: string) => (k === null ? def : sectionColor(k));
 
 /** Key of the colours in use: one swatch per section / pattern set / load value among `items`. */
-export function ColorLegend({ items, colorBy, pattern }: { items: Parameters<typeof colorKey>[0][]; colorBy: ColorBy; pattern: string }) {
-  const keys = useMemo(() => [...new Set(items.map((x) => colorKey(x, colorBy, pattern)).filter((k): k is string => k !== null))].sort(), [items, colorBy, pattern]);
+export function ColorLegend({ items, colorBy, patterns }: { items: Parameters<typeof colorKey>[0][]; colorBy: ColorBy; patterns: string[] }) {
+  const keys = useMemo(() => [...new Set(items.map((x) => colorKey(x, colorBy, patterns)).filter((k): k is string => k !== null))].sort(), [items, colorBy, patterns]);
   if (colorBy === 'none') return null;
   return (
     <div className="color-legend nosel" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
@@ -132,17 +132,17 @@ export function ColorLegend({ items, colorBy, pattern }: { items: Parameters<typ
           <span className="swatch" style={{ background: sectionColor(k) }} />
           {k}
         </div>
-      )) : <div className="muted">{colorBy === 'section' ? 'Nothing shown' : colorBy === 'pattern' ? 'No loads assigned' : `No ${pattern} loads`}</div>}
+      )) : <div className="muted">{colorBy === 'section' ? 'Nothing shown' : colorBy === 'pattern' ? 'No loads assigned' : `No ${patterns.join(', ')} loads`}</div>}
     </div>
   );
 }
 
-export const SlabLayer = memo(function SlabLayer({ slabs, sel, ghost, colorBy, pattern = '' }: { slabs: Slab[]; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; pattern?: string }) {
+export const SlabLayer = memo(function SlabLayer({ slabs, sel, ghost, colorBy, patterns = [] }: { slabs: Slab[]; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[] }) {
   return (
     <g className="slabs" opacity={ghost ? 0.25 : 1}>
       {slabs.map((s) => {
         const picked = sel.has(s.id);
-        const k = picked ? null : colorKey(s, colorBy, pattern);
+        const k = picked ? null : colorKey(s, colorBy, patterns);
         const c = k === null ? null : sectionColor(k);
         return (
           <polygon
@@ -161,7 +161,7 @@ export const SlabLayer = memo(function SlabLayer({ slabs, sel, ghost, colorBy, p
   );
 });
 
-export const BeamLayer = memo(function BeamLayer({ beams, sel, ghost, colorBy, pattern = '' }: { beams: Beam[]; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; pattern?: string }) {
+export const BeamLayer = memo(function BeamLayer({ beams, sel, ghost, colorBy, patterns = [] }: { beams: Beam[]; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[] }) {
   return (
     <g className="beams" opacity={ghost ? 0.3 : 1}>
       {beams.map((b) => (
@@ -171,7 +171,7 @@ export const BeamLayer = memo(function BeamLayer({ beams, sel, ghost, colorBy, p
           y1={b.y1}
           x2={b.x2}
           y2={b.y2}
-          stroke={sel.has(b.id) ? 'var(--sel)' : ghost ? 'var(--ghost)' : keyColor(colorKey(b, colorBy, pattern), 'var(--beam)')}
+          stroke={sel.has(b.id) ? 'var(--sel)' : ghost ? 'var(--ghost)' : keyColor(colorKey(b, colorBy, patterns), 'var(--beam)')}
           strokeWidth={sel.has(b.id) ? 3.5 : 2.2}
           strokeLinecap="round"
           style={NS}
@@ -181,13 +181,13 @@ export const BeamLayer = memo(function BeamLayer({ beams, sel, ghost, colorBy, p
   );
 });
 
-export const ColumnLayer = memo(function ColumnLayer({ cols, secs, sel, ghost, colorBy, pattern = '' }: { cols: Column[]; secs: Map<string, FrameSection>; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; pattern?: string }) {
+export const ColumnLayer = memo(function ColumnLayer({ cols, secs, sel, ghost, colorBy, patterns = [] }: { cols: Column[]; secs: Map<string, FrameSection>; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[] }) {
   return (
     <g className="columns" opacity={ghost ? 0.3 : 1}>
       {cols.map((c) => {
         const sec = secs.get(c.section);
         const s = sel.has(c.id);
-        const fill = s ? 'var(--sel)' : ghost ? 'var(--ghost)' : keyColor(colorKey(c, colorBy, pattern), 'var(--col)');
+        const fill = s ? 'var(--sel)' : ghost ? 'var(--ghost)' : keyColor(colorKey(c, colorBy, patterns), 'var(--col)');
         if (sec?.shape === 'Circle') return <circle key={c.id} cx={c.x} cy={c.y} r={sec.t3 / 2} fill={fill} fillOpacity={0.85} stroke="var(--colEdge)" style={NS} />;
         const ol = columnOutline(c, sec);
         return <polygon key={c.id} points={ol.map((p) => `${p.x},${p.y}`).join(' ')} fill={fill} fillOpacity={0.85} stroke="var(--colEdge)" strokeWidth={1} style={NS} />;

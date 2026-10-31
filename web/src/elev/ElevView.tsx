@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp, sectionColor, colorKey, visibleModel } from '../model/store';
-import { activePattern } from '../ui/LoadDialogs';
+import { useViewPatterns } from '../ui/LoadDialogs';
 import { ColorLegend } from '../plan/layers';
 import { fmt } from '../model/geom';
 import { elevationAt } from './elevation';
@@ -14,7 +14,7 @@ export function ElevView() {
   const gridId = useApp((s) => s.elevGrid);
   const selection = useApp((s) => s.selection);
   const colorBy = useApp((s) => s.colorBy);
-  const pattern = useApp(activePattern);
+  const patterns = useViewPatterns();
   const [tol, setTol] = useState(300);
   const [names, setNames] = useState(true);
   const host = useRef<HTMLDivElement>(null);
@@ -64,7 +64,7 @@ export function ElevView() {
   const shown = useMemo(() => (e ? [...e.columns, ...e.beams, ...e.cuts].flatMap((x) => byId.get(x.id) ?? []) : []), [e, byId]);
   const fill = (id: string, def: string) => {
     if (sel.has(id)) return 'var(--sel)';
-    const k = colorKey(byId.get(id) ?? { section: '' }, colorBy, pattern);
+    const k = colorKey(byId.get(id) ?? { section: '' }, colorBy, patterns);
     return k === null ? def : sectionColor(k);
   };
 
@@ -203,7 +203,7 @@ export function ElevView() {
           )}
         </svg>
       )}
-      <ColorLegend items={shown} colorBy={colorBy} pattern={pattern} />
+      <ColorLegend items={shown} colorBy={colorBy} patterns={patterns} />
     </div>
   );
 }
