@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { closeDialog, openDialog, useFramePick } from './dialogState';
+import { closeDialog, openDialog, useFramePick, type LoadEdit } from './dialogState';
 import { endFramePick, picking, startFramePick } from '../plan/tools';
 import { Modal, StoryChecks } from './Dialogs';
 import { toast, useApp } from '../model/store';
@@ -37,9 +37,9 @@ export function activePattern(s: { loadPattern: string; model: Model }): string 
 const PATTERN_LABEL: Record<string, string> = { SuperDead: 'Superimposed dead', ReduceLive: 'Reducible live', Rooflive: 'Roof live', Quake: 'Seismic' };
 
 /** What the selection can take loads on: frames (beams, columns), slabs, and joints (selected nodes and column tops). */
-export function loadTargets() {
+export function loadTargets(edit?: LoadEdit) {
   const s = useApp.getState();
-  const sel = new Set(s.selection);
+  const sel = new Set(edit?.ids ?? s.selection);
   const frames = [...s.model.columns, ...s.model.beams].filter((x) => sel.has(x.id));
   const slabs = s.model.slabs.filter((x) => sel.has(x.id));
   const nodes = cachedStoryNodes(s.model, s.activeStory).filter((n) => sel.has(n.id));
@@ -266,26 +266,33 @@ function WallCalculator({ story, onUse }: { story: string; onUse: (v: number) =>
   );
 }
 
-export function FrameLoadDialog() {
+export function FrameLoadDialog({ edit }: { edit?: LoadEdit }) {
   const pat0 = useApp((s) => activePattern(s));
-  const { frames } = loadTargets();
-  const [pattern, setPattern] = useState(pat0);
-  const [kind, setKind] = useState<'uniform' | 'trap' | 'point'>('uniform');
-  const [force, setForce] = useState<'F' | 'M'>('F');
-  const [dir, setDir] = useState<LoadDir>('Gravity');
-  const [value, setValue] = useState(10);
-  const [rel, setRel] = useState(true);
+  const { frames } = loadTargets(edit);
+  // when editing, the dialog starts from that load (one segment of a trapezoid is edited on its own)
+  const [o] = useState(() => (edit ? frames.flatMap((f) => f.loads ?? []).find((l) => frameLoadKey(l) === edit.key) : undefined));
+  const od = (d: number) => (o?.rel ? d : d / 1000);
+  const [pattern, setPattern] = useState(o?.pattern ?? pat0);
+  const [kind, setKind] = useState<'uniform' | 'trap' | 'point'>(!o ? 'uniform' : o.kind === 'point' ? 'point' : o.v1 === o.v2 ? 'uniform' : 'trap');
+  const [force, setForce] = useState<'F' | 'M'>(o?.force ?? 'F');
+  const [dir, setDir] = useState<LoadDir>(o?.dir ?? 'Gravity');
+  const [value, setValue] = useState(o?.v1 ?? 10);
+  const [rel, setRel] = useState(o?.rel ?? true);
   // trapezoidal: up to 4 stations (distance, value), each pair of neighbours is one segment
-  const [trap, setTrap] = useState<{ d: number; v: number }[]>([
-    { d: 0, v: 0 },
-    { d: 0.5, v: 10 },
-    { d: 1, v: 0 },
-  ]);
-  const [pt, setPt] = useState({ d: 0.5, v: 20 });
+  const [trap, setTrap] = useState<{ d: number; v: number }[]>(
+    o?.kind === 'dist' && o.v1 !== o.v2
+      ? [{ d: od(o.d1), v: o.v1 }, { d: od(o.d2), v: o.v2 }]
+      : [
+          { d: 0, v: 0 },
+          { d: 0.5, v: 10 },
+          { d: 1, v: 0 },
+        ],
+  );
+  const [pt, setPt] = useState(o?.kind === 'point' ? { d: od(o.d1), v: o.v1 } : { d: 0.5, v: 20 });
   // uniform over part of the length (e.g. a wall that stops short of the beam ends): from a to b
-  const [part, setPart] = useState(false);
-  const [span, setSpan] = useState({ a: 0.25, b: 0.75 });
-  const [mode, setMode] = useState<AssignMode>('add');
+  const [part, setPart] = useState(!!o && o.kind === 'dist' && o.v1 === o.v2 && !(o.rel && o.d1 === 0 && o.d2 === 1));
+  const [span, setSpan] = useState(o?.kind === 'dist' ? { a: od(o.d1), b: od(o.d2) } : { a: 0.25, b: 0.75 });
+  const [mode, setMode] = useState<AssignMode>('replace');
   const [calc, setCalc] = useState(false);
   const activeStory = useApp((s) => s.activeStory);
   const unit = frameLoadUnit({ kind: kind === 'point' ? 'point' : 'dist', force });
@@ -343,12 +350,17 @@ export function FrameLoadDialog() {
     // a trapezoid is several segments: the first one applies the mode, the rest are added to it
     const del = { pattern } as FrameLoad;
     if (mode !== 'delete') rememberValues(recentKey, kind === 'uniform' ? [value] : kind === 'point' ? [pt.v] : trap.map((r) => r.v));
+    if (edit) {
+      useApp.getState().commit((m) => ls.reduce((acc, l) => assignFrameLoad(acc, ids, l, 'add'), removeLoad(m, ids, edit.key)));
+      toast(`Edited the load on ${plural(frames.length, 'frame')}.`);
+      return closeDialog();
+    }
     useApp.getState().commit((m) => (mode === 'delete' ? assignFrameLoad(m, ids, del, 'delete') : ls.reduce((acc, l, i) => assignFrameLoad(acc, ids, l, i === 0 ? mode : 'add'), m)));
     toast(`${mode === 'delete' ? 'Deleted' : 'Assigned'} ${pattern} frame load${mode === 'delete' ? 's' : ''} on ${plural(frames.length, 'frame')}.`);
     closeDialog();
   };
   return (
-    <Modal hidden={hidden} title={`Frame load · ${plural(frames.length, 'frame')}`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={apply}>Apply</button></>}>
+    <Modal hidden={hidden} title={`${edit ? 'Edit frame load' : 'Frame load'} · ${plural(frames.length, 'frame')}`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={apply}>Apply</button></>}>
       <PatternSelect value={pattern} onChange={setPattern} />
       {mode !== 'delete' && (
         <>
@@ -439,7 +451,7 @@ export function FrameLoadDialog() {
           <div className="small muted">Gravity: a positive value acts downward. Local 2 is the frame's strong-axis direction.</div>
         </>
       )}
-      <ModeChoice value={mode} onChange={setMode} />
+      {!edit && <ModeChoice value={mode} onChange={setMode} />}
     </Modal>
   );
 }
@@ -448,12 +460,13 @@ export function FrameLoadDialog() {
 
 const SHELL_DIRS: LoadDir[] = ['Gravity', 'Z', '3', 'PGravity', 'X', 'Y'];
 
-export function ShellLoadDialog() {
+export function ShellLoadDialog({ edit }: { edit?: LoadEdit }) {
   const pat0 = useApp((s) => activePattern(s));
-  const { slabs } = loadTargets();
-  const [pattern, setPattern] = useState(pat0);
-  const [value, setValue] = useState(1.5);
-  const [dir, setDir] = useState<LoadDir>('Gravity');
+  const { slabs } = loadTargets(edit);
+  const [o] = useState(() => (edit ? slabs.flatMap((x) => x.loads ?? []).find((l) => shellLoadKey(l) === edit.key) : undefined));
+  const [pattern, setPattern] = useState(o?.pattern ?? pat0);
+  const [value, setValue] = useState(o?.value ?? 1.5);
+  const [dir, setDir] = useState<LoadDir>(o?.dir ?? 'Gravity');
   const [mode, setMode] = useState<AssignMode>('replace');
   const [recent] = useState(() => recentValues<number>('shell'));
   const [used] = useState(() => usedLoadValues(useApp.getState().model).shell);
@@ -462,12 +475,17 @@ export function ShellLoadDialog() {
     if (!pattern) return toast('Define a load pattern first.');
     const ids = slabs.map((s) => s.id);
     if (mode !== 'delete') rememberValues('shell', [value]);
+    if (edit) {
+      useApp.getState().commit((m) => assignShellLoad(removeLoad(m, ids, edit.key), ids, { pattern, dir, value }, 'add'));
+      toast(`Edited the load on ${plural(slabs.length, 'slab')}.`);
+      return closeDialog();
+    }
     useApp.getState().commit((m) => assignShellLoad(m, ids, { pattern, dir, value }, mode));
     toast(`${mode === 'delete' ? 'Deleted' : 'Assigned'} ${pattern} shell load${mode === 'delete' ? 's' : ''} on ${plural(slabs.length, 'slab')}.`);
     closeDialog();
   };
   return (
-    <Modal title={`Shell load · ${plural(slabs.length, 'slab')}`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={apply}>Apply</button></>}>
+    <Modal title={`${edit ? 'Edit shell load' : 'Shell load'} · ${plural(slabs.length, 'slab')}`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={apply}>Apply</button></>}>
       <PatternSelect value={pattern} onChange={setPattern} />
       {mode !== 'delete' && (
         <>
@@ -476,25 +494,32 @@ export function ShellLoadDialog() {
           <div className="small muted">Uniform over the slab. ETABS passes it on to the beams according to the slab section's modelling (a membrane slab spreads it to its supporting beams).</div>
         </>
       )}
-      <ModeChoice value={mode} onChange={setMode} />
+      {!edit && <ModeChoice value={mode} onChange={setMode} />}
     </Modal>
   );
 }
 
 // ---------- joint ----------
 
-export function JointLoadDialog() {
+export function JointLoadDialog({ edit }: { edit?: LoadEdit }) {
   const pat0 = useApp((s) => activePattern(s));
   const story = useApp((s) => s.activeStory);
   const { nodes } = loadTargets();
-  const [pattern, setPattern] = useState(pat0);
-  const [f, setF] = useState<Vec6>([0, 0, -50, 0, 0, 0]);
+  const [o] = useState(() => (edit ? useApp.getState().model.jointLoads.find((j) => j.id === edit.key) : undefined));
+  const [pattern, setPattern] = useState(o?.pattern ?? pat0);
+  const [f, setF] = useState<Vec6>(o ? [...o.f] : [0, 0, -50, 0, 0, 0]);
   const [stories, setStories] = useState<string[]>([story]);
-  const [mode, setMode] = useState<AssignMode>('add');
+  const [mode, setMode] = useState<AssignMode>('replace');
   const labels = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'];
   const [recent] = useState(() => recentValues<Vec6>('joint'));
   const [used] = useState(() => usedLoadValues(useApp.getState().model).joint);
   const apply = () => {
+    if (o) {
+      // a changed pattern that the joint already carries sums into it, as adding does
+      useApp.getState().commit((m) => assignJointLoad(removeLoad(m, [o.id], ''), [o.story], [o], { pattern, f }, 'add', o.dz ?? 0));
+      toast('Edited the joint load.');
+      return closeDialog();
+    }
     if (!nodes.length) return toast('Select nodes first (Alt+drag a window, or turn on Nodes and click them).');
     if (!pattern || !stories.length) return toast('Pick a pattern and at least one story.');
     if (mode !== 'delete') rememberValues('joint', [f], (v) => v.every((x) => !x));
@@ -503,7 +528,7 @@ export function JointLoadDialog() {
     closeDialog();
   };
   return (
-    <Modal title={`Joint load · ${plural(nodes.length, 'node')}`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={apply}>Apply</button></>}>
+    <Modal title={o ? `Edit joint load · ${o.story}` : `Joint load · ${plural(nodes.length, 'node')}`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={apply}>Apply</button></>}>
       <PatternSelect value={pattern} onChange={setPattern} />
       {mode !== 'delete' && (
         <>
@@ -515,9 +540,13 @@ export function JointLoadDialog() {
           <div className="small muted">Global axes. Fz below 0 acts downward. Added on top, a load sums with the joint's load in the same pattern.</div>
         </>
       )}
-      <div className="small" style={{ marginTop: 6 }}>On stories</div>
-      <StoryChecks value={stories} onChange={setStories} />
-      <ModeChoice value={mode} onChange={setMode} />
+      {!o && (
+        <>
+          <div className="small" style={{ marginTop: 6 }}>On stories</div>
+          <StoryChecks value={stories} onChange={setStories} />
+          <ModeChoice value={mode} onChange={setMode} />
+        </>
+      )}
     </Modal>
   );
 }
@@ -560,7 +589,10 @@ export function LoadsSection() {
             <b>{r.pattern}</b> {r.text}
             {r.ids.length < of(key) && <span className="muted"> · {r.ids.length} of {of(key)}</span>}
           </span>
-          <button className="danger" title="Remove this load from the selection" onClick={() => useApp.getState().commit((m) => removeLoad(m, r.ids, key.slice(1)))}>✕</button>
+          <span style={{ display: 'flex', gap: 4, flex: 'none' }}>
+            <button title="Edit this load on the elements that carry it" onClick={() => openDialog({ kind: key[0] === 'f' ? 'frameLoad' : key[0] === 's' ? 'shellLoad' : 'jointLoad', edit: { key: key.slice(1), ids: r.ids } })}>✎</button>
+            <button className="danger" title="Remove this load from the selection" onClick={() => useApp.getState().commit((m) => removeLoad(m, r.ids, key.slice(1)))}>✕</button>
+          </span>
         </div>
       ))}
       <div className="chips" style={{ marginTop: 6 }}>

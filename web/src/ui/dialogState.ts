@@ -15,9 +15,12 @@ export type Dialog =
   | { kind: 'etabs' }
   | { kind: 'rotate' }
   | { kind: 'loadPatterns' }
-  | { kind: 'frameLoad' }
-  | { kind: 'shellLoad' }
-  | { kind: 'jointLoad' };
+  | { kind: 'frameLoad'; edit?: LoadEdit }
+  | { kind: 'shellLoad'; edit?: LoadEdit }
+  | { kind: 'jointLoad'; edit?: LoadEdit };
+
+/** An assigned load being edited: its key (see *LoadKey; a joint load's id) and the elements that carry it. */
+export type LoadEdit = { key: string; ids: string[] };
 
 export const useDialog = create<{ d: Dialog | null }>(() => ({ d: null }));
 export const openDialog = (d: Dialog) => useDialog.setState({ d });

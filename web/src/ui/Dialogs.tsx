@@ -61,11 +61,11 @@ export function Dialogs() {
     case 'loadPatterns':
       return <LoadPatternsDialog />;
     case 'frameLoad':
-      return <FrameLoadDialog />;
+      return <FrameLoadDialog edit={d.edit} />;
     case 'shellLoad':
-      return <ShellLoadDialog />;
+      return <ShellLoadDialog edit={d.edit} />;
     case 'jointLoad':
-      return <JointLoadDialog />;
+      return <JointLoadDialog edit={d.edit} />;
     default:
       return null;
   }
