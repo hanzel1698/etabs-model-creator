@@ -87,22 +87,31 @@ function leaveSetupView() {
 /** Shift the whole model so `o` becomes (0,0), and move the underlay placement with it so it stays aligned. */
 export function moveModelToOrigin(o: Pt) {
   if (!o.x && !o.y) return toast('That point is already the origin.');
-  if (!confirm(`Move the whole model by (${fmt(-o.x)}, ${fmt(-o.y)}) mm so this point becomes (0,0)?`)) return;
   const st = A();
-  st.commit((m) => moveIds(m, [...m.grids, ...m.columns, ...m.beams, ...m.slabs].map((x) => x.id), -o.x, -o.y));
-  if (st.colAlign.ref) st.setColAlign({ ref: { x: st.colAlign.ref.x - o.x, y: st.colAlign.ref.y - o.y } });
   const u = useUnderlay.getState();
-  if (u.kind === 'dxf' && u.dxf) {
-    // A model drawn on the raw drawing sits inside a region's raw box, not around the origin like
-    // the story-aligned view, even when the setup view is currently off.
-    type Box = { minX: number; minY: number; maxX: number; maxY: number };
-    const inBox = (b: Box) => o.x >= b.minX && o.x <= b.maxX && o.y >= b.minY && o.y <= b.maxY;
-    const shifted = (r: (typeof u.regions)[number]) => ({ minX: r.rect.minX - r.ref.x, minY: r.rect.minY - r.ref.y, maxX: r.rect.maxX - r.ref.x, maxY: r.rect.maxY - r.ref.y });
-    const onRaw = u.setupMode || !u.regions.length || (u.regions.some((r) => inBox(r.rect)) && !u.regions.some((r) => inBox(shifted(r))));
+  type Box = { minX: number; minY: number; maxX: number; maxY: number };
+  const inBox = (b: Box, p: Pt = o) => p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
+  const isDxf = u.kind === 'dxf' && !!u.dxf;
+  // A model drawn on the raw drawing sits inside a region's raw box, not around the origin like
+  // the story-aligned view, even when the setup view is currently off.
+  const shifted = (r: (typeof u.regions)[number]) => ({ minX: r.rect.minX - r.ref.x, minY: r.rect.minY - r.ref.y, maxX: r.rect.maxX - r.ref.x, maxY: r.rect.maxY - r.ref.y });
+  const onRaw = isDxf && (u.setupMode || !u.regions.length || (u.regions.some((r) => inBox(r.rect)) && !u.regions.some((r) => inBox(shifted(r)))));
+  const hit = onRaw ? u.regions.filter((r) => inBox(r.rect)) : [];
+  const reg = onRaw && !hit.length ? regionFor(st.activeStory) : null;
+  // A raw point picked while the model already sits aligned to its region (origin at the region's
+  // reference point) is at (o - ref) in model coordinates, so move the model by that, not by o.
+  const target = hit[0] ?? reg;
+  const pts = [...st.model.grids.flatMap((g) => [{ x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 }]), ...st.model.columns];
+  const mid = pts.length ? { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length } : null;
+  const d = target && mid && !inBox(target.rect, mid) ? sub(o, target.ref) : o;
+  if (d.x || d.y) {
+    if (!confirm(`Move the whole model by (${fmt(-d.x)}, ${fmt(-d.y)}) mm so this point becomes (0,0)?`)) return;
+    st.commit((m) => moveIds(m, [...m.grids, ...m.columns, ...m.beams, ...m.slabs].map((x) => x.id), -d.x, -d.y));
+    if (st.colAlign.ref) st.setColAlign({ ref: { x: st.colAlign.ref.x - d.x, y: st.colAlign.ref.y - d.y } });
+  }
+  if (isDxf && u.dxf) {
     if (onRaw) {
       // picked on the raw drawing: that raw point becomes the reference point of the region it lies in
-      const hit = u.regions.filter((r) => inBox(r.rect));
-      const reg = hit.length ? null : regionFor(st.activeStory);
       const regions = hit.length
         ? u.regions.map((r) => (hit.includes(r) ? { ...r, ref: { ...o } } : r))
         : reg
