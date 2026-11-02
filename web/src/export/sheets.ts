@@ -273,8 +273,8 @@ export function buildDrawings(m: Model, u: UnderlayIn): Drawing[] {
     out.push(make(rep, 'COLUMN LAYOUT', prims, [{ title: 'COLUMN SECTIONS', rows: ck.map((s, i) => ({ kind: 'rect', color: strong(i), label: [`${mark(s)}  ${s}`], sub: `${count(s)} nos` })) }], 'ALL STOREYS', m.stories.map((s) => s.name)));
   }
 
-  // beam line loads, one plan per pattern
-  for (const p of m.loadPatterns.map((x) => x.name)) {
+  // beam line loads, one plan per pattern (stair loads get none)
+  for (const p of m.loadPatterns.map((x) => x.name).filter((n) => !/^STAIR\b/i.test(n))) {
     for (const unit of units) {
       const { beams, cols } = onStory(m, unit.stories[0]);
       const loaded = beams.filter((b) => lineLoadKey(b, p));
