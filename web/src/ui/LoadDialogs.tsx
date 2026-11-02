@@ -28,6 +28,7 @@ import {
 import { PATTERN_TYPES, type Beam, type FrameLoad, type LoadDir, type LoadPattern, type Model, type Pt, type Vec6 } from '../model/types';
 import { dist, fmt } from '../model/geom';
 import { recentValues, rememberValues } from './recentValues';
+import { Is875Table } from './Is875';
 
 /** The active load pattern, or the first one if it was renamed or deleted. */
 export function activePattern(s: { loadPattern: string; model: Model }): string {
@@ -481,6 +482,7 @@ export function ShellLoadDialog({ edit }: { edit?: LoadEdit }) {
   const [mode, setMode] = useState<AssignMode>('replace');
   const [recent] = useState(() => recentValues<number>('shell'));
   const [used] = useState(() => usedLoadValues(useApp.getState().model).shell);
+  const [code, setCode] = useState(false);
   const apply = () => {
     if (!slabs.length) return toast('Select slabs first.');
     if (!pattern) return toast('Define a load pattern first.');
@@ -496,11 +498,29 @@ export function ShellLoadDialog({ edit }: { edit?: LoadEdit }) {
     closeDialog();
   };
   return (
-    <Modal title={`${edit ? 'Edit shell load' : 'Shell load'} · ${plural(slabs.length, 'slab')}`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={apply}>Apply</button></>}>
+    <Modal wide={code} title={`${edit ? 'Edit shell load' : 'Shell load'} · ${plural(slabs.length, 'slab')}`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={apply}>Apply</button></>}>
       <PatternSelect value={pattern} onChange={setPattern} />
       {mode !== 'delete' && (
         <>
-          <Num label="Load" value={value} onChange={setValue} unit="kN/m²" step={0.25} recent={recent} used={used} />
+          <Num
+            label="Load"
+            value={value}
+            onChange={setValue}
+            unit="kN/m²"
+            step={0.25}
+            recent={recent}
+            used={used}
+            extra={<button className={code ? 'primary' : ''} onClick={() => setCode(!code)} title="Pick a live load from IS 875 (Part 2) by occupancy">IS 875…</button>}
+          />
+          {code && (
+            <Is875Table
+              current={value}
+              onPick={(v) => {
+                setValue(v);
+                setCode(false);
+              }}
+            />
+          )}
           <DirSelect value={dir} onChange={setDir} dirs={SHELL_DIRS} />
           <div className="small muted">Uniform over the slab. ETABS passes it on to the beams according to the slab section's modelling (a membrane slab spreads it to its supporting beams).</div>
         </>

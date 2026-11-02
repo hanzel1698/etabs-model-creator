@@ -258,6 +258,7 @@ const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   etabs: 'ETABS',
   rotate: 'Rotate',
   loadPatterns: 'Load patterns',
+  is875: 'IS 875 live loads',
   frameLoad: 'Frame load',
   shellLoad: 'Shell load',
   jointLoad: 'Joint load',

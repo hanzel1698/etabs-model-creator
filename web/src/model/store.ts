@@ -92,6 +92,8 @@ interface AppState {
   showOnlyIds: (ids: string[]) => void;
   unhideIds: (ids: string[]) => void;
   showAll: () => void;
+  /** view switches, hidden elements, rotation, text and bubble size and View by back to their defaults */
+  resetView: () => void;
 
   selection: string[];
   setSelection: (ids: string[]) => void;
@@ -155,6 +157,15 @@ function readNum(key: string, fallback: number) {
   }
 }
 
+const VIEW_DEFAULTS = {
+  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false } as ShowFlags,
+  hidden: [] as string[],
+  viewRotation: 0,
+  textScale: 1,
+  colorBy: 'none' as ColorBy,
+  viewPatterns: [] as string[],
+};
+
 export const useApp = create<AppState>((set, get) => ({
   model: emptyModel(),
   past: [],
@@ -213,7 +224,7 @@ export const useApp = create<AppState>((set, get) => ({
   toggleAutoBeam: () => set((s) => ({ autoBeam: !s.autoBeam })),
   autoSplitSlabs: false,
   toggleAutoSplitSlabs: () => set((s) => ({ autoSplitSlabs: !s.autoSplitSlabs })),
-  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false },
+  show: VIEW_DEFAULTS.show,
   toggleShow: (k) =>
     set((s) => {
       const show = { ...s.show, [k]: !s.show[k] };
@@ -241,6 +252,10 @@ export const useApp = create<AppState>((set, get) => ({
       return { hidden: s.hidden.filter((id) => !back.has(id)) };
     }),
   showAll: () => set({ hidden: [] }),
+  resetView: () => {
+    get().setGridBubble(600);
+    set({ ...VIEW_DEFAULTS, loadFilter: defaultLoadFilter() });
+  },
 
   selection: [],
   setSelection: (ids) => set({ selection: ids }),

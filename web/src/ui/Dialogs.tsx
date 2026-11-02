@@ -3,6 +3,7 @@ import { useDialog, openDialog, closeDialog, useMovePick, type Dialog } from './
 import { bySize, sectionGroup } from './sectionGroups';
 import { SelectByDialog } from './SelectByDialog';
 import { PlanSheetsDialog } from './PlanSheetsDialog';
+import { Is875Dialog } from './Is875';
 import { FrameLoadDialog, JointLoadDialog, LoadPatternsDialog, ShellLoadDialog } from './LoadDialogs';
 import { useApp, toast } from '../model/store';
 import { generateGrids, lift, moveIds, oppositeLabelStart, replicate } from '../model/ops';
@@ -63,6 +64,8 @@ export function Dialogs() {
       return <PlanSheetsDialog />;
     case 'loadPatterns':
       return <LoadPatternsDialog />;
+    case 'is875':
+      return <Is875Dialog />;
     case 'frameLoad':
       return <FrameLoadDialog edit={d.edit} />;
     case 'shellLoad':

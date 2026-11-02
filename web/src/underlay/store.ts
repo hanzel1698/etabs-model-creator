@@ -259,8 +259,10 @@ export function underlayGeom(story: string): { tree: RBush<SegBox>; pts: Pt[] } 
   const off = reg ? reg.ref : { x: 0, y: 0 };
   const inR = (p: Pt) => !reg || (p.x >= reg.rect.minX && p.x <= reg.rect.maxX && p.y >= reg.rect.minY && p.y <= reg.rect.maxY);
   const boxes: SegBox[] = [];
+  // keep every segment whose box overlaps the region: a line crossing it with both ends outside (a grid line running out to its bubbles) is drawn, so it must snap too
+  const overlaps = (a: Pt, b: Pt) => !reg || (Math.max(a.x, b.x) >= reg.rect.minX && Math.min(a.x, b.x) <= reg.rect.maxX && Math.max(a.y, b.y) >= reg.rect.minY && Math.min(a.y, b.y) <= reg.rect.maxY);
   for (const [a0, b0] of s.dxf.segs) {
-    if (!inR(a0) && !inR(b0)) continue;
+    if (!overlaps(a0, b0)) continue;
     const a = { x: a0.x - off.x, y: a0.y - off.y },
       b = { x: b0.x - off.x, y: b0.y - off.y };
     boxes.push({ minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y), maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y), a, b });

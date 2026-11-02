@@ -17,6 +17,7 @@ export function ElevView() {
   const patterns = useViewPatterns();
   const [tol, setTol] = useState(300);
   const [names, setNames] = useState(true);
+  const [wire, setWire] = useState(true);
   const host = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [view, setView] = useState({ k: 0.05, tx: 0, ty: 0 }); // screen = (k·s + tx, −k·z + ty)
@@ -124,6 +125,9 @@ export function ElevView() {
         <button className={names ? 'on' : ''} title="Show section names" onClick={() => setNames(!names)}>
           Names
         </button>
+        <button className={wire ? '' : 'on'} title="Show members with their section sizes instead of centrelines" onClick={() => setWire(!wire)}>
+          3D view
+        </button>
       </div>
       {!grid || !e || !x ? (
         <div className="muted" style={{ padding: '60px 20px' }}>
@@ -175,18 +179,38 @@ export function ElevView() {
               );
             })}
           </g>
-          {e.slabs.map((s, i) => (
-            <rect key={s.id + i} x={X(s.s0)} y={Y(s.z)} width={view.k * (s.s1 - s.s0)} height={Math.max(view.k * s.t, 1.5)} fill={sel.has(s.id) ? 'var(--sel)' : 'var(--slabEdge)'} onPointerUp={(ev) => pick(s.id, ev)} style={{ cursor: 'pointer' }} />
-          ))}
-          {e.beams.map((b) => (
-            <rect key={b.id} x={X(b.s0)} y={Y(b.z)} width={view.k * (b.s1 - b.s0)} height={view.k * b.depth} fill={fill(b.id, 'var(--beam)')} fillOpacity={0.75} stroke="var(--colEdge)" onPointerUp={(ev) => pick(b.id, ev)} style={{ cursor: 'pointer' }} />
-          ))}
-          {e.cuts.map((b) => (
-            <rect key={b.id} x={X(b.s0)} y={Y(b.z)} width={view.k * (b.s1 - b.s0)} height={view.k * b.depth} fill={fill(b.id, 'var(--beam)')} fillOpacity={0.9} stroke="var(--text)" strokeDasharray="3 2" onPointerUp={(ev) => pick(b.id, ev)} style={{ cursor: 'pointer' }} />
-          ))}
-          {e.columns.map((c) => (
-            <rect key={c.id} x={X(c.s0)} y={Y(c.z1)} width={view.k * (c.s1 - c.s0)} height={view.k * (c.z1 - c.z0)} fill={fill(c.id, 'var(--col)')} fillOpacity={0.75} stroke="var(--colEdge)" onPointerUp={(ev) => pick(c.id, ev)} style={{ cursor: 'pointer' }} />
-          ))}
+          {wire ? (
+            // centrelines as in the 3D wireframe; members sit on their level, cut beams show as points
+            <g strokeWidth={2.5} style={{ cursor: 'pointer' }}>
+              {e.slabs.map((s, i) => (
+                <line key={s.id + i} x1={X(s.s0)} x2={X(s.s1)} y1={Y(s.z)} y2={Y(s.z)} stroke={sel.has(s.id) ? 'var(--sel)' : 'var(--slabEdge)'} strokeWidth={7} strokeOpacity={0.45} onPointerUp={(ev) => pick(s.id, ev)} />
+              ))}
+              {e.beams.map((b) => (
+                <line key={b.id} x1={X(b.s0)} x2={X(b.s1)} y1={Y(b.z)} y2={Y(b.z)} stroke={fill(b.id, 'var(--beam)')} onPointerUp={(ev) => pick(b.id, ev)} />
+              ))}
+              {e.cuts.map((b) => (
+                <circle key={b.id} cx={X((b.s0 + b.s1) / 2)} cy={Y(b.z)} r={4} fill={fill(b.id, 'var(--beam)')} stroke="var(--text)" strokeWidth={1} onPointerUp={(ev) => pick(b.id, ev)} />
+              ))}
+              {e.columns.map((c) => (
+                <line key={c.id} x1={X((c.s0 + c.s1) / 2)} x2={X((c.s0 + c.s1) / 2)} y1={Y(c.z0)} y2={Y(c.z1)} stroke={fill(c.id, 'var(--col)')} onPointerUp={(ev) => pick(c.id, ev)} />
+              ))}
+            </g>
+          ) : (
+            <>
+            {e.slabs.map((s, i) => (
+              <rect key={s.id + i} x={X(s.s0)} y={Y(s.z)} width={view.k * (s.s1 - s.s0)} height={Math.max(view.k * s.t, 1.5)} fill={sel.has(s.id) ? 'var(--sel)' : 'var(--slabEdge)'} onPointerUp={(ev) => pick(s.id, ev)} style={{ cursor: 'pointer' }} />
+            ))}
+            {e.beams.map((b) => (
+              <rect key={b.id} x={X(b.s0)} y={Y(b.z)} width={view.k * (b.s1 - b.s0)} height={view.k * b.depth} fill={fill(b.id, 'var(--beam)')} fillOpacity={0.75} stroke="var(--colEdge)" onPointerUp={(ev) => pick(b.id, ev)} style={{ cursor: 'pointer' }} />
+            ))}
+            {e.cuts.map((b) => (
+              <rect key={b.id} x={X(b.s0)} y={Y(b.z)} width={view.k * (b.s1 - b.s0)} height={view.k * b.depth} fill={fill(b.id, 'var(--beam)')} fillOpacity={0.9} stroke="var(--text)" strokeDasharray="3 2" onPointerUp={(ev) => pick(b.id, ev)} style={{ cursor: 'pointer' }} />
+            ))}
+            {e.columns.map((c) => (
+              <rect key={c.id} x={X(c.s0)} y={Y(c.z1)} width={view.k * (c.s1 - c.s0)} height={view.k * (c.z1 - c.z0)} fill={fill(c.id, 'var(--col)')} fillOpacity={0.75} stroke="var(--colEdge)" onPointerUp={(ev) => pick(c.id, ev)} style={{ cursor: 'pointer' }} />
+            ))}
+            </>
+          )}
           {names && (
             <g className="nosel" fontSize={11}>
               {e.beams.map((b) => (

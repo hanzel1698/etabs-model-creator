@@ -2,7 +2,7 @@ import { useApp, usePreview, drawStories, toast, visibleModel, type ToolName } f
 import type { Beam, Model, Pt } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
-import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, panelSize, setBeamEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
+import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, onGridLine, panelSize, setBeamEnd, setGridEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
 import { columnOn, uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
@@ -603,11 +603,11 @@ export function fillIntersections(a: Pt, b: Pt) {
 
 // ---------- selection ----------
 
-// ---------- beam end grips (select tool) ----------
+// ---------- beam and grid end grips (select tool) ----------
 
 export type Grip = { id: string; end: 1 | 2 };
 
-/** The end grip of a selected beam under the cursor, if any. */
+/** The end grip of a selected beam (active story) or grid under the cursor, if any. */
 export function gripAt(screen: Pt): Grip | null {
   const { selection, activeStory } = A();
   const model = visibleModel(A());
@@ -621,36 +621,45 @@ export function gripAt(screen: Pt): Grip | null {
         const d = dist(w, end === 1 ? { x: b.x1, y: b.y1 } : { x: b.x2, y: b.y2 });
         if (d < bd) (bd = d), (best = { id: b.id, end });
       }
+  for (const g of model.grids)
+    if (s.has(g.id))
+      for (const end of [1, 2] as const) {
+        const d = dist(w, end === 1 ? { x: g.x1, y: g.y1 } : { x: g.x2, y: g.y2 });
+        if (d < bd) (bd = d), (best = { id: g.id, end });
+      }
   return best;
 }
 
-/** Snapped position for a dragged grip; the beam itself is left out so it can't snap to its own end or line. */
-function gripSnap(g: Grip, screen: Pt): { s: Snap; fixed: Pt } | null {
+/** Snapped position for a dragged grip; the element itself is left out so it can't snap to its own end or line. A grid end stays on the grid's line. */
+function gripSnap(g: Grip, screen: Pt): { s: Snap; fixed: Pt; p: Pt } | null {
   const m = visibleModel(A());
   const b = m.beams.find((x) => x.id === g.id);
-  if (!b) return null;
-  const fixed = g.end === 1 ? { x: b.x2, y: b.y2 } : { x: b.x1, y: b.y1 };
-  const s = snapPoint({ ...m, beams: m.beams.filter((x) => x.id !== g.id) }, viewport.toWorld(screen), SNAP_PX / viewport.k, {
+  const gr = b ? undefined : m.grids.find((x) => x.id === g.id);
+  const e = b ?? gr;
+  if (!e) return null;
+  const fixed = g.end === 1 ? { x: e.x2, y: e.y2 } : { x: e.x1, y: e.y1 };
+  const s = snapPoint({ ...m, beams: m.beams.filter((x) => x.id !== g.id), grids: m.grids.filter((x) => x.id !== g.id) }, viewport.toWorld(screen), SNAP_PX / viewport.k, {
     story: A().activeStory,
     from: fixed,
-    ortho: A().ortho,
+    ortho: !gr && A().ortho,
     underlay: A().show.underlay,
   });
-  return { s, fixed };
+  return { s, fixed, p: gr ? onGridLine(gr, s.p) : s.p };
 }
 
 export function gripMove(g: Grip, screen: Pt) {
   const r = gripSnap(g, screen);
   if (!r) return;
-  P().set({ grip: [r.fixed, r.s.p], cursor: r.s.p, snap: r.s.kind === 'none' ? null : r.s, hint: liveText(r.fixed, r.s.p) });
+  P().set({ grip: [r.fixed, r.p], cursor: r.p, snap: r.s.kind === 'none' ? null : r.s, hint: liveText(r.fixed, r.p) });
 }
 
 export function gripDrop(g: Grip, screen: Pt) {
   const r = gripSnap(g, screen);
   P().set({ grip: null, snap: null, hint: hints.select });
   if (!r) return;
-  if (dist(r.fixed, r.s.p) < 1) return toast('A beam needs two different end points.');
-  commitBeams((m) => setBeamEnd(m, g.id, g.end, r.s.p));
+  if (dist(r.fixed, r.p) < 1) return toast('An element needs two different end points.');
+  if (A().model.grids.some((x) => x.id === g.id)) return A().commit((m) => setGridEnd(m, g.id, g.end, r.p));
+  commitBeams((m) => setBeamEnd(m, g.id, g.end, r.p));
 }
 
 export function gripCancel() {

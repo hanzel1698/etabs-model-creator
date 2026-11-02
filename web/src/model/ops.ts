@@ -376,6 +376,25 @@ export function setBeamEnd(m: Model, id: string, end: 1 | 2, p: Pt): Model {
   return { ...m, beams: m.beams.map((x) => (x.id === id ? nb : x)) };
 }
 
+/** Moves one end of a grid along its own line (extend or shorten), so the grid keeps its direction. */
+export function setGridEnd(m: Model, id: string, end: 1 | 2, p: Pt): Model {
+  const g = m.grids.find((x) => x.id === id);
+  if (!g) return m;
+  const q = onGridLine(g, p);
+  const other = end === 1 ? { x: g.x2, y: g.y2 } : { x: g.x1, y: g.y1 };
+  if (dist(other, q) < 1) return m;
+  const ng = end === 1 ? { ...g, x1: q.x, y1: q.y } : { ...g, x2: q.x, y2: q.y };
+  return { ...m, grids: m.grids.map((x) => (x.id === id ? ng : x)) };
+}
+
+/** p projected onto the (unbounded) line of grid g. */
+export function onGridLine(g: Grid, p: Pt): Pt {
+  const dx = g.x2 - g.x1,
+    dy = g.y2 - g.y1;
+  const t = ((p.x - g.x1) * dx + (p.y - g.y1) * dy) / (dx * dx + dy * dy || 1);
+  return { x: g.x1 + t * dx, y: g.y1 + t * dy };
+}
+
 export function patchIds(m: Model, ids: string[], patch: { section?: string; story?: string; angle?: number }): Model {
   const s = new Set(ids);
   const p = (o: any) => {

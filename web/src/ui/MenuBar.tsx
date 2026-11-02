@@ -242,6 +242,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
         { label: 'View by', title: 'Colour columns, beams and slabs in the plan and elevation by…', sub: COLOR_BY.map(([k, l]) => ({ label: l, checked: colorBy === k, run: () => st().setColorBy(k) })) },
         'sep',
         { label: 'Fit all', kbd: 'F', run: () => fitAll() },
+        { label: 'Reset views', title: 'Show switches, hidden elements, rotation, text and bubble size and View by back to their defaults, then fit all', run: () => (st().resetView(), fitAll()) },
         { label: up ? `Story up (${up})` : 'Story up', disabled: !up, run: () => up && st().setActiveStory(up) },
         { label: down ? `Story down (${down})` : 'Story down', disabled: !down, run: () => down && st().setActiveStory(down) },
         'sep',
@@ -253,6 +254,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
       label: 'Loads',
       items: [
         { label: 'Load patterns…', run: () => openDialog({ kind: 'loadPatterns' }) },
+        { label: 'IS 875 live loads…', title: 'Read-only table of IS 875 (Part 2) imposed floor loads by occupancy', run: () => openDialog({ kind: 'is875' }) },
         { label: 'Active pattern', sub: patterns.map((p) => ({ label: p.name, checked: p.name === pat, run: () => st().setLoadPattern(p.name) })) },
         'sep',
         { label: 'Frame load…', disabled: !frames, title: 'Assign a distributed or point load to the selected beams and columns', run: () => openDialog({ kind: 'frameLoad' }) },

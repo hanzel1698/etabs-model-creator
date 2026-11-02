@@ -13,8 +13,9 @@ export function PlanSheetsDialog() {
   const u = useUnderlay();
   const drawings = useMemo(() => buildDrawings(model, { dxf: u.kind === 'dxf' ? u.dxf : null, regions: u.regions, showText: u.showText }), [model, u.dxf, u.kind, u.regions, u.showText]);
   const [orient, setOrient] = useState<Orient[]>(() => drawings.map(suggestOrient));
+  const [picked, setPicked] = useState<boolean[]>(() => drawings.map(() => true));
   const [busy, setBusy] = useState(false);
-  const items = drawings.map((item, i) => ({ item, o: orient[i] ?? 'L' }));
+  const items = drawings.map((item, i) => ({ item, o: orient[i] ?? 'L' })).filter((_, i) => picked[i] ?? true);
   const pages = paginate(items).length;
 
   const run = async () => {
@@ -22,7 +23,7 @@ export function PlanSheetsDialog() {
     try {
       const doc = await plansPdf(items);
       doc.save('plan-sheets.pdf');
-      log('file', `Exported plan-sheets.pdf (${drawings.length} drawings on ${pages} A2 pages)`);
+      log('file', `Exported plan-sheets.pdf (${items.length} drawings on ${pages} A2 pages)`);
       closeDialog();
     } catch (e) {
       toast(`PDF export failed: ${(e as Error).message}`);
@@ -38,7 +39,7 @@ export function PlanSheetsDialog() {
       footer={
         <>
           <button onClick={closeDialog}>Cancel</button>
-          <button className="primary" disabled={busy || !drawings.length} onClick={run}>
+          <button className="primary" disabled={busy || !items.length} onClick={run}>
             {busy ? 'Exporting…' : `Export ${pages} page${pages === 1 ? '' : 's'}`}
           </button>
         </>
@@ -49,13 +50,23 @@ export function PlanSheetsDialog() {
         {u.kind === 'pdf' && ' The PDF underlay is not exported; only a DXF underlay is drawn.'}
       </div>
       {drawings.length ? (
+        <>
+        <div className="row">
+          <button onClick={() => setPicked(drawings.map(() => true))}>Select all</button>
+          <button onClick={() => setPicked(drawings.map(() => false))}>None</button>
+          <button onClick={() => setPicked(drawings.map((_, i) => !(picked[i] ?? true)))}>Invert</button>
+          <span className="small muted">{items.length} of {drawings.length} selected</span>
+        </div>
         <table className="grid">
           <thead>
-            <tr><th>Drawing</th><th>Story region</th><th>A3</th></tr>
+            <tr><th></th><th>Drawing</th><th>Story region</th><th>A3</th></tr>
           </thead>
           <tbody>
             {drawings.map((d, i) => (
               <tr key={i}>
+                <td>
+                  <input type="checkbox" aria-label={`Export ${d.title} – ${d.region}`} checked={picked[i] ?? true} onChange={(e) => setPicked(drawings.map((_, j) => (j === i ? e.target.checked : picked[j] ?? true)))} />
+                </td>
                 <td>{d.title}</td>
                 <td>{d.region}</td>
                 <td>
@@ -68,6 +79,7 @@ export function PlanSheetsDialog() {
             ))}
           </tbody>
         </table>
+        </>
       ) : (
         <div className="muted small">No beams or slabs to draw yet.</div>
       )}

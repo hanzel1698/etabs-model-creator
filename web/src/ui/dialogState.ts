@@ -16,6 +16,7 @@ export type Dialog =
   | { kind: 'planSheets' }
   | { kind: 'rotate' }
   | { kind: 'loadPatterns' }
+  | { kind: 'is875' }
   | { kind: 'frameLoad'; edit?: LoadEdit }
   | { kind: 'shellLoad'; edit?: LoadEdit }
   | { kind: 'jointLoad'; edit?: LoadEdit };

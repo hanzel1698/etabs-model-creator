@@ -289,7 +289,7 @@ export function PlanView() {
         </g>
         <IssueLayer story={story} offset={setupRef} />
         {show.nodes && <NodeLayer story={story} sel={sel} offset={setupRef} />}
-        {tool === 'select' && <GripLayer beams={beams} sel={sel} offset={setupRef} />}
+        {tool === 'select' && <GripLayer beams={[...beams, ...model.grids]} sel={sel} offset={setupRef} />}
         <Overlay />
       </svg>
       <Compass rot={viewRot} />
@@ -345,8 +345,8 @@ function IssueLayer({ story, offset }: { story: string; offset: Pt | null }) {
   );
 }
 
-/** End grips on selected beams (screen space, fixed size). Drag one to reshape the beam. */
-function GripLayer({ beams, sel, offset }: { beams: Beam[]; sel: Set<string>; offset: Pt | null }) {
+/** End grips on selected beams and grids (screen space, fixed size). Drag one to reshape or extend it. */
+function GripLayer({ beams, sel, offset }: { beams: Pick<Beam, 'id' | 'x1' | 'y1' | 'x2' | 'y2'>[]; sel: Set<string>; offset: Pt | null }) {
   useVp();
   const ox = offset?.x ?? 0,
     oy = offset?.y ?? 0;
