@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useApp, COLOR_BY, type ToolName } from '../model/store';
 import { setTool } from '../plan/tools';
 import { fitAll } from '../plan/PlanView';
-import { downloadProject } from '../model/persist';
+import { downloadProject, saveProjectAs, setWorkingFolder, workingFolderName } from '../model/persist';
 import { deleteIds } from '../model/ops';
 import { toggleLog, useLog } from '../log/sessionLog';
 import { openDialog } from './dialogState';
@@ -187,6 +187,8 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
         { label: 'New', run: onNew },
         { label: 'Open…', run: onOpen },
         { label: 'Save', kbd: 'Ctrl+S', run: downloadProject },
+        { label: 'Save as…', kbd: 'Ctrl+Shift+S', run: saveProjectAs, title: 'Save under a new name or location; later Saves go to that file' },
+        { label: 'Set working folder…', run: setWorkingFolder, title: `Folder Save as opens in (now: ${workingFolderName() ?? 'not set'}). Remembered in this browser.` },
         'sep',
         { label: 'Load underlay…', run: onUnderlay, title: 'Load a DXF (all stories in model space) or a PDF (one page per story)' },
         { label: 'Underlay setup…', run: () => openDialog({ kind: 'underlay' }) },

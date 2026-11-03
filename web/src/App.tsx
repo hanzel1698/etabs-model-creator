@@ -7,7 +7,7 @@ import { RightPanel } from './ui/RightPanel';
 import { Dialogs } from './ui/Dialogs';
 import { openDialog } from './ui/dialogState';
 import { deleteIds } from './model/ops';
-import { restoreModel, startAutosave, downloadProject, openProject } from './model/persist';
+import { restoreModel, startAutosave, downloadProject, saveProjectAs, forgetSaveTarget, openProject } from './model/persist';
 import { loadDxfFile, loadPdfFile, restoreUnderlay } from './underlay/store';
 import { columnOn, emptyModel } from './model/types';
 import { fmt } from './model/geom';
@@ -53,7 +53,7 @@ export function App() {
       const st = useApp.getState();
       if (e.ctrlKey && e.key.toLowerCase() === 'z' && !inInput) return e.preventDefault(), st.undo();
       if (e.ctrlKey && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z')) && !inInput) return e.preventDefault(), st.redo();
-      if (e.ctrlKey && e.key.toLowerCase() === 's') return e.preventDefault(), downloadProject();
+      if (e.ctrlKey && e.key.toLowerCase() === 's') return e.preventDefault(), e.shiftKey ? saveProjectAs() : downloadProject();
       if (e.ctrlKey && e.key.toLowerCase() === 'p' && !inInput) return e.preventDefault(), st.restoreSelection();
       if (e.key === 'F8') return e.preventDefault(), st.toggleOrtho();
       if (e.key === '`' && !inInput) return e.preventDefault(), toggleLog();
@@ -111,7 +111,7 @@ export function App() {
     <div className="app">
       <div className="topbar">
         <MainMenu
-          onNew={() => confirm('Start a new model? Unsaved work is lost.') && (log('file', 'New model'), useApp.getState().setModel(emptyModel()), resetTool())}
+          onNew={() => confirm('Start a new model? Unsaved work is lost.') && (log('file', 'New model'), useApp.getState().setModel(emptyModel()), forgetSaveTarget(), resetTool())}
           onOpen={() => fileRef.current?.click()}
           onUnderlay={() => ulRef.current?.click()}
         />
