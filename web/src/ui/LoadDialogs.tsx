@@ -483,6 +483,7 @@ export function ShellLoadDialog({ edit }: { edit?: LoadEdit }) {
   const [recent] = useState(() => recentValues<number>('shell'));
   const [used] = useState(() => usedLoadValues(useApp.getState().model).shell);
   const [code, setCode] = useState(false);
+  const isLive = useApp((s) => ['Live', 'ReduceLive', 'Rooflive'].includes(s.model.loadPatterns.find((p) => p.name === pattern)?.type ?? ''));
   const apply = () => {
     if (!slabs.length) return toast('Select slabs first.');
     if (!pattern) return toast('Define a load pattern first.');
@@ -510,9 +511,9 @@ export function ShellLoadDialog({ edit }: { edit?: LoadEdit }) {
             step={0.25}
             recent={recent}
             used={used}
-            extra={<button className={code ? 'primary' : ''} onClick={() => setCode(!code)} title="Pick a live load from IS 875 (Part 2) by occupancy">IS 875…</button>}
+            extra={<button className={code && isLive ? 'primary' : ''} disabled={!isLive} onClick={() => setCode(!code)} title={isLive ? 'Pick a live load from IS 875 (Part 2) by occupancy' : 'Select a live load pattern to pick from IS 875'}>IS 875…</button>}
           />
-          {code && (
+          {code && isLive && (
             <Is875Table
               current={value}
               onPick={(v) => {
