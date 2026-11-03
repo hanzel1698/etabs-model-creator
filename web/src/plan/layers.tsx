@@ -244,12 +244,12 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, show
 // ---------------- loads ----------------
 
 /**
- * Values of the active pattern's loads on a story, in the load colour: under each beam (kN/m; P = point load in kN,
+ * Values of the given patterns' loads on a story, in the load colour: under each beam (kN/m; P = point load in kN,
  * with a band over the loaded length when a distributed load covers only part of the beam), beside columns, at slab centroids (kN/m²) and at loaded joints (↓ with components).
  */
-export const LoadLayer = memo(function LoadLayer({ m, story, pattern, viewRot, ts }: { m: Model; story: string; pattern: string; viewRot: number; ts: number }) {
+export const LoadLayer = memo(function LoadLayer({ m, story, patterns, viewRot, ts }: { m: Model; story: string; patterns: string[]; viewRot: number; ts: number }) {
   const h = 150 * ts;
-  const mine = <L extends { pattern: string }>(ls?: L[]) => (ls ?? []).filter((l) => l.pattern === pattern);
+  const mine = <L extends { pattern: string }>(ls?: L[]) => (ls ?? []).filter((l) => patterns.includes(l.pattern));
   return (
     <g className="loads nosel" fontSize={h} fill="var(--load)">
       {m.beams.map((b) => {
@@ -326,7 +326,7 @@ export const LoadLayer = memo(function LoadLayer({ m, story, pattern, viewRot, t
         );
       })}
       {m.jointLoads.map((j) =>
-        j.story !== story || j.pattern !== pattern ? null : (
+        j.story !== story || !patterns.includes(j.pattern) ? null : (
           <text key={j.id} transform={textTransform(j.x, j.y, viewRot)} dx={h * 0.5} dy={-h * 0.5}>
             ↓ {describeJointLoad(j.f)}
           </text>

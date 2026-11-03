@@ -84,6 +84,8 @@ export function PlanView() {
   const ts = useApp((s) => s.textScale);
   const bubble = useApp((s) => s.gridBubble);
   const colorBy = useApp((s) => s.colorBy);
+  // View by load values: the load labels follow its pattern chips, not just the active pattern
+  const loadPats = useMemo(() => (colorBy === 'value' ? viewPats : [pattern]), [colorBy, viewPats, pattern]);
   const gridLock = useApp((s) => s.gridLock);
   // the setup view shows the raw DXF: place this story's model on its region (reference point = model 0,0)
   const setupRef = useUnderlay((u) => (u.kind === 'dxf' && u.setupMode ? u.regions.find((r) => r.stories.includes(story))?.ref ?? null : null));
@@ -285,7 +287,7 @@ export function PlanView() {
             <BeamLayer beams={beams} sel={sel} colorBy={colorBy} patterns={viewPats} />
             <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} />
             {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} showSlabs={show.slabs} />}
-            {show.loads && <LoadLayer m={model} story={story} pattern={pattern} viewRot={viewRot} ts={ts} />}
+            {(show.loads || colorBy === 'value') && <LoadLayer m={model} story={story} patterns={loadPats} viewRot={viewRot} ts={ts} />}
           </g>
         </g>
         <IssueLayer story={story} offset={setupRef} />
