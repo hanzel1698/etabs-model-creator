@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../model/store';
 import { useUnderlay, regionFor } from '../underlay/store';
+import { lineDy } from '../underlay/dxf';
 import { viewport } from './viewport';
 
 /**
@@ -65,7 +66,8 @@ export function UnderlayCanvas({ w, h }: { w: number; h: number }) {
           ctx.translate(s.x, s.y);
           ctx.rotate((-(t.rot + rot) * Math.PI) / 180);
           ctx.font = `${px}px sans-serif`;
-          ctx.fillText(t.text, 0, 0);
+          const lines = t.text.split('\n');
+          lines.forEach((ln, i) => ctx.fillText(ln, -ctx.measureText(ln).width * t.ha, lineDy({ h: px, va: t.va }, lines.length, i)));
           ctx.restore();
         }
       }

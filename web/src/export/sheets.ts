@@ -13,7 +13,7 @@ export type Prim =
   | { t: 'line'; a: Pt; b: Pt; color: string; w: number; dash?: boolean } // w: paper mm
   | { t: 'poly'; pts: Pt[]; fill: string; op?: number; stroke?: string }
   /** centred text (lines split on \n); size in paper mm, or model mm when `model`; off = paper mm, y up */
-  | { t: 'text'; p: Pt; s: string; size: number; color: string; rot?: number; bold?: boolean; off?: Pt; left?: boolean; model?: boolean }
+  | { t: 'text'; p: Pt; s: string; size: number; color: string; rot?: number; bold?: boolean; off?: Pt; left?: boolean; model?: boolean; anchor?: { ha: number; va: number } }
   | { t: 'bubble'; p: Pt; u: Pt; s: string }; // grid bubble beyond end p, along unit u
 
 export interface LegendRow { kind: 'line' | 'fill' | 'rect'; color: string; label: string[]; sub?: string }
@@ -132,7 +132,7 @@ function underlayPrims(u: UnderlayIn, segs: [Pt, Pt][], reg: Region | null, box:
     for (const t of u.dxf.texts) {
       const p = { x: t.x - off.x, y: t.y - off.y };
       if (hidden.has(t.layer) || p.x < c.minX || p.x > c.maxX || p.y < c.minY || p.y > c.maxY) continue;
-      out.push({ t: 'text', p, s: t.text, size: t.h, model: true, left: true, rot: t.rot, color: GREY });
+      out.push({ t: 'text', p, s: t.text, size: t.h, model: true, anchor: t, rot: t.rot, color: GREY });
     }
   }
   return out;

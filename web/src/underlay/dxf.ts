@@ -12,9 +12,19 @@ export interface DxfText {
   y: number;
   h: number;
   rot: number;
+  /** lines split on \n */
   text: string;
   layer: string;
+  /** anchor at (x, y) as a fraction of the line width (0 left, 0.5 centre, 1 right) */
+  ha: number;
+  /** anchor as a fraction of the block height (0 top, 0.5 middle, 1 bottom / baseline) */
+  va: number;
 }
+
+/** AutoCAD's default MTEXT line spacing, as a multiple of the text height. */
+export const DXF_LINE = 5 / 3;
+/** Offset of line i's baseline below the anchor (text-local, y down) for `n` lines of height h. */
+export const lineDy = (t: { h: number; va: number }, n: number, i: number) => t.h - t.va * (t.h + (n - 1) * t.h * DXF_LINE) + i * t.h * DXF_LINE;
 
 export interface DxfData {
   layers: DxfLayer[];
@@ -123,6 +133,12 @@ export function parseDxf(text: string, scale: number): DxfData {
     byLayer.get(layer)!.push(d);
   };
 
+  const pushText = (e: any, layer: string, m: M, p: Pt, rot: number, text: string, ha: number, va: number) => {
+    const w = ap(m, p.x, p.y);
+    const sc = Math.hypot(m[0], m[1]);
+    texts.push({ x: w.x, y: w.y, h: (e.textHeight || e.height || 2.5) * sc, rot: rot + (Math.atan2(m[1], m[0]) * 180) / Math.PI, text, layer, ha, va });
+  };
+
   const walk = (ents: any[], m: M, depth: number, parentLayer?: string) => {
     if (!ents || depth > 8) return;
     for (const e of ents) {
@@ -149,17 +165,30 @@ export function parseDxf(text: string, scale: number): DxfData {
             emitPoly(layer, m, arcPts(e.center.x, e.center.y, e.radius, e.startAngle, e.endAngle), false, false);
             points.push(ap(m, e.center.x, e.center.y));
             break;
-          case 'TEXT':
-          case 'MTEXT': {
-            const p = e.startPoint || e.position;
+          case 'TEXT': {
+            // non-default justification is placed at the second alignment point (group 11)
+            const just = (e.halign || e.valign) && e.halign !== 3 && e.halign !== 5 && e.endPoint;
+            const p = just ? e.endPoint : e.startPoint;
             if (!p || !e.text) break;
-            const w = ap(m, p.x, p.y);
-            const sc = Math.hypot(m[0], m[1]);
-            const raw = String(e.text)
-              .replace(/\\P/g, ' ')
-              .replace(/\\[A-Za-z][^;]*;/g, '')
-              .replace(/[{}]/g, '');
-            texts.push({ x: w.x, y: w.y, h: (e.textHeight || e.height || 2.5) * sc, rot: (e.rotation || 0) + (Math.atan2(m[1], m[0]) * 180) / Math.PI, text: raw, layer });
+            const ha = !just ? 0 : e.halign === 4 ? 0.5 : (e.halign || 0) / 2;
+            const va = !just || e.valign < 2 ? 1 : e.halign === 4 || e.valign === 2 ? 0.5 : 0;
+            pushText(e, layer, m, p, e.rotation || 0, cleanText(e.text), ha, va);
+            break;
+          }
+          case 'MTEXT': {
+            const p = e.position;
+            if (!p || !e.text) break;
+            const att = (e.attachmentPoint || 1) - 1;
+            const col = att % 3;
+            const dir = e.directionVector;
+            const rot = dir && (dir.x || dir.y) ? (Math.atan2(dir.y, dir.x) * 180) / Math.PI : e.rotation || 0;
+            // a centred/right paragraph (\pxqc; / qr) sits in the column box of width group 41, not at the attachment point
+            const q = /\\p[^;]*q([lcr])/.exec(e.text)?.[1];
+            const box = e.width || 0;
+            const ha = box && q ? { l: 0, c: 0.5, r: 1 }[q]! : col / 2;
+            const shift = (ha - col / 2) * box,
+              r = (rot * Math.PI) / 180;
+            pushText(e, layer, m, { x: p.x + shift * Math.cos(r), y: p.y + shift * Math.sin(r) }, rot, cleanText(e.text), ha, Math.floor(att / 3) / 2);
             break;
           }
           case 'INSERT': {
@@ -195,6 +224,23 @@ export function parseDxf(text: string, scale: number): DxfData {
   const layers: DxfLayer[] = [...byLayer.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, ds]) => ({ name, d: ds.join(''), visible: true }));
   if (!isFinite(minX)) (minX = 0), (minY = 0), (maxX = 1000), (maxY = 1000);
   return { layers, texts, segs, points, bbox: { minX, minY, maxX, maxY }, fitBox: robustBox(points) ?? { minX, minY, maxX, maxY }, insUnits };
+}
+
+/** MTEXT/TEXT string with formatting codes stripped; \P paragraph breaks become \n. */
+export function cleanText(s: string): string {
+  return String(s)
+    .replace(/\\P/g, '\n')
+    .replace(/\\S([^;]*);/g, '$1')
+    .replace(/\\[ACcFfHhpQTW][^;\\]*;/g, '')
+    .replace(/\\[LlOoKk]/g, '')
+    .replace(/\\~/g, ' ')
+    .replace(/[{}]/g, '')
+    .replace(/%%[cC]/g, 'Ø')
+    .replace(/%%[dD]/g, '°')
+    .replace(/%%[pP]/g, '±')
+    .split('\n')
+    .map((l) => l.trim())
+    .join('\n');
 }
 
 function robustBox(pts: Pt[]) {

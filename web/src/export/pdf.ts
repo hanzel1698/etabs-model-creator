@@ -1,4 +1,5 @@
 import type { jsPDF } from 'jspdf';
+import { lineDy } from '../underlay/dxf';
 import { FRAME, LEGEND_W, layout, paginate, rowH, type Drawing, type Layout, type Orient, type Prim } from './sheets';
 
 const PT = 72 / 25.4; // pt per mm (jsPDF font sizes are in pt)
@@ -6,7 +7,7 @@ const INK = '#1f2429',
   MUTED = '#5d6670';
 
 /** Centred (or left-aligned) text at paper point x, y; rot in degrees counter-clockwise; lines split on \n. */
-function text(doc: jsPDF, s: string, x: number, y: number, size: number, o: { color?: string; rot?: number; bold?: boolean; left?: boolean; right?: boolean } = {}) {
+function text(doc: jsPDF, s: string, x: number, y: number, size: number, o: { color?: string; rot?: number; bold?: boolean; left?: boolean; right?: boolean; anchor?: { ha: number; va: number } } = {}) {
   doc.setFont('helvetica', o.bold ? 'bold' : 'normal');
   doc.setFontSize(size * PT);
   doc.setTextColor(o.color ?? INK);
@@ -16,9 +17,9 @@ function text(doc: jsPDF, s: string, x: number, y: number, size: number, o: { co
   const lines = s.split('\n');
   lines.forEach((ln, i) => {
     const w = doc.getTextWidth(ln);
-    const dx = o.left ? 0 : o.right ? -w : -w / 2;
+    const dx = o.anchor ? -w * o.anchor.ha : o.left ? 0 : o.right ? -w : -w / 2;
     // line i below the first, whole block centred vertically on the point (baseline ~0.35 em under centre)
-    const dy = o.left || o.right ? i * size * 1.25 : (i - (lines.length - 1) / 2) * size * 1.25 + size * 0.35;
+    const dy = o.anchor ? lineDy({ h: size, va: o.anchor.va }, lines.length, i) : o.left || o.right ? i * size * 1.25 : (i - (lines.length - 1) / 2) * size * 1.25 + size * 0.35;
     doc.text(ln, x + dx * c + dy * sn, y - dx * sn + dy * c, { angle: o.rot ?? 0 });
   });
 }
@@ -49,7 +50,7 @@ function prim(doc: jsPDF, p: Prim, L: Layout, fx: number, fy: number) {
   } else if (p.t === 'text') {
     const size = p.model ? p.size / L.S : p.size;
     if (size < 0.8) return; // unreadable once printed
-    text(doc, p.s, X(p.p.x) + (p.off?.x ?? 0), Y(p.p.y) - (p.off?.y ?? 0), size, { color: p.color, rot: p.rot, bold: p.bold, left: p.left });
+    text(doc, p.s, X(p.p.x) + (p.off?.x ?? 0), Y(p.p.y) - (p.off?.y ?? 0), size, { color: p.color, rot: p.rot, bold: p.bold, left: p.left, anchor: p.anchor });
   } else {
     const r = 3,
       x = X(p.p.x) + p.u.x * (r + 0.5),
