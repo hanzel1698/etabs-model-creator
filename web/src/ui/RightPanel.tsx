@@ -71,6 +71,13 @@ function ViewByFilter() {
         </span>{' '}
         <button disabled={!hidden.length} onClick={st.showAll} title="Show every column, beam and slab">
           All
+        </button>{' '}
+        <button
+          disabled={groups.every(({ ids }) => ids.every((id) => off.has(id)))}
+          onClick={() => st.hideIds(groups.flatMap((g) => g.ids))}
+          title={story === null ? 'Hide every column, beam and slab' : `Hide every column, beam and slab on ${story}`}
+        >
+          None
         </button>
       </h4>
       {colorBy === 'value' && (
