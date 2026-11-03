@@ -241,7 +241,8 @@ export function PlanView() {
       if (e.altKey) ids = nodes;
       else if (elems.length) ids = elems;
       else if (nodes.length) ids = nodes;
-      st.setSelection(e.shiftKey ? [...new Set([...st.selection, ...ids])] : ids);
+      if (e.ctrlKey) st.setSelection(st.selection.filter((id) => !ids.includes(id)));
+      else st.setSelection(e.shiftKey ? [...new Set([...st.selection, ...ids])] : ids);
       return;
     }
     if (st.tool === 'select') {

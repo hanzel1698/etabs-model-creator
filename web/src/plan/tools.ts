@@ -16,7 +16,7 @@ const P = () => usePreview.getState();
 const A = () => useApp.getState();
 
 const hints: Record<ToolName, string> = {
-  select: 'Click or drag a window (L→R: inside, R→L: crossing). Shift adds, Alt+drag picks nodes only. Del deletes.',
+  select: 'Click or drag a window (L→R: inside, R→L: crossing). Shift adds, Ctrl+drag removes, Alt+drag picks nodes only. Del deletes.',
   grid: 'Click two points to draw a grid line. Or use “Generate grids”.',
   column: 'Click to place a column (snaps to grid intersections). Drag a window to fill all intersections.',
   beam: 'Click start, then end (chained). Type dx,dy or @dist<angle or a length + Enter. Right-click/Esc ends the chain.',
