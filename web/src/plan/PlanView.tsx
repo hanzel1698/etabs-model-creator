@@ -84,6 +84,7 @@ export function PlanView() {
   const ts = useApp((s) => s.textScale);
   const bubble = useApp((s) => s.gridBubble);
   const colorBy = useApp((s) => s.colorBy);
+  const gridLock = useApp((s) => s.gridLock);
   // the setup view shows the raw DXF: place this story's model on its region (reference point = model 0,0)
   const setupRef = useUnderlay((u) => (u.kind === 'dxf' && u.setupMode ? u.regions.find((r) => r.stories.includes(story))?.ref ?? null : null));
   // the cropped view names the story in a fixed banner at the top of the canvas, so it stays put while zooming
@@ -299,6 +300,12 @@ export function PlanView() {
         <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6}>
           <path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4" />
           <rect x={5} y={5} width={6} height={6} strokeWidth={1.2} />
+        </svg>
+      </button>
+      <button className={'grid-lock' + (gridLock ? ' on' : '')} title={gridLock ? 'Grids locked: click to allow selecting and editing grids' : 'Lock grids: they can no longer be selected, drawn or reshaped'} aria-pressed={gridLock} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={useApp.getState().toggleGridLock}>
+        <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6}>
+          <rect x={3} y={7} width={10} height={7} rx={1} />
+          <path d={gridLock ? 'M5.5 7V5a2.5 2.5 0 0 1 5 0v2' : 'M5.5 7V5a2.5 2.5 0 0 1 5 0'} />
         </svg>
       </button>
     </div>

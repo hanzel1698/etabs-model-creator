@@ -160,6 +160,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
   const tool = useApp((s) => s.tool);
   const panel = useApp((s) => s.panel);
   const ortho = useApp((s) => s.ortho);
+  const gridLock = useApp((s) => s.gridLock);
   const sel = useApp((s) => s.selection);
   const prevSel = useApp((s) => s.prevSelection.length);
   const hidden = useApp((s) => s.hidden.length);
@@ -216,7 +217,8 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
         tools.select,
         'sep',
         tools.grid,
-        { label: 'Generate grids…', run: () => openDialog({ kind: 'grids' }) },
+        { label: 'Generate grids…', disabled: gridLock, run: () => openDialog({ kind: 'grids' }) },
+        { label: 'Lock grids', checked: gridLock, title: 'Grids can no longer be selected, drawn or reshaped', run: () => st().toggleGridLock() },
         'sep',
         tools.column,
         tools.beam,

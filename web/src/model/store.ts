@@ -77,6 +77,9 @@ interface AppState {
   setLoads3d: (on: boolean) => void;
   ortho: boolean;
   toggleOrtho: () => void;
+  /** grids can't be selected, drawn or reshaped */
+  gridLock: boolean;
+  toggleGridLock: () => void;
   /** beam tool: size new beams from their supports and span instead of using the active beam section as is */
   autoBeam: boolean;
   toggleAutoBeam: () => void;
@@ -220,6 +223,8 @@ export const useApp = create<AppState>((set, get) => ({
   setColumnAngle: (a) => set({ columnAngle: a }),
   ortho: true,
   toggleOrtho: () => set((s) => ({ ortho: !s.ortho })),
+  gridLock: false,
+  toggleGridLock: () => set((s) => ({ gridLock: !s.gridLock, selection: noGrids({ ...s, gridLock: true }, s.selection), tool: s.tool === 'grid' && !s.gridLock ? 'select' : s.tool })),
   autoBeam: true,
   toggleAutoBeam: () => set((s) => ({ autoBeam: !s.autoBeam })),
   autoSplitSlabs: false,
@@ -258,13 +263,13 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   selection: [],
-  setSelection: (ids) => set({ selection: ids }),
+  setSelection: (ids) => set((s) => ({ selection: noGrids(s, ids) })),
   prevSelection: [],
   restoreSelection: () =>
     set((s) => {
       // leave out what has been hidden since, like toggleShow/hideIds do
       const off = new Set([...s.hidden, ...switchedOff(s.model, s.show)]);
-      const ids = s.prevSelection.filter((id) => !off.has(id));
+      const ids = noGrids(s, s.prevSelection.filter((id) => !off.has(id)));
       return ids.length ? { selection: ids } : {};
     }),
 
@@ -306,6 +311,12 @@ useApp.subscribe((s, p) => {
   useApp.setState({ prevSelection: p.selection });
 });
 
+/** drop grid ids while grids are locked */
+function noGrids(s: { gridLock: boolean; model: Model }, ids: string[]) {
+  if (!s.gridLock || !s.model.grids.length) return ids;
+  const g = new Set(s.model.grids.map((x) => x.id));
+  return ids.filter((id) => !g.has(id));
+}
 const elementIds = (m: Model) => [...m.columns, ...m.beams, ...m.slabs].map((x) => x.id);
 
 /** Whether the View switches show beam `b`: beams on, and its direction (X when it runs mostly along X) on. */

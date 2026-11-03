@@ -53,6 +53,7 @@ export function resetTool() {
 }
 
 export function setTool(t: ToolName) {
+  if (t === 'grid' && A().gridLock) return toast('Grids are locked. Unlock them to draw grids.');
   redrawId = null;
   A().setTool(t);
   if (t === 'region' || t === 'calibrate') {
