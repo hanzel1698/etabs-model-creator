@@ -154,7 +154,7 @@ function PatternSelect({ value, onChange }: { value: string; onChange: (v: strin
   return (
     <div className="row">
       <span>Pattern</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <select value={value} onChange={(e) => { onChange(e.target.value); useApp.getState().setLoadPattern(e.target.value); }}>
         {pats.map((p) => <option key={p.name}>{p.name}</option>)}
       </select>
     </div>
