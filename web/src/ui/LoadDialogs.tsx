@@ -25,8 +25,9 @@ import {
   usedLoadValues,
   type AssignMode,
 } from '../model/loads';
-import { PATTERN_TYPES, type Beam, type FrameLoad, type LoadDir, type LoadPattern, type Model, type Pt, type Vec6 } from '../model/types';
-import { dist, fmt } from '../model/geom';
+import { PATTERN_TYPES, type Beam, type FrameLoad, type LoadDir, type LoadPattern, type Model, type Pt, type Slab, type Vec6 } from '../model/types';
+import { dist, fmt, polyArea } from '../model/geom';
+import { HDPE_TANKS, hdpeTankLoad } from '../model/waterTank';
 import { recentValues, rememberValues } from './recentValues';
 import { Is875Table } from './Is875';
 
@@ -472,6 +473,69 @@ export function FrameLoadDialog({ edit }: { edit?: LoadEdit }) {
 
 const SHELL_DIRS: LoadDir[] = ['Gravity', 'Z', '3', 'PGravity', 'X', 'Y'];
 
+// water tank calculator inputs, kept between openings of the dialog
+const tankCalc = { type: 'HDPE' as 'HDPE' | 'RCC', capacity: 5000, n: 2, padT: 200 };
+
+/** Water tank load spread over one slab panel: (RC pad + water) / panel area. */
+function TankCalculator({ slabs, onUse }: { slabs: Slab[]; onUse: (v: number) => void }) {
+  const [type, setType] = useState(tankCalc.type);
+  const [capacity, setCapacity] = useState(tankCalc.capacity);
+  const [n, setN] = useState(tankCalc.n);
+  const [padT, setPadT] = useState(tankCalc.padT);
+  const [panel, setPanel] = useState(0);
+  useEffect(() => void Object.assign(tankCalc, { type, capacity, n, padT }), [type, capacity, n, padT]);
+  const slab = slabs[Math.min(panel, slabs.length - 1)];
+  const area = slab ? Math.abs(polyArea(slab.pts)) / 1e6 : 0;
+  const bw = slab ? bwOf(slab) : 0, bh = slab ? bhOf(slab) : 0;
+  const r = hdpeTankLoad(capacity, n, padT, area);
+  const fits = (r.L <= bw + 1 && r.W <= bh + 1) || (r.L <= bh + 1 && r.W <= bw + 1);
+  const m = (mm: number) => fmt(mm / 1000, 2);
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 4, padding: '6px 8px', marginBottom: 5 }}>
+      <div className="chips">
+        {(['HDPE', 'RCC'] as const).map((t) => (
+          <label key={t} className="small"><input type="radio" checked={type === t} onChange={() => setType(t)} /> {t} tank</label>
+        ))}
+      </div>
+      {type === 'RCC' ? (
+        <div className="small muted">RCC tank calculation is not available yet.</div>
+      ) : (
+        <>
+          <div className="row">
+            <span>Capacity</span>
+            <select value={capacity} onChange={(e) => setCapacity(+e.target.value)}>
+              {HDPE_TANKS.map(([c, d]) => <option key={c} value={c}>{c} L (Ø {d} mm)</option>)}
+            </select>
+          </div>
+          <Num label="Tanks" value={n} onChange={(v) => setN(Math.max(1, Math.round(v)))} step={1} />
+          <Num label="Pad thk" value={padT} onChange={setPadT} unit="mm" step={25} />
+          <div className="row">
+            <span>Panel</span>
+            <select value={panel} onChange={(e) => setPanel(+e.target.value)}>
+              {slabs.map((s, i) => <option key={s.id} value={i}>Slab {i + 1}: {m(bwOf(s))} × {m(bhOf(s))} m, {fmt(Math.abs(polyArea(s.pts)) / 1e6, 2)} m²</option>)}
+            </select>
+          </div>
+          <div className="small muted" style={{ lineHeight: 1.6 }}>
+            Pad {m(r.L)} × {m(r.W)} m = {fmt(r.padArea, 3)} m² (150 mm edges, 300 mm between tanks)<br />
+            Pad weight {fmt(r.padArea, 3)} × {padT / 1000} × 25 = {fmt(r.pad, 2)} kN<br />
+            Water {n} × {capacity} L × g 10 = {fmt(r.water, 2)} kN<br />
+            Total {fmt(r.total, 2)} kN ÷ panel {fmt(area, 2)} m²
+          </div>
+          {slab && !fits && <div className="small" style={{ color: 'var(--danger)' }}>The {m(r.L)} × {m(r.W)} m pad does not fit the {m(bw)} × {m(bh)} m panel.</div>}
+          <div className="row">
+            <span>Load</span>
+            <b>{fmt(r.unit, 2)} kN/m²</b>
+            <button className="primary" style={{ marginLeft: 'auto' }} disabled={!area} onClick={() => onUse(+r.unit.toFixed(3))}>Use</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const bwOf = (s: Slab) => Math.max(...s.pts.map((p) => p.x)) - Math.min(...s.pts.map((p) => p.x));
+const bhOf = (s: Slab) => Math.max(...s.pts.map((p) => p.y)) - Math.min(...s.pts.map((p) => p.y));
+
 export function ShellLoadDialog({ edit }: { edit?: LoadEdit }) {
   const pat0 = useApp((s) => activePattern(s));
   const { slabs } = loadTargets(edit);
@@ -483,6 +547,8 @@ export function ShellLoadDialog({ edit }: { edit?: LoadEdit }) {
   const recent = useMemo(() => recentValues<number>(`shell@${pattern}`), [pattern]);
   const used = useMemo(() => usedLoadValues(useApp.getState().model, pattern).shell, [pattern]);
   const [code, setCode] = useState(false);
+  const [tank, setTank] = useState(false);
+  const isTank = /\bWT\b|water/i.test(pattern);
   const isLive = useApp((s) => ['Live', 'ReduceLive', 'Rooflive'].includes(s.model.loadPatterns.find((p) => p.name === pattern)?.type ?? ''));
   const apply = () => {
     if (!slabs.length) return toast('Select slabs first.');
@@ -511,8 +577,22 @@ export function ShellLoadDialog({ edit }: { edit?: LoadEdit }) {
             step={0.25}
             recent={recent}
             used={used}
-            extra={<button className={code && isLive ? 'primary' : ''} disabled={!isLive} onClick={() => setCode(!code)} title={isLive ? 'Pick a live load from IS 875 (Part 2) by occupancy' : 'Select a live load pattern to pick from IS 875'}>IS 875…</button>}
+            extra={
+              <>
+                <button className={code && isLive ? 'primary' : ''} disabled={!isLive} onClick={() => setCode(!code)} title={isLive ? 'Pick a live load from IS 875 (Part 2) by occupancy' : 'Select a live load pattern to pick from IS 875'}>IS 875…</button>
+                {isTank && <button className={tank ? 'primary' : ''} onClick={() => setTank(!tank)} title="Water tank load: (RC pad + water) ÷ slab panel area">🧮 Tank</button>}
+              </>
+            }
           />
+          {tank && isTank && (
+            <TankCalculator
+              slabs={slabs}
+              onUse={(v) => {
+                setValue(v);
+                setTank(false);
+              }}
+            />
+          )}
           {code && isLive && (
             <Is875Table
               current={value}
