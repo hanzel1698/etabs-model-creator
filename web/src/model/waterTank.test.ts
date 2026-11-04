@@ -19,4 +19,12 @@ describe('rccTankLoad', () => {
     expect(r.water).toBeCloseTo(104.96);
     expect(r.unit).toBeCloseTo(6.479, 3);
   });
+
+  it('adds a 120 mm roof and one 230 × 450 beam 4.5 m long', () => {
+    const r = rccTankLoad(10000, 200, 3600, 4500, 3.6 * 4.5, { t: 120, beams: [{ b: 230, d: 450, len: 4.5 }] });
+    expect(r.roofSlab).toBeCloseTo(48.6);
+    expect(r.beams).toBeCloseTo(11.644, 3);
+    expect(r.total).toBeCloseTo(165.204, 3);
+    expect(r.unit).toBeCloseTo(10.198, 3);
+  });
 });

@@ -27,7 +27,7 @@ import {
 } from '../model/loads';
 import { PATTERN_TYPES, type Beam, type FrameLoad, type LoadDir, type LoadPattern, type Model, type Pt, type Slab, type Vec6 } from '../model/types';
 import { dist, fmt, polyArea } from '../model/geom';
-import { HDPE_TANKS, hdpeTankLoad, rccTankLoad } from '../model/waterTank';
+import { HDPE_TANKS, hdpeTankLoad, rccTankLoad, type TankRoof } from '../model/waterTank';
 import { recentValues, rememberValues } from './recentValues';
 import { Is875Table } from './Is875';
 
@@ -533,21 +533,24 @@ function TankCalculator({ slabs, onUse }: { slabs: Slab[]; onUse: (v: number) =>
   );
 }
 
-const rccCalc = { volume: 10000, wallT: 200 };
+const rccCalc = { volume: 10000, wallT: 200, roofOn: false, roof: { t: 120, beams: [] } as TankRoof };
 
 /** RCC tank over one or more panels: walls on the outer edge of the picked panels. */
 function RccTank({ slabs, onUse }: { slabs: Slab[]; onUse: (v: number) => void }) {
   const [volume, setVolume] = useState(rccCalc.volume);
   const [wallT, setWallT] = useState(rccCalc.wallT);
   const [picked, setPicked] = useState<string[]>(() => slabs.map((s) => s.id));
-  useEffect(() => void Object.assign(rccCalc, { volume, wallT }), [volume, wallT]);
+  const [roofOn, setRoofOn] = useState(rccCalc.roofOn);
+  const [roof, setRoof] = useState(rccCalc.roof);
+  useEffect(() => void Object.assign(rccCalc, { volume, wallT, roofOn, roof }), [volume, wallT, roofOn, roof]);
+  const setBeam = (i: number, p: Partial<TankRoof['beams'][number]>) => setRoof({ ...roof, beams: roof.beams.map((b, j) => (j === i ? { ...b, ...p } : b)) });
   const on = slabs.filter((s) => picked.includes(s.id));
   const pts = on.flatMap((s) => s.pts);
   // shortcut: the tank is the picked panels' bounding rectangle, so panels should form a rectangle
   const bw = pts.length ? Math.max(...pts.map((p) => p.x)) - Math.min(...pts.map((p) => p.x)) : 0;
   const bh = pts.length ? Math.max(...pts.map((p) => p.y)) - Math.min(...pts.map((p) => p.y)) : 0;
   const area = on.reduce((a, s) => a + Math.abs(polyArea(s.pts)) / 1e6, 0);
-  const r = rccTankLoad(volume, wallT, bw, bh, area);
+  const r = rccTankLoad(volume, wallT, bw, bh, area, roofOn ? roof : undefined);
   const m = (mm: number) => fmt(mm / 1000, 2);
   return (
     <>
@@ -564,12 +567,41 @@ function RccTank({ slabs, onUse }: { slabs: Slab[]; onUse: (v: number) => void }
         </div>
       </div>
       <Num label="Wall thk" value={wallT} onChange={setWallT} unit="mm" step={25} />
+      <label className="small"><input type="checkbox" checked={roofOn} onChange={() => setRoofOn(!roofOn)} /> Add tank roof dead load and roof beams</label>
+      {roofOn && (
+        <>
+          <Num label="Roof thk" value={roof.t} onChange={(t) => setRoof({ ...roof, t })} unit="mm" step={10} />
+          {roof.beams.length > 0 && (
+            <table className="grid">
+              <thead><tr><th>Width mm</th><th>Depth mm</th><th>Length m</th><th></th></tr></thead>
+              <tbody>
+                {roof.beams.map((b, i) => (
+                  <tr key={i}>
+                    <td><input type="number" step={25} value={b.b} onChange={(e) => setBeam(i, { b: +e.target.value || 0 })} /></td>
+                    <td><input type="number" step={25} value={b.d} onChange={(e) => setBeam(i, { d: +e.target.value || 0 })} /></td>
+                    <td><input type="number" step={0.1} value={b.len} onChange={(e) => setBeam(i, { len: +e.target.value || 0 })} /></td>
+                    <td><button className="danger" onClick={() => setRoof({ ...roof, beams: roof.beams.filter((_, j) => j !== i) })}>✕</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="chips"><button onClick={() => setRoof({ ...roof, beams: [...roof.beams, { b: 230, d: 450, len: +(Math.min(bw, bh) / 1000).toFixed(2) }] })}>+ Roof beam</button></div>
+        </>
+      )}
       {on.length > 0 && (
         <div className="small muted" style={{ lineHeight: 1.6 }}>
           Panel {m(bw)} × {m(bh)} m, area {fmt(area, 2)} m²<br />
           Inside {m(r.iw)} × {m(r.ih)} m = {fmt(r.innerArea, 3)} m² (less {wallT} mm wall each side)<br />
           Water depth {fmt(volume / 1000, 3)} m³ ÷ {fmt(r.innerArea, 3)} = {fmt(r.hNeed, 3)} m → {fmt(r.h, 1)} m<br />
-          Water {fmt(r.innerArea, 3)} × {fmt(r.h, 1)} × 10 = {fmt(r.water, 2)} kN ÷ {fmt(area, 2)} m²
+          Water {fmt(r.innerArea, 3)} × {fmt(r.h, 1)} × 10 = {fmt(r.water, 2)} kN<br />
+          {roofOn && (
+            <>
+              Roof {m(bw)} × {m(bh)} × {roof.t / 1000} × 25 = {fmt(r.roofSlab, 2)} kN<br />
+              {roof.beams.length > 0 && <>Beams {roof.beams.map((b) => `${b.b / 1000}×${b.d / 1000}×${b.len}`).join(' + ')} × 25 = {fmt(r.beams, 2)} kN<br /></>}
+            </>
+          )}
+          Total {fmt(r.total, 2)} kN ÷ panel {fmt(area, 2)} m²
         </div>
       )}
       {on.length > 1 && Math.abs(bw * bh / 1e6 - area) > 0.01 && <div className="small" style={{ color: 'var(--danger)' }}>The picked panels do not form one rectangle; the tank uses their bounding rectangle.</div>}
