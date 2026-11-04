@@ -30,6 +30,7 @@ export interface ColAlign {
 
 export interface ShowFlags {
   sectionLabels: boolean;
+  grids: boolean;
   gridLabels: boolean;
   gridDims: boolean;
   ghostBelow: boolean;
@@ -161,7 +162,7 @@ function readNum(key: string, fallback: number) {
 }
 
 const VIEW_DEFAULTS = {
-  show: { sectionLabels: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false } as ShowFlags,
+  show: { sectionLabels: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false } as ShowFlags,
   hidden: [] as string[],
   viewRotation: 0,
   textScale: 1,

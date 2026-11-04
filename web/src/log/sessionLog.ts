@@ -265,6 +265,7 @@ const DIALOG_NAMES: Record<Dialog['kind'], string> = {
 };
 const SHOW_NAMES: Record<keyof ShowFlags, string> = {
   sectionLabels: 'section labels',
+  grids: 'grid lines',
   gridLabels: 'grid labels',
   gridDims: 'grid dimensions',
   ghostBelow: 'story below (ghosted)',

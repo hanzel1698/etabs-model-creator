@@ -265,6 +265,7 @@ function ViewControls() {
   const st = useApp.getState();
   const toggles: [keyof typeof show, string][] = [
     ['sectionLabels', 'Section labels'],
+    ['grids', 'Grid lines'],
     ['gridLabels', 'Grid bubbles'],
     ['gridDims', 'Grid dimensions'],
     ['ghostBelow', 'Story below (ghost)'],
