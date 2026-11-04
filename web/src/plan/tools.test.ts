@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { useApp } from '../model/store';
+import { useApp, usePreview } from '../model/store';
 import { addBeams, addColumns, setBeamEnd } from '../model/ops';
 import { emptyModel, type FrameSection } from '../model/types';
-import { commitBeams, finishFramePick, picking, startMovePick } from './tools';
+import { commitBeams, finishFramePick, midLock, onClick, onCancel, picking, startMidPick, startMovePick } from './tools';
 import { viewport } from './viewport';
 
 const rect = (name: string, t2: number, t3: number): FrameSection => ({ name, shape: 'Rectangle', t2, t3, material: '4000Psi', fromEtabs: false });
@@ -39,5 +39,28 @@ describe('move pick', () => {
     finishFramePick(viewport.toScreen({ x: 6002, y: 4001 }));
     expect(got).toEqual([6000, 4000]);
     expect(picking()).toBe(false);
+  });
+});
+
+describe('mid between two points', () => {
+  it('locks to the vertical guide when the mouse is above/below the midpoint, horizontal when beside it', () => {
+    expect(midLock({ x: 0, y: 0 }, { x: 100, y: 900 }).p).toEqual({ x: 0, y: 900 });
+    expect(midLock({ x: 0, y: 0 }, { x: -900, y: 100 }).p).toEqual({ x: -900, y: 0 });
+  });
+
+  it('locks the next click to the guide through the midpoint and starts the beam there', () => {
+    useApp.getState().setModel(emptyModel());
+    useApp.setState({ tool: 'beam' });
+    usePreview.getState().set({ rubber: [], mid: null });
+    startMidPick();
+    onClick({ x: 0, y: 0 });
+    onClick({ x: 3000, y: 1000 });
+    expect(usePreview.getState().mid?.guide).toEqual({ x: 1500, y: 500 });
+    onClick({ x: 1720, y: 4200 });
+    expect(usePreview.getState().mid).toBe(null);
+    expect(usePreview.getState().rubber).toEqual([{ x: 1500, y: 4200 }]);
+    startMidPick();
+    onCancel(); // cancels the mid pick only, keeping the chain
+    expect(usePreview.getState().rubber).toEqual([{ x: 1500, y: 4200 }]);
   });
 });

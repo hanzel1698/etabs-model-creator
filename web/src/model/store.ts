@@ -409,6 +409,7 @@ export interface Preview {
   grip: [Pt, Pt] | null; // beam being reshaped: fixed end, dragged end (world)
   panel: PanelSize | null; // Panel Size & Type result, drawn as dimensions inside the panel
   pick: { a: Pt; p: Pt; text: string } | null; // frame load distance pick: beam start, picked point (world)
+  mid: { pts: Pt[]; guide: Pt | null; vertical?: boolean } | null; // "Mid between two points": picked points, then their midpoint whose vertical or horizontal line the next click locks to
 }
 
 export const usePreview = create<Preview & { set: (p: Partial<Preview>) => void }>((set) => ({
@@ -425,6 +426,7 @@ export const usePreview = create<Preview & { set: (p: Partial<Preview>) => void 
   grip: null,
   panel: null,
   pick: null,
+  mid: null,
   set: (p) => set(p),
 }));
 

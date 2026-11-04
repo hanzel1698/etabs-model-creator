@@ -49,7 +49,22 @@ export function resetTool() {
   calibStage = 'dist';
   offsetSrc = null;
   const hint = redrawId && A().tool === 'region' ? `Redraw region (${useUnderlay.getState().regions.find((r) => r.id === redrawId)?.stories.join(', ')}): click two corners around its plan.` : hints[A().tool];
-  P().set({ rubber: [], rubberClosed: false, box: null, measure: null, panel: null, offsetLine: null, input: '', track: null, hint });
+  P().set({ rubber: [], rubberClosed: false, box: null, measure: null, panel: null, offsetLine: null, input: '', track: null, mid: null, hint });
+}
+
+// ---------- mid between two points ----------
+
+export const midPicking = () => !!P().mid;
+
+/** Pick two points; the next click then lands on a guide through their midpoint and goes to the active tool. */
+export function startMidPick() {
+  P().set({ mid: { pts: [], guide: null }, hint: 'Mid between two points: click the first point. Esc cancels.' });
+}
+
+/** Lock `q` to the midpoint guide: the vertical line when the mouse is above or below the midpoint, the horizontal one when it is to the side. */
+export function midLock(g: Pt, q: Pt) {
+  const vertical = Math.abs(q.y - g.y) >= Math.abs(q.x - g.x);
+  return { vertical, p: vertical ? { x: g.x, y: q.y } : { x: q.x, y: g.y } };
 }
 
 export function setTool(t: ToolName) {
@@ -177,9 +192,14 @@ function liveText(from: Pt, to: Pt) {
 }
 
 export function onMove(screen: Pt) {
-  const s = doSnap(screen);
+  let s = doSnap(screen);
   const t = A().tool;
   const p = P();
+  if (p.mid?.guide) {
+    const l = midLock(p.mid.guide, s.p);
+    s = { p: l.p, kind: 'align' };
+    if (l.vertical !== p.mid.vertical) p.set({ mid: { ...p.mid, vertical: l.vertical } });
+  }
   const upd: Partial<ReturnType<typeof P>> = { cursor: s.p, snap: s.kind === 'none' ? null : s };
   if (movePicking()) {
     const b = useMovePick.getState().base;
@@ -258,6 +278,16 @@ export function onClick(pt: Pt) {
   const commit = A().commit;
   if (DRAW_TOOLS.includes(t) && useUnderlay.getState().setupMode && useUnderlay.getState().kind === 'dxf')
     return toast('Untick “Show whole DXF (setup)” before drawing: the setup view uses raw DXF coordinates.');
+  if (p.mid) {
+    const { pts, guide } = p.mid;
+    if (!guide) {
+      const two = [...pts, pt];
+      if (two.length < 2) return p.set({ mid: { pts: two, guide: null }, hint: 'Mid between two points: click the second point.' });
+      return p.set({ mid: { pts: two, guide: { x: (two[0].x + two[1].x) / 2, y: (two[0].y + two[1].y) / 2 } }, hint: 'Locked to the midpoint guide (move up/down for vertical, sideways for horizontal): click to place the point.' });
+    }
+    pt = midLock(guide, pt).p;
+    p.set({ mid: null, hint: hints[t] });
+  }
   switch (t) {
     case 'grid': {
       if (!p.rubber.length) return p.set({ rubber: [pt] });
@@ -579,6 +609,7 @@ function clickMovePick(screen: Pt) {
 }
 
 export function onCancel() {
+  if (midPicking()) return P().set({ mid: null, hint: hints[A().tool] }); // keeps a beam chain in progress
   if (movePicking()) return endMovePick();
   if (picking()) return endFramePick();
   const p = P();
