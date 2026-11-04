@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { useApp, usePreview, visibleModel } from '../model/store';
 import { cachedStoryNodes, isNodeId, type PanelSize } from '../model/ops';
 import { fmt } from '../model/geom';
-import { columnOn, type Beam, type Pt } from '../model/types';
+import { columnOn, terminatingColumns, type Beam, type Pt } from '../model/types';
 import { viewport } from './viewport';
 import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
 import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
@@ -121,6 +121,8 @@ export function PlanView() {
   }, [model.stories, story]);
 
   const cols = useMemo(() => model.columns.filter((c) => columnOn(model, c, story)), [model, story]);
+  // red only on the floor the column stops at, not on the lower stories a joined column passes through
+  const ends = useMemo(() => { const t = terminatingColumns(model); return new Set(cols.filter((c) => c.story === story && t.has(c.id)).map((c) => c.id)); }, [model, cols, story]);
   const beams = useMemo(() => model.beams.filter((b) => b.story === story), [model.beams, story]);
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
   const legendItems = useMemo(() => [...cols, ...beams, ...(show.slabs ? slabs : [])], [cols, beams, slabs, show.slabs]);
@@ -241,13 +243,13 @@ export function PlanView() {
       if (e.altKey) ids = nodes;
       else if (elems.length) ids = elems;
       else if (nodes.length) ids = nodes;
-      if (e.ctrlKey) st.setSelection(st.selection.filter((id) => !ids.includes(id)));
-      else st.setSelection(e.shiftKey ? [...new Set([...st.selection, ...ids])] : ids);
+      if (e.shiftKey) st.setSelection(st.selection.filter((id) => !ids.includes(id)));
+      else st.setSelection(e.ctrlKey ? [...new Set([...st.selection, ...ids])] : ids);
       return;
     }
     if (st.tool === 'select') {
       const id = hitTest(visibleModel(st), p, st.activeStory);
-      if (e.shiftKey && id) st.setSelection(st.selection.includes(id) ? st.selection.filter((x) => x !== id) : [...st.selection, id]);
+      if (e.ctrlKey && id) st.setSelection(st.selection.includes(id) ? st.selection.filter((x) => x !== id) : [...st.selection, id]);
       else st.setSelection(id ? [id] : []);
       return;
     }
@@ -308,7 +310,7 @@ export function PlanView() {
             {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy="none" />}
             {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy="none" />}
             <BeamLayer beams={beams} sel={sel} colorBy={colorBy} patterns={viewPats} />
-            <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} />
+            <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} ends={ends} />
             {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} showSlabs={show.slabs} />}
             {(show.loads || colorBy === 'value') && <LoadLayer m={model} story={story} patterns={loadPats} viewRot={viewRot} ts={ts} />}
           </g>

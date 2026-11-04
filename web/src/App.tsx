@@ -111,7 +111,7 @@ export function App() {
     <div className="app">
       <div className="topbar">
         <MainMenu
-          onNew={() => confirm('Start a new model? Unsaved work is lost.') && (log('file', 'New model'), useApp.getState().setModel(emptyModel()), forgetSaveTarget(), resetTool())}
+          onNew={() => confirm('Start a new model? Unsaved work is lost.') && (log('file', 'New model'), useApp.getState().setModel(emptyModel()), useApp.getState().setTextScale(1), forgetSaveTarget(), resetTool())}
           onOpen={() => fileRef.current?.click()}
           onUnderlay={() => ulRef.current?.click()}
         />
@@ -181,7 +181,7 @@ function StoryStepper() {
     <>
       <button disabled={!up} onClick={() => up && useApp.getState().setActiveStory(up)} title={up ? `Story up: ${up}` : 'Top story'}>▲</button>
       <button disabled={!down} onClick={() => down && useApp.getState().setActiveStory(down)} title={down ? `Story down: ${down}` : 'Bottom story'}>▼</button>
-      <span className="story-step">{active}</span>
+      <span className="story-step" title={active}>{active}</span>
     </>
   );
 }

@@ -45,9 +45,10 @@ function ViewByFilter() {
   if (colorBy === 'none') return null;
   const st = useApp.getState();
   const none = colorBy === 'section' ? '' : colorBy === 'pattern' ? 'No loads' : `No ${patterns.join(', ')} loads`;
-  // none left ticked goes back to the active pattern
-  const togglePattern = (p: string) => st.setViewPatterns(patterns.includes(p) ? patterns.filter((x) => x !== p) : [...patterns, p]);
-  // like a window pick: only what is shown on the active story; Shift adds to the selection
+  // a click shows just that pattern; Ctrl toggles it in the set (none left ticked goes back to the active pattern)
+  const togglePattern = (p: string, add: boolean) =>
+    st.setViewPatterns(!add ? [p] : patterns.includes(p) ? patterns.filter((x) => x !== p) : [...patterns, p]);
+  // like a window pick: only what is shown on the active story; Ctrl adds to the selection
   const select = (ids: string[], name: string, add: boolean) => {
     const v = visibleModel(st);
     const at = st.activeStory;
@@ -81,9 +82,9 @@ function ViewByFilter() {
         </button>
       </h4>
       {colorBy === 'value' && (
-        <div className="chips" style={{ marginBottom: 6 }} title="Load patterns whose values are shown (none ticked: the active pattern)">
+        <div className="chips" style={{ marginBottom: 6 }} title="Load pattern whose values are shown; Ctrl+click to show several">
           {allPatterns.map((p) => (
-            <button key={p.name} className={patterns.includes(p.name) ? 'on' : ''} onClick={() => togglePattern(p.name)}>
+            <button key={p.name} className={patterns.includes(p.name) ? 'on' : ''} onClick={(e) => togglePattern(p.name, e.ctrlKey || e.metaKey)}>
               {p.name}
             </button>
           ))}
@@ -100,7 +101,7 @@ function ViewByFilter() {
               <span className="vb-name">{key ?? none}</span>
             </label>
             <span className="vb-count">{ids.length}</span>
-            <button title="Select these on the active story (Shift: add to the selection)" onClick={(e) => select(ids, key ?? none, e.shiftKey)}>
+            <button title="Select these on the active story (Ctrl: add to the selection)" onClick={(e) => select(ids, key ?? none, e.ctrlKey)}>
               Select
             </button>
             <button title={story === null ? 'Show only these' : `Show only these on ${story}`} onClick={() => only(ids)}>

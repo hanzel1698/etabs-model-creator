@@ -198,12 +198,13 @@ function byUse<T>(items: T[], max: number): T[] {
 }
 
 /** Load values already assigned in the model: frame values per unit, shell values, joint vectors. */
-export function usedLoadValues(m: Model, max = 8) {
+export function usedLoadValues(m: Model, pattern?: string, max = 8) {
+  const inPat = (l: { pattern: string }) => pattern === undefined || l.pattern === pattern;
   const frame: Record<string, number[]> = {};
-  for (const f of [...m.columns, ...m.beams]) for (const l of f.loads ?? []) for (const v of l.kind === 'point' ? [l.v1] : [l.v1, l.v2]) if (v) (frame[frameLoadUnit(l)] ??= []).push(+v.toFixed(3));
+  for (const f of [...m.columns, ...m.beams]) for (const l of (f.loads ?? []).filter(inPat)) for (const v of l.kind === 'point' ? [l.v1] : [l.v1, l.v2]) if (v) (frame[frameLoadUnit(l)] ??= []).push(+v.toFixed(3));
   return {
     frame: Object.fromEntries(Object.entries(frame).map(([u, vs]) => [u, byUse(vs, max)])) as Record<string, number[]>,
-    shell: byUse(m.slabs.flatMap((s) => (s.loads ?? []).map((l) => +l.value.toFixed(3)).filter(Boolean)), max),
-    joint: byUse(m.jointLoads.map((j) => j.f).filter((f) => f.some(Boolean)), max),
+    shell: byUse(m.slabs.flatMap((s) => (s.loads ?? []).filter(inPat).map((l) => +l.value.toFixed(3)).filter(Boolean)), max),
+    joint: byUse(m.jointLoads.filter(inPat).map((j) => j.f).filter((f) => f.some(Boolean)), max),
   };
 }

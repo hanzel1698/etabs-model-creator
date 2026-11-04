@@ -260,6 +260,7 @@ export const useApp = create<AppState>((set, get) => ({
   showAll: () => set({ hidden: [] }),
   resetView: () => {
     get().setGridBubble(600);
+    get().setTextScale(1);
     set({ ...VIEW_DEFAULTS, loadFilter: defaultLoadFilter() });
   },
 
@@ -283,7 +284,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   alsoStories: [],
   setAlsoStories: (s) => set({ alsoStories: s }),
-  textScale: 1,
+  textScale: readNum('textScale', 1),
   gridBubble: readNum('gridBubble', 600),
   setGridBubble: (v) => {
     const d = Math.min(5000, Math.max(50, v || 600));
@@ -292,7 +293,13 @@ export const useApp = create<AppState>((set, get) => ({
     } catch {}
     set({ gridBubble: d });
   },
-  setTextScale: (v) => set({ textScale: v }),
+  setTextScale: (v) => {
+    const t = Math.min(3, Math.max(0.4, v || 1));
+    try {
+      localStorage.setItem('textScale', String(t));
+    } catch {}
+    set({ textScale: t });
+  },
   colorBy: 'none',
   setColorBy: (colorBy) => set({ colorBy }),
   viewPatterns: [],

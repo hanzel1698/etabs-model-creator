@@ -181,16 +181,34 @@ export const BeamLayer = memo(function BeamLayer({ beams, sel, ghost, colorBy, p
   );
 });
 
-export const ColumnLayer = memo(function ColumnLayer({ cols, secs, sel, ghost, colorBy, patterns = [] }: { cols: Column[]; secs: Map<string, FrameSection>; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[] }) {
+/** Columns; ids in `ends` stop at this floor and draw green with a 45° hatch. */
+export const ColumnLayer = memo(function ColumnLayer({ cols, secs, sel, ghost, colorBy, patterns = [], ends }: { cols: Column[]; secs: Map<string, FrameSection>; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[]; ends?: Set<string> }) {
   return (
     <g className="columns" opacity={ghost ? 0.3 : 1}>
+      {ends && ends.size > 0 && (
+        <defs>
+          <pattern id="colEndHatch" patternUnits="userSpaceOnUse" width={80} height={80} patternTransform="rotate(45)">
+            <line x1={0} y1={0} x2={0} y2={80} stroke="var(--colEdge)" strokeWidth={12} />
+          </pattern>
+        </defs>
+      )}
       {cols.map((c) => {
         const sec = secs.get(c.section);
         const s = sel.has(c.id);
-        const fill = s ? 'var(--sel)' : ghost ? 'var(--ghost)' : keyColor(colorKey(c, colorBy, patterns), 'var(--col)');
-        if (sec?.shape === 'Circle') return <circle key={c.id} cx={c.x} cy={c.y} r={sec.t3 / 2} fill={fill} fillOpacity={0.85} stroke="var(--colEdge)" style={NS} />;
-        const ol = columnOutline(c, sec);
-        return <polygon key={c.id} points={ol.map((p) => `${p.x},${p.y}`).join(' ')} fill={fill} fillOpacity={0.85} stroke="var(--colEdge)" strokeWidth={1} style={NS} />;
+        const end = !s && !ghost && !!ends?.has(c.id);
+        const fill = s ? 'var(--sel)' : ghost ? 'var(--ghost)' : end ? 'var(--colEnd)' : keyColor(colorKey(c, colorBy, patterns), 'var(--col)');
+        const shape = (f: string, op: number, edge: boolean) =>
+          sec?.shape === 'Circle' ? (
+            <circle cx={c.x} cy={c.y} r={sec.t3 / 2} fill={f} fillOpacity={op} stroke={edge ? 'var(--colEdge)' : 'none'} style={NS} />
+          ) : (
+            <polygon points={columnOutline(c, sec).map((p) => `${p.x},${p.y}`).join(' ')} fill={f} fillOpacity={op} stroke={edge ? 'var(--colEdge)' : 'none'} strokeWidth={1} style={NS} />
+          );
+        return (
+          <g key={c.id}>
+            {shape(fill, 0.85, true)}
+            {end && shape('url(#colEndHatch)', 1, false)}
+          </g>
+        );
       })}
     </g>
   );

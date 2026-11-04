@@ -310,10 +310,10 @@ export function FrameLoadDialog({ edit }: { edit?: LoadEdit }) {
   const unit = frameLoadUnit({ kind: kind === 'point' ? 'point' : 'dist', force });
   const dUnit = rel ? '(0–1)' : 'm';
   // recent values are kept per unit, so a line load never offers a point load's kN
-  const recentKey = `frame:${unit}`;
-  const [recent] = useState(() => ({ 'kN/m': recentValues<number>('frame:kN/m'), 'kN·m/m': recentValues<number>('frame:kN·m/m'), kN: recentValues<number>('frame:kN'), 'kN·m': recentValues<number>('frame:kN·m') }));
-  const recentHere = recent[unit];
-  const [used] = useState(() => usedLoadValues(useApp.getState().model));
+  // ...and per pattern, so a dead load dialog never offers a live load's value
+  const recentKey = `frame:${unit}@${pattern}`;
+  const recentHere = useMemo(() => recentValues<number>(recentKey), [recentKey]);
+  const used = useMemo(() => usedLoadValues(useApp.getState().model, pattern), [pattern]);
   const usedHere = used.frame[unit] ?? [];
   const toMm = (d: number) => (rel ? d : d * 1000);
   const hidden = useFramePick((s) => !!s.done);
@@ -480,15 +480,15 @@ export function ShellLoadDialog({ edit }: { edit?: LoadEdit }) {
   const [value, setValue] = useState(o?.value ?? 1.5);
   const [dir, setDir] = useState<LoadDir>(o?.dir ?? 'Gravity');
   const [mode, setMode] = useState<AssignMode>('replace');
-  const [recent] = useState(() => recentValues<number>('shell'));
-  const [used] = useState(() => usedLoadValues(useApp.getState().model).shell);
+  const recent = useMemo(() => recentValues<number>(`shell@${pattern}`), [pattern]);
+  const used = useMemo(() => usedLoadValues(useApp.getState().model, pattern).shell, [pattern]);
   const [code, setCode] = useState(false);
   const isLive = useApp((s) => ['Live', 'ReduceLive', 'Rooflive'].includes(s.model.loadPatterns.find((p) => p.name === pattern)?.type ?? ''));
   const apply = () => {
     if (!slabs.length) return toast('Select slabs first.');
     if (!pattern) return toast('Define a load pattern first.');
     const ids = slabs.map((s) => s.id);
-    if (mode !== 'delete') rememberValues('shell', [value]);
+    if (mode !== 'delete') rememberValues(`shell@${pattern}`, [value]);
     if (edit) {
       useApp.getState().commit((m) => assignShellLoad(removeLoad(m, ids, edit.key), ids, { pattern, dir, value }, 'add'));
       toast(`Edited the load on ${plural(slabs.length, 'slab')}.`);
@@ -543,8 +543,8 @@ export function JointLoadDialog({ edit }: { edit?: LoadEdit }) {
   const [stories, setStories] = useState<string[]>([story]);
   const [mode, setMode] = useState<AssignMode>('replace');
   const labels = ['Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'];
-  const [recent] = useState(() => recentValues<Vec6>('joint'));
-  const [used] = useState(() => usedLoadValues(useApp.getState().model).joint);
+  const recent = useMemo(() => recentValues<Vec6>(`joint@${pattern}`), [pattern]);
+  const used = useMemo(() => usedLoadValues(useApp.getState().model, pattern).joint, [pattern]);
   const apply = () => {
     if (o) {
       // a changed pattern that the joint already carries sums into it, as adding does
@@ -554,7 +554,7 @@ export function JointLoadDialog({ edit }: { edit?: LoadEdit }) {
     }
     if (!nodes.length) return toast('Select nodes first (Alt+drag a window, or turn on Nodes and click them).');
     if (!pattern || !stories.length) return toast('Pick a pattern and at least one story.');
-    if (mode !== 'delete') rememberValues('joint', [f], (v) => v.every((x) => !x));
+    if (mode !== 'delete') rememberValues(`joint@${pattern}`, [f], (v) => v.every((x) => !x));
     useApp.getState().commit((m) => assignJointLoad(m, stories, nodes, { pattern, f }, mode));
     toast(`${mode === 'delete' ? 'Deleted' : 'Assigned'} ${pattern} joint load${mode === 'delete' ? 's' : ''} at ${plural(nodes.length, 'node')} on ${plural(stories.length, 'story')}.`);
     closeDialog();

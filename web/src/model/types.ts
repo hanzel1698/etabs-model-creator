@@ -216,6 +216,20 @@ export function columnStories(m: Model, c: Column): string[] {
 /** The column stands on `story` (a joined column stands on every story it spans). */
 export const columnOn = (m: Model, c: Column, story: string): boolean => c.story === story || (!!c.base && columnStories(m, c).includes(story));
 
+/** Ids of columns that stop at their top floor: no column continues at the same point on the story above (top-story columns excluded). */
+export function terminatingColumns(m: Model): Set<string> {
+  const names = m.stories.map((s) => s.name);
+  // shortcut: points matched by rounding to 1 mm, so columns 0.5 mm apart can miss; use a TOL search if that bites
+  const key = (s: string, c: Column) => `${s}|${Math.round(c.x)}|${Math.round(c.y)}`;
+  const on = new Set(m.columns.flatMap((c) => columnStories(m, c).map((s) => key(s, c))));
+  const out = new Set<string>();
+  for (const c of m.columns) {
+    const up = names[names.indexOf(c.story) + 1];
+    if (up && !on.has(key(up, c))) out.add(c.id);
+  }
+  return out;
+}
+
 /** Bottom and top elevation of a column, or null if its story is missing. */
 export function columnSpan(el: ReturnType<typeof storyElevations>, c: Column): { bottom: number; top: number } | null {
   const top = el[c.story];

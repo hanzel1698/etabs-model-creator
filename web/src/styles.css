@@ -16,6 +16,7 @@
   --dim: #8fb0d6;
   --beam: #ffd166;
   --col: #ef476f;
+  --colEnd: #22c55e;
   --node: #7fd3ff;
   --colEdge: #0b0d10;
   --slab: rgba(72, 202, 228, 0.1);
@@ -237,10 +238,13 @@ label {
   flex: 1 1 8px;
 }
 .toolbar .story-step {
-  min-width: 56px;
+  /* fixed width so the ▲▼ buttons don't shift as the story name changes */
+  flex: 0 0 96px;
   margin: 0 8px 0 2px;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .seg {
   display: inline-flex;
@@ -1249,4 +1253,29 @@ table.grid tr.group-row td {
 .ctx-menu .menu-item:hover {
   background: #1f3b5a;
   color: #fff;
+}
+
+table.sheet-matrix {
+  table-layout: fixed;
+}
+table.sheet-matrix label {
+  display: inline-flex;
+  white-space: nowrap;
+}
+table.sheet-matrix input {
+  width: auto;
+  flex: none;
+  margin: 0;
+}
+label.sheet-orient {
+  margin-top: 8px;
+}
+div.sheet-col-btns {
+  display: flex;
+  gap: 3px;
+  margin-top: 3px;
+}
+div.sheet-col-btns button {
+  padding: 1px 5px;
+  font-size: 11px;
 }

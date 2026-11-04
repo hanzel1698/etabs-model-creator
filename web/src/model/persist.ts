@@ -54,7 +54,8 @@ export async function setWorkingFolder() {
 }
 
 const projectBlob = () => {
-  const data = { app: 'etabs-model-creator', version: 1, model: useApp.getState().model, underlay: metaOf(useUnderlay.getState()) };
+  const s = useApp.getState();
+  const data = { app: 'etabs-model-creator', version: 1, model: s.model, underlay: metaOf(useUnderlay.getState()), textScale: s.textScale };
   return new Blob([JSON.stringify(data)], { type: 'application/json' });
 };
 
@@ -115,6 +116,8 @@ export async function openProject(file: File) {
   const j = JSON.parse(await file.text());
   if (!j.model) throw new Error('Not an ETABS Model Creator project');
   useApp.getState().setModel({ ...emptyModel(), ...j.model });
+  // text size is per project; older files without one get the default
+  useApp.getState().setTextScale(+j.textScale || 1);
   // keep the loaded underlay file, apply saved scale/placement only if it is the same file
   if (j.underlay) applySavedMeta(j.underlay);
 }

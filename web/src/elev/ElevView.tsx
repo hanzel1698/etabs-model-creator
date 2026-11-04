@@ -59,7 +59,7 @@ export function ElevView() {
   const pick = (id: string, ev: React.PointerEvent) => {
     if (drag.current?.moved) return;
     const st = useApp.getState();
-    st.setSelection(ev.shiftKey ? (st.selection.includes(id) ? st.selection.filter((x) => x !== id) : [...st.selection, id]) : [id]);
+    st.setSelection(ev.ctrlKey ? (st.selection.includes(id) ? st.selection.filter((x) => x !== id) : [...st.selection, id]) : [id]);
   };
   const byId = useMemo(() => new Map([...model.columns, ...model.beams, ...model.slabs].map((x) => [x.id, x])), [model]);
   const shown = useMemo(() => (e ? [...e.columns, ...e.beams, ...e.cuts].flatMap((x) => byId.get(x.id) ?? []) : []), [e, byId]);

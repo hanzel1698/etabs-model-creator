@@ -684,7 +684,7 @@ export default function View3D() {
       if (!id) return st.setSelection([]);
       const story = [...st.model.columns, ...st.model.beams, ...st.model.slabs].find((x) => x.id === id)?.story;
       if (story && story !== st.activeStory) st.setActiveStory(story);
-      st.setSelection(e.shiftKey ? [...st.selection, id] : [id]);
+      st.setSelection(e.ctrlKey ? [...st.selection, id] : [id]);
     };
     renderer.domElement.addEventListener('pointerdown', pd);
     renderer.domElement.addEventListener('pointerup', pu);

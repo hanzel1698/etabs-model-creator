@@ -214,5 +214,7 @@ describe('used load values', () => {
     expect(u.frame.kN).toEqual([20]);
     expect(u.shell).toEqual([1.5]);
     expect(u.joint).toEqual([]);
+    expect(usedLoadValues(m, 'SDL').frame['kN/m']).toEqual([5]);
+    expect(usedLoadValues(m, 'SDL').frame.kN).toBeUndefined();
   });
 });
