@@ -52,6 +52,23 @@ export function assignShellLoad(m: Model, ids: string[], load: ShellLoad, mode: 
   return { ...m, slabs: m.slabs.map((sl) => (s.has(sl.id) ? withLoads(sl, combine(sl.loads, load, mode)) : sl)) };
 }
 
+/** Loads copied off one element: frame loads paste onto columns and beams, shell loads onto slabs. */
+export type LoadClip = { frame: true; loads: FrameLoad[] } | { frame: false; loads: ShellLoad[] };
+
+/** Paste copied loads onto the matching elements among `ids`: on top (skipping exact duplicates) or replacing all their loads. */
+export function pasteLoads(m: Model, ids: string[], clip: LoadClip, replace: boolean): Model {
+  const s = new Set(ids);
+  const merge = <L>(cur: L[] | undefined, add: L[], key: (l: L) => string) => {
+    const have = new Set(replace ? [] : (cur ?? []).map(key));
+    return [...(replace ? [] : (cur ?? [])), ...add.filter((l) => !have.has(key(l)))];
+  };
+  if (clip.frame) {
+    const f = <T extends { id: string; loads?: FrameLoad[] }>(x: T) => (s.has(x.id) ? withLoads(x, merge(x.loads, clip.loads, frameLoadKey)) : x);
+    return { ...m, columns: m.columns.map(f), beams: m.beams.map(f) };
+  }
+  return { ...m, slabs: m.slabs.map((x) => (s.has(x.id) ? withLoads(x, merge(x.loads, clip.loads, shellLoadKey)) : x)) };
+}
+
 const at = (j: JointLoad, story: string, p: Pt, dz = 0) => j.story === story && Math.abs((j.dz ?? 0) - dz) < TOL && Math.abs(j.x - p.x) < TOL && Math.abs(j.y - p.y) < TOL;
 
 /** Assign a joint load at plan points of a story (on each of `stories`), `dz` mm off its level. */

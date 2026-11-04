@@ -8,6 +8,7 @@ import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLay
 import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
 import { onMove, onClick, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, midPicking, startMidPick, type Grip } from './tools';
 import { columnOutline } from './snap';
+import { pasteLoads, type LoadClip } from '../model/loads';
 import { useUnderlay, regionFor } from '../underlay/store';
 import { UnderlayCanvas } from './UnderlayCanvas';
 import { useIssues } from '../ui/Checks';
@@ -268,7 +269,10 @@ export function PlanView() {
   const [menu, setMenu] = useState<Pt | null>(null);
   const ctx = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (useApp.getState().tool !== 'select' && !picking() && !midPicking()) return setMenu(local(e));
+    const st = useApp.getState();
+    if (st.tool !== 'select' && !picking() && !midPicking()) return setMenu(local(e));
+    // select tool with frames or slabs picked: offer copy/paste of their loads
+    if (st.tool === 'select' && !picking() && !midPicking() && loadTargets().all.length) return setMenu(local(e));
     endChain();
   };
   useEffect(() => {
@@ -322,9 +326,15 @@ export function PlanView() {
       </svg>
       {menu && (
         <div className="menu ctx-menu" role="menu" style={{ top: menu.y, left: menu.x }} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onContextMenu={(e) => (e.preventDefault(), e.stopPropagation())}>
-          {menuItem('Mid between two points', startMidPick)}
-          <div className="menu-sep" role="separator" />
-          {menuItem(tool === 'slabDraw' || tool === 'area' ? 'Close polygon' : 'End / cancel', endChain)}
+          {tool === 'select' ? (
+            <LoadClipItems item={menuItem} />
+          ) : (
+            <>
+              {menuItem('Mid between two points', startMidPick)}
+              <div className="menu-sep" role="separator" />
+              {menuItem(tool === 'slabDraw' || tool === 'area' ? 'Close polygon' : 'End / cancel', endChain)}
+            </>
+          )}
         </div>
       )}
       <Compass rot={viewRot} />
@@ -343,6 +353,42 @@ export function PlanView() {
         </svg>
       </button>
     </div>
+  );
+}
+
+// ---------- copy / paste load assignments (select tool right-click) ----------
+
+// shortcut: in-memory only, lost on reload; fine for copying between elements in one sitting
+let loadClip: LoadClip | null = null;
+
+/** The selected frames (columns, beams) and slabs. */
+function loadTargets() {
+  const { model: m, selection } = useApp.getState();
+  const s = new Set(selection);
+  const frames = [...m.columns, ...m.beams].filter((x) => s.has(x.id));
+  const slabs = m.slabs.filter((x) => s.has(x.id));
+  return { frames, slabs, all: [...frames, ...slabs] };
+}
+
+function LoadClipItems({ item }: { item: (label: string, run: () => void) => React.ReactNode }) {
+  const { frames, slabs, all } = loadTargets();
+  const one = all.length === 1 ? all[0] : null;
+  const copy = () => {
+    loadClip = frames.length ? { frame: true, loads: frames[0].loads ?? [] } : { frame: false, loads: slabs[0].loads ?? [] };
+  };
+  const clip = loadClip;
+  const targets = clip ? (clip.frame ? frames : slabs).map((x) => x.id) : [];
+  const paste = (replace: boolean) => () => useApp.getState().commit((m) => pasteLoads(m, targets, clip!, replace));
+  const what = clip ? `${clip.loads.length} ${clip.frame ? 'frame' : 'slab'} load${clip.loads.length === 1 ? '' : 's'}` : '';
+  return (
+    <>
+      {one && item(`Copy loads (${(one.loads ?? []).length})`, copy)}
+      {targets.length > 0 && item(`Paste ${what}: add`, paste(false))}
+      {targets.length > 0 && item(`Paste ${what}: replace`, paste(true))}
+      {!one && !targets.length && <div className="menu-item" aria-disabled style={{ opacity: 0.5, pointerEvents: 'none' }}><span /><span>{clip ? `Copied ${what} need ${clip.frame ? 'frames' : 'slabs'} selected` : 'Select one element to copy its loads'}</span><span /></div>}
+      <div className="menu-sep" role="separator" />
+      {item('Clear selection', () => useApp.getState().setSelection([]))}
+    </>
   );
 }
 

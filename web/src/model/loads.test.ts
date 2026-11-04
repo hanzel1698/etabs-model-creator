@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addBeams, addColumns, anyFilter, joinBeams, joinColumns, matchElements, mergeSlabs, moveIds, replicate, splitSlabsByBeams } from './ops';
 import { checkModel } from './checks';
-import { assignFrameLoad, assignJointLoad, assignShellLoad, deletePattern, frameLoadKey, partialUniform, patternUse, removeLoad, renamePattern, shellLoadKey, usedLoadValues } from './loads';
+import { assignFrameLoad, assignJointLoad, assignShellLoad, deletePattern, frameLoadKey, partialUniform, pasteLoads, patternUse, removeLoad, renamePattern, shellLoadKey, usedLoadValues } from './loads';
 import { emptyModel, type FrameLoad, type Model, type ShellLoad } from './types';
 import { jointKeys, toPayload } from '../etabs/mapping';
 
@@ -43,6 +43,18 @@ describe('assigning loads', () => {
     expect(m.slabs[0].loads).toEqual([sdl(1.5)]);
     expect(m.beams[0].loads).toHaveLength(1);
     expect(m.columns[0].loads).toHaveLength(1);
+  });
+
+  it('pastes copied loads onto matching elements, adding or replacing', () => {
+    const m0 = frame();
+    const m = { ...m0, beams: m0.beams.map((b) => ({ ...b, id: 'b', loads: [udl('Live', 2)] })) };
+    const clip = { frame: true as const, loads: [udl('Live', 2), udl('SDL', 5)] };
+    const added = pasteLoads(m, ['b', 's1', m.columns[0].id], clip, false);
+    expect(added.beams[0].loads!.map((l) => l.pattern)).toEqual(['Live', 'SDL']); // duplicate skipped
+    expect(added.columns[0].loads).toHaveLength(2);
+    expect(added.slabs[0].loads).toBeUndefined(); // frame loads never land on slabs
+    expect(pasteLoads(m, ['b'], { frame: true, loads: [] }, true).beams[0].loads).toBeUndefined();
+    expect(pasteLoads(m, ['s1'], { frame: false, loads: [sdl(1)] }, true).slabs[0].loads).toEqual([sdl(1)]);
   });
 
   it('keeps one joint load per pattern, summing on add', () => {
