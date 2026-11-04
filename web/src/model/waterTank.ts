@@ -19,3 +19,15 @@ export function hdpeTankLoad(capacity: number, n: number, padT: number, panelAre
   const total = pad + water;
   return { dia, L, W, padArea, pad, water, total, unit: panelArea > 0 ? total / panelArea : 0 };
 }
+
+/** RCC tank whose walls stand on the panel edges: water fills the inside (panel less the wall
+ *  thickness all round) to the depth that holds the volume, rounded up to 100 mm.
+ *  bw × bh is the panel (or panels') extent in mm, panelArea in m². */
+export function rccTankLoad(volumeL: number, wallT: number, bw: number, bh: number, panelArea: number) {
+  const iw = Math.max(0, bw - 2 * wallT), ih = Math.max(0, bh - 2 * wallT);
+  const innerArea = (iw / 1000) * (ih / 1000);
+  const hNeed = innerArea > 0 ? volumeL / 1000 / innerArea : 0; // m
+  const h = Math.ceil(hNeed * 10 - 1e-9) / 10;
+  const water = innerArea * h * G; // 1 m³ of water = 1000 kg
+  return { iw, ih, innerArea, hNeed, h, water, unit: panelArea > 0 ? water / panelArea : 0 };
+}

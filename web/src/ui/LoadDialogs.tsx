@@ -27,7 +27,7 @@ import {
 } from '../model/loads';
 import { PATTERN_TYPES, type Beam, type FrameLoad, type LoadDir, type LoadPattern, type Model, type Pt, type Slab, type Vec6 } from '../model/types';
 import { dist, fmt, polyArea } from '../model/geom';
-import { HDPE_TANKS, hdpeTankLoad } from '../model/waterTank';
+import { HDPE_TANKS, hdpeTankLoad, rccTankLoad } from '../model/waterTank';
 import { recentValues, rememberValues } from './recentValues';
 import { Is875Table } from './Is875';
 
@@ -498,7 +498,7 @@ function TankCalculator({ slabs, onUse }: { slabs: Slab[]; onUse: (v: number) =>
         ))}
       </div>
       {type === 'RCC' ? (
-        <div className="small muted">RCC tank calculation is not available yet.</div>
+        <RccTank slabs={slabs} onUse={onUse} />
       ) : (
         <>
           <div className="row">
@@ -530,6 +530,55 @@ function TankCalculator({ slabs, onUse }: { slabs: Slab[]; onUse: (v: number) =>
         </>
       )}
     </div>
+  );
+}
+
+const rccCalc = { volume: 10000, wallT: 200 };
+
+/** RCC tank over one or more panels: walls on the outer edge of the picked panels. */
+function RccTank({ slabs, onUse }: { slabs: Slab[]; onUse: (v: number) => void }) {
+  const [volume, setVolume] = useState(rccCalc.volume);
+  const [wallT, setWallT] = useState(rccCalc.wallT);
+  const [picked, setPicked] = useState<string[]>(() => slabs.map((s) => s.id));
+  useEffect(() => void Object.assign(rccCalc, { volume, wallT }), [volume, wallT]);
+  const on = slabs.filter((s) => picked.includes(s.id));
+  const pts = on.flatMap((s) => s.pts);
+  // shortcut: the tank is the picked panels' bounding rectangle, so panels should form a rectangle
+  const bw = pts.length ? Math.max(...pts.map((p) => p.x)) - Math.min(...pts.map((p) => p.x)) : 0;
+  const bh = pts.length ? Math.max(...pts.map((p) => p.y)) - Math.min(...pts.map((p) => p.y)) : 0;
+  const area = on.reduce((a, s) => a + Math.abs(polyArea(s.pts)) / 1e6, 0);
+  const r = rccTankLoad(volume, wallT, bw, bh, area);
+  const m = (mm: number) => fmt(mm / 1000, 2);
+  return (
+    <>
+      <Num label="Volume" value={volume} onChange={setVolume} unit="L" step={500} />
+      <div className="row">
+        <span>Panels</span>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {slabs.map((s, i) => (
+            <label key={s.id} className="small">
+              <input type="checkbox" checked={picked.includes(s.id)} onChange={() => setPicked(picked.includes(s.id) ? picked.filter((x) => x !== s.id) : [...picked, s.id])} />{' '}
+              Slab {i + 1}: {m(bwOf(s))} × {m(bhOf(s))} m, {fmt(Math.abs(polyArea(s.pts)) / 1e6, 2)} m²
+            </label>
+          ))}
+        </div>
+      </div>
+      <Num label="Wall thk" value={wallT} onChange={setWallT} unit="mm" step={25} />
+      {on.length > 0 && (
+        <div className="small muted" style={{ lineHeight: 1.6 }}>
+          Panel {m(bw)} × {m(bh)} m, area {fmt(area, 2)} m²<br />
+          Inside {m(r.iw)} × {m(r.ih)} m = {fmt(r.innerArea, 3)} m² (less {wallT} mm wall each side)<br />
+          Water depth {fmt(volume / 1000, 3)} m³ ÷ {fmt(r.innerArea, 3)} = {fmt(r.hNeed, 3)} m → {fmt(r.h, 1)} m<br />
+          Water {fmt(r.innerArea, 3)} × {fmt(r.h, 1)} × 10 = {fmt(r.water, 2)} kN ÷ {fmt(area, 2)} m²
+        </div>
+      )}
+      {on.length > 1 && Math.abs(bw * bh / 1e6 - area) > 0.01 && <div className="small" style={{ color: 'var(--danger)' }}>The picked panels do not form one rectangle; the tank uses their bounding rectangle.</div>}
+      <div className="row">
+        <span>Load</span>
+        <b>{fmt(r.unit, 2)} kN/m²</b>
+        <button className="primary" style={{ marginLeft: 'auto' }} disabled={!r.innerArea || !area} onClick={() => onUse(+r.unit.toFixed(3))}>Use</button>
+      </div>
+    </>
   );
 }
 
