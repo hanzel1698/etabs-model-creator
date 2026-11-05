@@ -432,6 +432,23 @@ label {
   stroke: #000;
   stroke-width: 3px;
 }
+.offset-field {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+  color: #ffc850;
+  background: rgba(20, 24, 32, 0.92);
+  border: 1px solid #ffc850;
+  border-radius: 4px;
+}
+.offset-field input {
+  width: 70px;
+  font-family: Consolas, monospace;
+}
 .zoom-ext {
   position: absolute;
   left: 8px;

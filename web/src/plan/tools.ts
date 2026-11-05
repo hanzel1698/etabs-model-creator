@@ -22,7 +22,7 @@ const hints: Record<ToolName, string> = {
   grid: 'Click two points to draw a grid line. Or use “Generate grids”.',
   column: 'Click to place a column (snaps to grid intersections). Drag a window to fill all intersections.',
   beam: 'Click start, then end (chained). Type dx,dy or @dist<angle or a length + Enter. Right-click/Esc ends the chain.',
-  beamOffset: 'Pick a grid or beam to offset from.',
+  beamOffset: 'Pick a grid or beam to offset from, or click any other point (then two clicks set the direction).',
   slab: 'Click inside a bay bounded by beams (or grids) to create a slab.',
   slabDraw: 'Click polygon corners; Enter or click the first point to close.',
   measure: 'Click points to measure distance (chained). Esc clears.',
@@ -53,6 +53,8 @@ let calibPts: Pt[] = [];
 let calibStage: 'dist' | 'ref' = 'dist';
 let offsetSrc: [Pt, Pt] | null = null;
 let offsetFromGrid = false;
+let offsetBase: Pt | null = null; // point picked off any grid/beam: waiting for two direction clicks
+let offsetDir: Pt[] = [];
 
 export function resetTool() {
   regionRect = null;
@@ -60,6 +62,8 @@ export function resetTool() {
   calibPts = [];
   calibStage = 'dist';
   offsetSrc = null;
+  offsetBase = null;
+  offsetDir = [];
   const hint = redrawId && A().tool === 'region' ? `Redraw region (${useUnderlay.getState().regions.find((r) => r.id === redrawId)?.stories.join(', ')}): click two corners around its plan.` : hints[A().tool];
   P().set({ rubber: [], rubberClosed: false, box: null, measure: null, panel: null, offsetLine: null, input: '', track: null, tracks: [], mid: null, hint });
 }
@@ -251,11 +255,7 @@ export function onMove(screen: Pt) {
     const w = viewport.toWorld(screen); // unsnapped: the side/distance follow the mouse
     upd.cursor = w;
     upd.snap = null;
-    const d = side(w, offsetSrc[0], offsetSrc[1]) > 0 ? 1 : -1;
-    const typed = parseFloat(p.input);
-    const off = !isNaN(typed) ? typed : Math.round(distToSegLine(w, offsetSrc) / 50) * 50;
-    upd.offsetLine = offsetSeg(offsetSrc[0], offsetSrc[1], d * off);
-    upd.hint = `Offset = ${fmt(off)}  (type a distance + Enter, or click)`;
+    Object.assign(upd, offsetPreview(w, p.input));
   }
   p.set(upd);
 }
@@ -306,6 +306,22 @@ function flightHint(box: { a: Pt; b: Pt }, a: Pt, b: Pt) {
 
 const flightText = (f: Flight) => `${f.n} risers × ${f.R} = ${fmt(f.n * f.R)} rise · going ${fmt((f.n - 1) * f.T)} · width ${fmt(f.width)}`;
 
+/** Offset preview: side from the cursor, distance typed or (rounded to 50) from the cursor. */
+function offsetPreview(w: Pt, input: string) {
+  const src = offsetSrc!;
+  const d = side(w, src[0], src[1]) > 0 ? 1 : -1;
+  const typed = parseFloat(input);
+  const off = !isNaN(typed) ? Math.abs(typed) : Math.round(distToSegLine(w, src) / 50) * 50;
+  return { offsetLine: offsetSeg(src[0], src[1], d * off), hint: `Offset = ${fmt(off)}  (type a distance + Enter, or click)` };
+}
+
+/** Typing in the on-canvas offset field: redraw the preview with the typed distance at once. */
+export function setOffsetInput(input: string) {
+  const p = P();
+  if (!offsetSrc) return p.set({ input });
+  p.set({ input, ...offsetPreview(p.cursor ?? offsetSrc[0], input) });
+}
+
 const distToSegLine = (p: Pt, [a, b]: [Pt, Pt]) => Math.abs(side(p, a, b)) / (dist(a, b) || 1);
 
 /** Called with a snapped world point on a primary click. */
@@ -355,6 +371,7 @@ export function onClick(pt: Pt) {
       return p.set({ rubber: [pt] });
     }
     case 'beamOffset': {
+      if (offsetBase) return pickOffsetDirection(pt);
       if (!offsetSrc) return pickOffsetSource(pt);
       if (p.offsetLine) createOffsetBeam(p.offsetLine);
       return;
@@ -537,10 +554,27 @@ function pickOffsetSource(pt: Pt) {
     const d = distToSeg(pt, a, c);
     if (d < bd) (bd = d), (best = [a, c]), (isGrid = true);
   }
-  if (!best) return toast('Pick a grid line or a beam.');
+  if (!best) {
+    offsetBase = pt;
+    return P().set({ rubber: [pt], hint: 'Offset from point: WAITING FOR DIRECTION — click the 1st direction point.' });
+  }
   offsetSrc = best;
   offsetFromGrid = isGrid;
   P().set({ hint: 'Move to the side, type a distance + Enter, or click.' });
+}
+
+/** Two clicks after an offset base point: their direction becomes a reference line through the base, as long as the two clicks are apart. */
+function pickOffsetDirection(pt: Pt) {
+  if (!offsetDir.length) {
+    offsetDir = [pt];
+    return P().set({ rubber: [pt], hint: 'Offset from point: WAITING FOR DIRECTION — click the 2nd direction point.' });
+  }
+  if (dist(offsetDir[0], pt) < 1) return toast('Click the 2nd direction point away from the 1st.');
+  offsetSrc = [offsetBase!, add(offsetBase!, sub(pt, offsetDir[0]))];
+  offsetFromGrid = false;
+  offsetBase = null;
+  offsetDir = [];
+  P().set({ rubber: [], hint: 'Move to the side, type a distance + Enter, or click.' });
 }
 
 function createOffsetBeam(line: [Pt, Pt]) {
@@ -561,7 +595,7 @@ function createOffsetBeam(line: [Pt, Pt]) {
     }
   }
   commitBeams((m) => addBeams(m, [[a, b]], drawStories(), A().active.beam, drawDz()));
-  P().set({ input: '' });
+  resetTool(); // back to picking a new source; also drops the on-canvas offset field
 }
 
 export function finishPolygon() {

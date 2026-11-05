@@ -82,7 +82,7 @@ export function App() {
       if (/^[\d@.\-]$/.test(e.key) && st.tool !== 'select') {
         e.preventDefault();
         usePreview.getState().set({ input: e.key });
-        document.getElementById('cmd')?.focus();
+        (document.getElementById('offset-cmd') ?? document.getElementById('cmd'))?.focus();
         return;
       }
       const k = e.key.toUpperCase();

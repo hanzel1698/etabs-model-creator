@@ -8,7 +8,7 @@ import { flightGrips, flightStory, landingStory, landingRect, landingSides, rect
 import { viewport } from './viewport';
 import { UnderlayLayer, StairBoxLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
 import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
-import { onMove, onClick, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, midPicking, startMidPick, spanGrips, type Grip } from './tools';
+import { onMove, onClick, onInput, setOffsetInput, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, midPicking, startMidPick, spanGrips, type Grip } from './tools';
 import { columnOutline } from './snap';
 import { pasteLoads, type LoadClip } from '../model/loads';
 import { useUnderlay, regionFor, underlayStory } from '../underlay/store';
@@ -359,6 +359,7 @@ export function PlanView() {
           )}
         </div>
       )}
+      {tool === 'beamOffset' && <OffsetField />}
       <Compass rot={viewRot} />
       <ColorLegend items={legendItems} colorBy={colorBy} patterns={viewPats} />
       {show.underlay && hasRegion && (
@@ -486,6 +487,31 @@ function GripLayer({ beams, slabs, flights, landings, spans, sel, offset }: { be
 }
 
 // ---------- screen-space overlay (snap markers, rubber band, measurements) ----------
+
+/** Distance box beside the pointer for Offset beam, shown once the source and its direction are fixed; Enter places the beam. */
+function OffsetField() {
+  const line = usePreview((s) => s.offsetLine);
+  const input = usePreview((s) => s.input);
+  const cur = usePreview((s) => s.cursor);
+  if (!line) return null;
+  const m = viewport.toScreen(cur ?? { x: (line[0].x + line[1].x) / 2, y: (line[0].y + line[1].y) / 2 }); // follows the pointer
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation(); // typing/clicking here must not place a beam
+  return (
+    <label className="offset-field" style={{ left: m.x + 16, top: m.y + 16 }} onPointerDown={stop} onPointerUp={stop} onPointerMove={stop}>
+      Offset
+      <input
+        id="offset-cmd"
+        autoFocus
+        inputMode="decimal"
+        value={input}
+        placeholder="mm"
+        onChange={(e) => setOffsetInput(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && onInput(input)}
+      />
+      mm
+    </label>
+  );
+}
 
 function Overlay() {
   useVp();
