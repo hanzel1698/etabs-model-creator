@@ -393,11 +393,12 @@ export function buildDrawings(m: Model, u: UnderlayIn): Drawing[] {
     const bk = keysOf(beams.map((b) => b.section)),
       sk = keysOf(slabs.map((s) => s.section));
     const prims: Prim[] = [
-      ...slabs.flatMap((s): Prim[] => {
-        const i = sk.indexOf(s.section) + 7;
-        return [{ t: 'poly', pts: s.pts, fill: light(i), op: 0.55 }, { t: 'text', p: labelPoint(s.pts), s: s.section, size: 3.4, color: strong(i), bold: true, fit: [s.pts] }];
-      }),
+      ...slabs.map((s): Prim => ({ t: 'poly', pts: s.pts, fill: light(sk.indexOf(s.section) + 7), op: 0.55 })),
       ...beams.map((b) => beamLine(b, strong(bk.indexOf(b.section)), 0.8)),
+      // one section label per group of adjoining same-section slabs, as on the shell loads plan; after the beams so it draws over them
+      ...sk.flatMap((k): Prim[] =>
+        clusters(slabs.filter((s) => s.section === k).map((s) => s.pts)).map((polys) => ({ t: 'text', p: groupPoint(polys), s: k, size: polys.length > 1 ? 4.2 : 3.4, color: strong(sk.indexOf(k) + 7), bold: true, fit: polys })),
+      ),
       ...beams.map((b) => beamText(b, b.section, strong(bk.indexOf(b.section)))),
       ...cols.flatMap((c) => (ends(unit, c) ? endCol(c) : [colPoly(m, c, COL)])),
     ];

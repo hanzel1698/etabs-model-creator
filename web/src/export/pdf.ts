@@ -184,6 +184,23 @@ function legend(doc: jsPDF, d: Drawing, L: Layout, fx: number, fy: number) {
   }
 }
 
+/** Beam lines (solid, ≥0.25 mm) as short boxes so fitted slab labels keep off them; diagonals chopped so their boxes stay thin. Paper mm. */
+function beamBoxes(d: Drawing, L: Layout, fx: number, fy: number): Box[] {
+  const X = (x: number) => fx + L.ox + x / L.S,
+    Y = (y: number) => fy + L.oy - y / L.S;
+  return d.prims.flatMap((p): Box[] => {
+    if (p.t !== 'line' || p.dash || p.w < 0.25) return [];
+    const ax = X(p.a.x), ay = Y(p.a.y), bx = X(p.b.x), by = Y(p.b.y),
+      n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 3)),
+      r = p.w / 2 + 0.3;
+    return Array.from({ length: n }, (_, i) => {
+      const x1 = ax + ((bx - ax) * i) / n, y1 = ay + ((by - ay) * i) / n,
+        x2 = ax + ((bx - ax) * (i + 1)) / n, y2 = ay + ((by - ay) * (i + 1)) / n;
+      return { minX: Math.min(x1, x2) - r, minY: Math.min(y1, y2) - r, maxX: Math.max(x1, x2) + r, maxY: Math.max(y1, y2) + r };
+    });
+  });
+}
+
 function drawFrame(doc: jsPDF, d: Drawing, o: Orient, fx: number, fy: number) {
   const [W, H] = FRAME[o];
   const L = layout(d, o);
@@ -193,7 +210,7 @@ function drawFrame(doc: jsPDF, d: Drawing, o: Orient, fx: number, fy: number) {
   doc.rect(fx, fy, W, H, 'S');
   // translucent area fills under the AR so it stays visible; everything else over it
   const fill = (p: Prim) => p.t === 'poly' && p.op !== undefined;
-  const obstacles: Box[] = [],
+  const obstacles: Box[] = beamBoxes(d, L, fx, fy),
     fitted: Box[] = [];
   for (const p of d.prims.filter(fill)) prim(doc, p, L, fx, fy);
   for (const p of d.underlay) prim(doc, p, L, fx, fy, obstacles);
