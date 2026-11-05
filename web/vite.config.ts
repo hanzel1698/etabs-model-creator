@@ -5,5 +5,6 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   base: './',
   plugins: [react()],
-  server: { port: 5173 },
+  // IPv4 bind: default 'localhost' binds only [::1] on Windows, so 127.0.0.1:5173 refused connections
+  server: { port: 5173, host: '127.0.0.1' },
 });
