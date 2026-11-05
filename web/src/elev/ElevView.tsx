@@ -4,8 +4,12 @@ import { useViewPatterns } from '../ui/LoadDialogs';
 import { ColorLegend } from '../plan/layers';
 import { fmt } from '../model/geom';
 import { elevationAt } from './elevation';
+import { addBeams, addColumns } from '../model/ops';
+import { placeAt, storyElevations } from '../model/types';
+import { commitBeams } from '../plan/tools';
 
 const PAD = 60; // px around the drawing when fitting
+const SNAP = 12; // px: how close the cursor must be to a grid crossing to snap to it
 
 /** Elevation along one grid line: levels, crossing grids, and the columns, beams and slabs on that line. */
 export function ElevView() {
@@ -22,6 +26,10 @@ export function ElevView() {
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [view, setView] = useState({ k: 0.05, tx: 0, ty: 0 }); // screen = (k·s + tx, −k·z + ty)
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const tool = useApp((s) => s.tool);
+  const drawing = tool === 'column' || tool === 'beam';
+  const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null); // px in the view
+  const [start, setStart] = useState<{ s: number; z: number; z0: number; story: string; dz: number } | null>(null); // beam chain's last point
 
   const grid = grids.find((g) => g.id === gridId) ?? grids[0];
   const e = useMemo(() => (grid ? elevationAt(model, grid, tol) : null), [model, grid, tol]);
@@ -52,12 +60,18 @@ export function ElevView() {
   };
   // refit when the grid changes or the view is resized
   useEffect(fit, [grid?.id, size.w, size.h]);
+  useEffect(() => setStart(null), [tool, grid?.id]);
+  useEffect(() => {
+    const k = (ev: KeyboardEvent) => ev.key === 'Escape' && setStart(null);
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, []);
 
   const X = (s: number) => view.k * s + view.tx;
   const Y = (z: number) => -view.k * z + view.ty;
 
   const pick = (id: string, ev: React.PointerEvent) => {
-    if (drag.current?.moved) return;
+    if (drag.current?.moved || drawing) return;
     const st = useApp.getState();
     st.setSelection(ev.ctrlKey ? (st.selection.includes(id) ? st.selection.filter((x) => x !== id) : [...st.selection, id]) : [id]);
   };
@@ -67,6 +81,33 @@ export function ElevView() {
     if (sel.has(id)) return 'var(--sel)';
     const k = colorKey(byId.get(id) ?? { section: '' }, colorBy, patterns);
     return k === null ? def : sectionColor(k);
+  };
+
+  // the drawing point under the cursor: station snapped to a grid crossing or the grid's ends; for a beam the
+  // nearest story level or reference plane (the chain's once started), for a column the first one above the cursor
+  const snap = (() => {
+    if (!drawing || !mouse || !e || !grid) return null;
+    const s = (mouse.x - view.tx) / view.k,
+      z = (view.ty - mouse.y) / view.k;
+    const near = [0, Math.hypot(grid.x2 - grid.x1, grid.y2 - grid.y1), ...e.grids.map((g) => g.s)].reduce((a, b) => (Math.abs(b - s) < Math.abs(a - s) ? b : a));
+    const ss = Math.abs(near - s) * view.k < SNAP ? near : Math.round(s);
+    const tops = [...e.levels.slice(1), ...e.refPlanes].map((l) => l.z).filter((t) => t > e.levels[0].z); // levels[0] is the base
+    const at = (top: number) => {
+      const p = placeAt(model, top);
+      return p && { s: ss, z: top, z0: storyElevations(model)[p.story].bottom, ...p };
+    };
+    if (tool === 'beam') return start ? { ...start, s: ss } : tops.length ? at(tops.reduce((a, b) => (Math.abs(b - z) < Math.abs(a - z) ? b : a))) : null;
+    const above = tops.filter((t) => t >= z);
+    return z < e.levels[0].z || !above.length ? null : at(Math.min(...above));
+  })();
+  const place = () => {
+    if (!snap || !grid) return;
+    const L = Math.hypot(grid.x2 - grid.x1, grid.y2 - grid.y1) || 1;
+    const at = (s: number) => ({ x: grid.x1 + ((grid.x2 - grid.x1) * s) / L, y: grid.y1 + ((grid.y2 - grid.y1) * s) / L });
+    const A = useApp.getState();
+    if (tool === 'column') return A.commit((m) => addColumns(m, [at(snap.s)], [snap.story], A.active.column, A.columnAngle, snap.dz));
+    if (start && Math.abs(snap.s - start.s) > 1) commitBeams((m) => addBeams(m, [[at(start.s), at(snap.s)]], [snap.story], A.active.beam, snap.dz));
+    setStart(snap);
   };
 
   const x = extent();
@@ -88,8 +129,12 @@ export function ElevView() {
       onPointerDown={(ev) => {
         if ((ev.target as HTMLElement).closest('.bar')) return;
         drag.current = { x: ev.clientX, y: ev.clientY, moved: false };
+        const r = host.current!.getBoundingClientRect();
+        if (drawing) setMouse({ x: ev.clientX - r.left, y: ev.clientY - r.top });
       }}
       onPointerMove={(ev) => {
+        const r = host.current!.getBoundingClientRect();
+        if (drawing) setMouse({ x: ev.clientX - r.left, y: ev.clientY - r.top });
         const d = drag.current;
         if (!d || !ev.buttons) return;
         const dx = ev.clientX - d.x,
@@ -100,7 +145,17 @@ export function ElevView() {
         d.y = ev.clientY;
         setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
       }}
+      onPointerLeave={() => setMouse(null)}
+      onContextMenu={(ev) => {
+        if (!drawing) return;
+        ev.preventDefault();
+        setStart(null); // right-click ends the beam chain
+      }}
       onPointerUp={(ev) => {
+        if (drawing) {
+          if (ev.button === 0 && drag.current && !drag.current.moved) place();
+          return void setTimeout(() => (drag.current = null));
+        }
         // a click on empty space clears the selection
         if (!drag.current?.moved && ev.target === ev.currentTarget.querySelector('svg')) useApp.getState().setSelection([]);
         setTimeout(() => (drag.current = null));
@@ -128,6 +183,13 @@ export function ElevView() {
         <button className={wire ? '' : 'on'} title="Show members with their section sizes instead of centrelines" onClick={() => setWire(!wire)}>
           3D view
         </button>
+        {drawing && (
+          <span className="muted">
+            {tool === 'column'
+              ? 'Click between two levels to place a column on this grid line (snaps to grid crossings).'
+              : 'Click start, then end on a level (chained). Right-click/Esc ends the chain.'}
+          </span>
+        )}
       </div>
       {!grid || !e || !x ? (
         <div className="muted" style={{ padding: '60px 20px' }}>
@@ -223,6 +285,16 @@ export function ElevView() {
                   {c.section}
                 </text>
               ))}
+            </g>
+          )}
+          {snap && (
+            <g className="nosel" pointerEvents="none" stroke="var(--sel)" strokeWidth={2}>
+              {tool === 'column' ? (
+                <line x1={X(snap.s)} x2={X(snap.s)} y1={Y(snap.z0)} y2={Y(snap.z)} strokeDasharray="6 4" />
+              ) : (
+                start && <line x1={X(start.s)} x2={X(snap.s)} y1={Y(start.z)} y2={Y(snap.z)} strokeDasharray="6 4" />
+              )}
+              <circle cx={X(snap.s)} cy={Y(snap.z)} r={5} fill="none" />
             </g>
           )}
         </svg>

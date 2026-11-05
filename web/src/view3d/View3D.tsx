@@ -3,7 +3,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
-import { columnOn, columnSpan, levelZ, storyElevations, type Column, type FrameLoad, type LoadDir, type Model } from '../model/types';
+import { columnOn, columnSpan, levelZ, placeAt, storyElevations, type Column, type FrameLoad, type LoadDir, type Model } from '../model/types';
+import { addBeams, addColumns, gridIntersections } from '../model/ops';
+import { commitBeams } from '../plan/tools';
 import { pointInPoly } from '../model/geom';
 import { describeJointLoad, shortFrameLoad } from '../model/loads';
 import { makeLoadFilter, type LoadFilter } from '../model/loadFilter';
@@ -13,6 +15,18 @@ import SectionSlider, { type Mark } from './SectionSlider';
 const S = 0.001; // mm → m in the scene
 const OPEN = 1e9; // clip-plane constant that clips nothing
 const LOAD_COLOR = '#ff9f43'; // --load, as in the plan
+const SNAP_PX = 14; // how close the cursor must be to a joint to draw from it
+type Joint = { x: number; y: number; z: number }; // mm
+const jointAt = (j: Joint) => new THREE.Vector3(j.x * S, j.z * S, -j.y * S);
+
+// preset camera directions; Top is nudged off the pole so OrbitControls keeps model +Y up the screen
+const VIEWS: [string, number, number, number][] = [
+  ['Top', 0, 1, 1e-4],
+  ['Front', 0, 0, 1],
+  ['Rear', 0, 0, -1],
+  ['Left', -1, 0, 0],
+  ['Right', 1, 0, 0],
+];
 
 export type LabelKind = 'column' | 'beam' | 'slab' | 'load';
 const LABEL_KINDS: { kind: LabelKind; name: string }[] = [
@@ -574,6 +588,23 @@ export default function View3D() {
   const lf = useMemo(() => makeLoadFilter(loadFilter, pattern), [loadFilter, pattern]);
   const [onlyStory, setOnlyStory] = useState(false);
   const [wire, setWire] = useState(false);
+  const tool = useApp((s) => s.tool);
+  const drawTool = tool === 'column' || tool === 'beam';
+  // grid crossings at every story level and reference plane: the only points a click in 3D can mean
+  const joints = useMemo(() => {
+    const el = storyElevations(model);
+    const zs = [...new Set([...model.stories.map((s) => el[s.name].top), ...(model.refPlanes ?? []).map((r) => r.z)])].filter((z) => z > model.baseElevation);
+    return gridIntersections(model.grids).flatMap((p) => zs.map((z) => ({ x: p.x, y: p.y, z })));
+  }, [model.grids, model.stories, model.refPlanes, model.baseElevation]);
+  // live drawing state for the canvas listeners, which are set up once
+  const draw = useRef({ on: false, joints, start: null as Joint | null, show: (_: Joint | null) => {}, showJoints: () => {} });
+  draw.current.joints = joints;
+  useEffect(() => {
+    draw.current.on = wire && drawTool;
+    draw.current.start = null;
+    draw.current.show(null);
+  }, [wire, tool]);
+  useEffect(() => draw.current.showJoints(), [wire, tool, joints]);
   const [labels, setLabels] = useState<Set<LabelKind>>(new Set());
   // the right panel offers the load filter while loads are shown here
   const showsLoads = wire && labels.has('load');
@@ -666,6 +697,69 @@ export default function View3D() {
       render();
     });
     ro.observe(el);
+    // drawing in wireframe: a marker on the snapped joint and a rubber band from the beam chain's last joint
+    const dot = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: 0x39ff9a, size: 10, sizeAttenuation: false, depthTest: false }));
+    const band = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x39ff9a, depthTest: false }));
+    dot.renderOrder = band.renderOrder = 999;
+    dot.visible = band.visible = false;
+    // every joint, faint, so there's something to aim at before any members exist
+    const all = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: 0x8899aa, size: 4, sizeAttenuation: false, transparent: true, opacity: 0.6, clippingPlanes: clip }));
+    scene.add(dot, band, all);
+    const d = draw.current;
+    d.showJoints = () => {
+      all.visible = d.on;
+      all.geometry.dispose();
+      all.geometry = new THREE.BufferGeometry().setFromPoints(d.on ? d.joints.map(jointAt) : []);
+      render();
+    };
+    d.show = (j) => {
+      const st = d.start;
+      dot.visible = !!j;
+      band.visible = !!j && !!st;
+      if (j) dot.geometry.setFromPoints([jointAt(j)]);
+      if (j && st) band.geometry.setFromPoints([jointAt(st), jointAt(j)]);
+      render();
+    };
+    // the joint nearest the cursor on screen, inside the section cuts; on the chain's level once a beam is started
+    const snapAt = (e: MouseEvent): Joint | null => {
+      const r = renderer.domElement.getBoundingClientRect();
+      let best: Joint | null = null,
+        bd = SNAP_PX;
+      for (const j of d.joints) {
+        if (d.start && Math.abs(j.z - d.start.z) > 1) continue;
+        const v = jointAt(j);
+        if (!clip.every((p) => p.distanceToPoint(v) >= -1e-3)) continue;
+        v.project(camera);
+        if (v.z > 1) continue; // behind the camera
+        const dd = Math.hypot(((v.x + 1) / 2) * r.width - (e.clientX - r.left), ((1 - v.y) / 2) * r.height - (e.clientY - r.top));
+        if (dd < bd) (bd = dd), (best = j);
+      }
+      return best;
+    };
+    const place = (j: Joint) => {
+      const A = useApp.getState();
+      const p = placeAt(A.model, j.z);
+      if (!p) return;
+      const pt = { x: j.x, y: j.y };
+      if (A.tool === 'column') A.commit((m) => addColumns(m, [pt], [p.story], A.active.column, A.columnAngle, p.dz));
+      else {
+        const st = d.start;
+        if (st && (st.x !== j.x || st.y !== j.y)) commitBeams((m) => addBeams(m, [[{ x: st.x, y: st.y }, pt]], [p.story], A.active.beam, p.dz));
+        d.start = j;
+      }
+      d.show(j);
+    };
+    const endChain = () => {
+      d.start = null;
+      d.show(null);
+    };
+    const pm = (e: PointerEvent) => d.on && !e.buttons && d.show(snapAt(e));
+    // right-click or Esc ends the beam chain
+    const cm = (e: MouseEvent) => d.on && d.start && (e.preventDefault(), endChain());
+    const kd = (e: KeyboardEvent) => e.key === 'Escape' && d.start && endChain();
+    renderer.domElement.addEventListener('pointermove', pm);
+    renderer.domElement.addEventListener('contextmenu', cm);
+    window.addEventListener('keydown', kd);
     // click to select
     const ray = new THREE.Raycaster();
     ray.params.Line.threshold = 0.15; // m: how close a click must be to a wireframe line
@@ -673,6 +767,10 @@ export default function View3D() {
     const pd = (e: PointerEvent) => (downAt = { x: e.clientX, y: e.clientY });
     const pu = (e: PointerEvent) => {
       if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 4 || !ctx.current?.group) return;
+      if (d.on) {
+        const j = e.button === 0 && snapAt(e);
+        return void (j && place(j));
+      }
       const r = renderer.domElement.getBoundingClientRect();
       ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
       const clip = ctx.current.clip;
@@ -689,8 +787,10 @@ export default function View3D() {
     renderer.domElement.addEventListener('pointerdown', pd);
     renderer.domElement.addEventListener('pointerup', pu);
     ctx.current = { renderer, scene, camera, controls, group: null, caps: null, clip, labelH: 0, labelScale: 1, render };
+    d.showJoints();
     return () => {
       ro.disconnect();
+      window.removeEventListener('keydown', kd);
       renderer.dispose();
       el.removeChild(renderer.domElement);
       ctx.current = null;
@@ -728,7 +828,7 @@ export default function View3D() {
       c.scene.add(c.caps);
     }
     if (!fitted.current && c.group.children.length) {
-      fitView();
+      if (!draw.current.on) fitView(); // don't jump the camera away from where you're drawing
       fitted.current = true;
     }
     c.render();
@@ -755,15 +855,17 @@ export default function View3D() {
     c.render();
   }, [labelScale]);
 
-  const fitView = () => {
+  // three.js axes: x = model X, y = up, z = -model Y
+  const fitView = (dir = new THREE.Vector3(0.8, 0.6, 0.9)) => {
     const c = ctx.current;
     if (!c?.group) return;
     const box = new THREE.Box3().setFromObject(c.group);
+    for (const j of draw.current.on ? draw.current.joints : []) box.expandByPoint(jointAt(j));
     if (box.isEmpty()) return;
     const ctr = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3()).length();
     c.controls.target.copy(ctr);
-    c.camera.position.copy(ctr).add(new THREE.Vector3(0.8, 0.6, 0.9).normalize().multiplyScalar(size * 1.5));
+    c.camera.position.copy(ctr).add(dir.clone().normalize().multiplyScalar(size * 1.5));
     c.camera.near = size / 1000;
     c.camera.far = size * 20;
     c.camera.updateProjectionMatrix();
@@ -774,7 +876,12 @@ export default function View3D() {
   return (
     <div className="view3d" ref={host}>
       <div className="bar">
-        <button onClick={fitView}>Fit</button>
+        <button onClick={() => fitView()}>Fit</button>
+        {VIEWS.map(([name, x, y, z]) => (
+          <button key={name} title={`${name} view`} onClick={() => fitView(new THREE.Vector3(x, y, z))}>
+            {name}
+          </button>
+        ))}
         <button className={onlyStory ? 'on' : ''} onClick={() => setOnlyStory(!onlyStory)}>
           Active story only
         </button>
@@ -791,6 +898,11 @@ export default function View3D() {
         <button className={wire ? 'on' : ''} title="Show members as centrelines and slabs as translucent planes" onClick={() => setWire(!wire)}>
           Wireframe
         </button>
+        {drawTool && (
+          <span className="muted">
+            {!wire ? 'Turn on Wireframe to draw here.' : tool === 'column' ? 'Click a grid crossing at a level: the column goes in the story below it.' : 'Click joints on one level (chained). Right-click/Esc ends the chain.'}
+          </span>
+        )}
         {wire && (
           <span className="label-picks" title="Show section names">
             Names:
