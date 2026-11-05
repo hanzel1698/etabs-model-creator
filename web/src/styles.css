@@ -446,6 +446,11 @@ label {
 .grid-lock.on {
   color: var(--sel);
 }
+.story-banner .plane-tag {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
 .story-banner {
   position: absolute;
   left: 50%;

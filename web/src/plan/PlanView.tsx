@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { useApp, usePreview, planModel } from '../model/store';
+import { useApp, usePreview, planModel, planeLevel } from '../model/store';
 import { cachedStoryNodes, isNodeId, type PanelSize } from '../model/ops';
 import { fmt } from '../model/geom';
 import { columnOn, terminatingColumns, type Beam, type Pt } from '../model/types';
@@ -91,6 +91,11 @@ export function PlanView() {
   // the setup view shows the raw DXF: place this story's model on its region (reference point = model 0,0)
   const setupRef = useUnderlay((u) => (u.kind === 'dxf' && u.setupMode ? u.regions.find((r) => r.stories.includes(story))?.ref ?? null : null));
   // the cropped view names the story in a fixed banner at the top of the canvas, so it stays put while zooming
+  // the reference plane in view, named under the story in the banner: "(RP1 @ +2000)"
+  const planeTag = useApp((s) => {
+    const r = planeLevel(s) && s.model.refPlanes.find((x) => x.id === s.activePlane);
+    return r ? `(${r.name} @ ${r.z >= 0 ? '+' : '−'}${Math.round(Math.abs(r.z))})` : '';
+  });
   const hasRegion = useUnderlay((u) => u.kind === 'dxf' && !!u.dxf && !u.setupMode && u.regions.some((r) => r.stories.includes(story)));
 
   // keep the world transform in sync without re-rendering React
@@ -339,7 +344,12 @@ export function PlanView() {
       )}
       <Compass rot={viewRot} />
       <ColorLegend items={legendItems} colorBy={colorBy} patterns={viewPats} />
-      {show.underlay && hasRegion && <div className="story-banner nosel">{story}</div>}
+      {show.underlay && hasRegion && (
+        <div className="story-banner nosel">
+          {story}
+          {planeTag && <div className="plane-tag">{planeTag}</div>}
+        </div>
+      )}
       <button className="zoom-ext" title="Zoom extents: the whole story region" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={fitStory}>
         <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6}>
           <path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4" />
