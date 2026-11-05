@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { useApp, usePreview, planModel, planeLevel, viewModel } from '../model/store';
+import { useApp, usePreview, planModel, planeLevel, viewModel, visibleModel } from '../model/store';
 import { cachedStoryNodes, isNodeId, type PanelSize } from '../model/ops';
 import { fmt } from '../model/geom';
 import { asStair, columnOn, terminatingColumns, type Beam, type Flight, type Landing, type Pt, type Span } from '../model/types';
@@ -78,6 +78,8 @@ export function PlanView() {
   const worldRef = useRef<SVGGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const model = useApp(planModel);
+  // a reference plane's planModel drops other stories' columns, so judge "terminating" on the full model
+  const full = useApp(visibleModel);
   const story = useApp((s) => s.activeStory);
   const selection = useApp((s) => s.selection);
   const show = useApp((s) => s.show);
@@ -134,7 +136,7 @@ export function PlanView() {
 
   const cols = useMemo(() => model.columns.filter((c) => columnOn(model, c, story)), [model, story]);
   // red only on the floor the column stops at, not on the lower stories a joined column passes through
-  const ends = useMemo(() => { const t = terminatingColumns(model); return new Set(cols.filter((c) => c.story === story && t.has(c.id)).map((c) => c.id)); }, [model, cols, story]);
+  const ends = useMemo(() => { const t = terminatingColumns(full); return new Set(cols.filter((c) => c.story === story && t.has(c.id)).map((c) => c.id)); }, [full, cols, story]);
   const beams = useMemo(() => model.beams.filter((b) => b.story === story), [model.beams, story]);
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
   // inside a stair: its flights, landings and spans on this story
