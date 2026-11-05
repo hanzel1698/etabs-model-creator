@@ -787,9 +787,17 @@ function EtabsDialog() {
       if (!st.model.stories.some((s) => s.name === st.activeStory)) st.setActiveStory(st.model.stories[0]?.name ?? '');
       const e = el as ReturnType<typeof importElements> | null;
       const skipped = e ? Object.entries(e.skipped).map(([why, n]) => `${n} skipped: ${why}`) : [];
+      // report only the ticked categories; the bridge always reads everything
+      const parts = [
+        imp.stories && `${r.stories.length} stories`,
+        imp.grids && `${r.grids.length} grids`,
+        imp.refPlanes && `${r.refPlanes?.length ?? 0} reference planes`,
+        imp.sections && `${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections`,
+        imp.patterns && `${r.patterns?.length ?? 0} load patterns`,
+        e && `${e.columns} columns, ${e.beams} beams, ${e.slabs} slabs`,
+      ].filter(Boolean);
       add(
-        `✔ Imported ${r.stories.length} stories, ${r.grids.length} grids, ${r.refPlanes?.length ?? 0} reference planes, ${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections, ${r.patterns?.length ?? 0} load patterns` +
-          (e ? `, ${e.columns} columns, ${e.beams} beams, ${e.slabs} slabs` : ''),
+        parts.length ? `✔ Imported ${parts.join(', ')}` : '⚠ Nothing ticked to import',
         ...skipped,
         ...(imp.refPlanes && !r.refPlanes ? ['⚠ The bridge is an older version that does not send reference planes. Restart python bridge/bridge.py and import again.'] : []),
         ...(imp.elements && !r.frames ? ['⚠ The bridge is an older version that does not send columns, beams or slabs. Restart python bridge/bridge.py and import again.'] : []),
