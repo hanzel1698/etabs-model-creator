@@ -3,10 +3,32 @@ import { dist, distToSeg, mid, projectOnSeg, projectOnLine, rot, segIntersect, s
 import { gridIntersections } from '../model/ops';
 import { underlayGeom } from '../underlay/store';
 
-export type SnapKind = 'intersection' | 'column' | 'face' | 'end' | 'mid' | 'perp' | 'near' | 'ortho' | 'align' | 'none';
+export type SnapKind = 'intersection' | 'column' | 'face' | 'end' | 'mid' | 'perp' | 'near' | 'ortho' | 'align' | 'track' | 'none';
 export interface Snap {
   p: Pt;
   kind: SnapKind;
+  guides?: Pt[]; // tracked points the snapped point lines up with (horizontal / vertical)
+}
+
+/**
+ * Line the cursor up with earlier hovered snap points: within `tol` of a tracked point's X (or Y) it locks onto
+ * that vertical (or horizontal) line; lined up with one point's X and another's Y it locks onto their crossing.
+ */
+export function trackSnap(w: Pt, tracks: Pt[], tol: number): Snap | null {
+  let bx: Pt | null = null,
+    by: Pt | null = null,
+    dx = tol,
+    dy = tol;
+  for (const t of tracks) {
+    const ex = Math.abs(w.x - t.x),
+      ey = Math.abs(w.y - t.y);
+    if (ex < dx) [dx, bx] = [ex, t];
+    if (ey < dy) [dy, by] = [ey, t];
+  }
+  if (bx && by && bx !== by) return { p: { x: bx.x, y: by.y }, kind: 'track', guides: [bx, by] };
+  if (bx && (!by || dx <= dy)) return { p: { x: bx.x, y: w.y }, kind: 'track', guides: [bx] };
+  if (by) return { p: { x: w.x, y: by.y }, kind: 'track', guides: [by] };
+  return null;
 }
 
 const ixCache = new WeakMap<Grid[], Pt[]>();

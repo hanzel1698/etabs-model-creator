@@ -5,7 +5,7 @@ import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
 import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, onGridLine, panelSize, setBeamEnd, setGridEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
 import { columnOn, uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
-import { snapPoint, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
+import { snapPoint, trackSnap, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
 import { viewport } from './viewport';
 import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf, rectOf } from '../underlay/store';
 import { openDialog, useFramePick, useMovePick } from '../ui/dialogState';
@@ -49,7 +49,7 @@ export function resetTool() {
   calibStage = 'dist';
   offsetSrc = null;
   const hint = redrawId && A().tool === 'region' ? `Redraw region (${useUnderlay.getState().regions.find((r) => r.id === redrawId)?.stories.join(', ')}): click two corners around its plan.` : hints[A().tool];
-  P().set({ rubber: [], rubberClosed: false, box: null, measure: null, panel: null, offsetLine: null, input: '', track: null, mid: null, hint });
+  P().set({ rubber: [], rubberClosed: false, box: null, measure: null, panel: null, offsetLine: null, input: '', track: null, tracks: [], mid: null, hint });
 }
 
 // ---------- mid between two points ----------
@@ -178,14 +178,21 @@ export function doSnap(screen: Pt): Snap {
   const from = rub.length ? rub[rub.length - 1] : null;
   // region corners and reference point are raw DXF points: never snap them to model elements
   const m = visibleModel(A());
-  return snapPoint(t === 'region' ? { ...m, grids: [], columns: [], beams: [], slabs: [] } : m, w, SNAP_PX / viewport.k, {
+  const tol = SNAP_PX / viewport.k;
+  const s = snapPoint(t === 'region' ? { ...m, grids: [], columns: [], beams: [], slabs: [] } : m, w, tol, {
     story: A().activeStory,
     from,
     ortho: A().ortho && t !== 'region', // a box's opposite corner must not be locked level with the first
     underlay: A().show.underlay,
     only: snapKindsFor(t),
   });
+  // a real point snap wins; otherwise line up with points hovered earlier
+  if (t === 'region' || (s.kind !== 'none' && s.kind !== 'near' && s.kind !== 'ortho')) return s;
+  return trackSnap(w, P().tracks, tol) ?? s;
 }
+
+const MAX_TRACKS = 4;
+const TRACK_KINDS: SnapKind[] = ['intersection', 'column', 'end', 'mid'];
 
 function liveText(from: Pt, to: Pt) {
   return `L=${fmt(dist(from, to))}  ∠${fmt(angleDeg(from, to), 1)}°  dx=${fmt(to.x - from.x)} dy=${fmt(to.y - from.y)}`;
@@ -201,17 +208,21 @@ export function onMove(screen: Pt) {
     if (l.vertical !== p.mid.vertical) p.set({ mid: { ...p.mid, vertical: l.vertical } });
   }
   const upd: Partial<ReturnType<typeof P>> = { cursor: s.p, snap: s.kind === 'none' ? null : s };
+  if (TRACK_KINDS.includes(s.kind) && t !== 'region') {
+    const q = s.p;
+    upd.tracks = [...p.tracks.filter((x) => x.x !== q.x || x.y !== q.y), q].slice(-MAX_TRACKS);
+  }
   if (movePicking()) {
     const b = useMovePick.getState().base;
     if (b) Object.assign(upd, { rubber: [b], hint: liveText(b, s.p) });
     return p.set(upd);
   }
   if (picking()) {
-    const h = beamPick(s.p);
+    const h = beamPick(s.p, s.guides);
     upd.pick = h && { a: h.a, p: h.p, text: `${fmt(h.t * h.len / 1000, 3)} m · ${fmt(h.t, 3)} of ${fmt(h.len / 1000, 3)} m` };
     return p.set(upd);
   }
-  if (s.kind !== 'none' && s.kind !== 'near' && s.kind !== 'ortho') upd.track = s.p;
+  if (s.kind !== 'none' && s.kind !== 'near' && s.kind !== 'ortho' && s.kind !== 'track') upd.track = s.p;
   const last = p.rubber[p.rubber.length - 1];
   if (last && (t === 'beam' || t === 'grid' || t === 'slabDraw' || t === 'area' || t === 'measure' || t === 'angle' || t === 'calibrate')) upd.hint = liveText(last, s.p);
   if (t === 'region' && !regionRect && p.rubber.length === 1) upd.box = { a: p.rubber[0], b: s.p };
@@ -543,16 +554,24 @@ export function redrawRegion(id: string) {
 export const picking = () => !!useFramePick.getState().done || movePicking();
 
 /** The selected beam on the active story nearest to `w`, and where `w` falls along it from its start. */
-function beamPick(w: Pt) {
+function beamPick(w: Pt, guides?: Pt[]) {
   const { model, selection, activeStory } = A();
   const sel = new Set(selection);
-  let best: { a: Pt; p: Pt; t: number; len: number; d: number } | null = null;
+  let best: { a: Pt; e: Pt; p: Pt; t: number; len: number; d: number } | null = null;
   for (const b of model.beams) {
     if (b.story !== activeStory || !sel.has(b.id)) continue;
     const a = { x: b.x1, y: b.y1 };
     const q = projectOnSeg(w, a, { x: b.x2, y: b.y2 });
     const d = dist(w, q.p);
-    if (!best || d < best.d) best = { a, p: q.p, t: q.t, len: dist(a, { x: b.x2, y: b.y2 }), d };
+    if (!best || d < best.d) best = { a, p: q.p, t: q.t, len: dist(a, { x: b.x2, y: b.y2 }), d, e: { x: b.x2, y: b.y2 } };
+  }
+  // one alignment guide: take where its line crosses the beam, not the cursor's square projection (differs on skewed beams)
+  const g = guides?.length === 1 ? guides[0] : null;
+  if (best && g) {
+    const vert = w.x === g.x;
+    const den = vert ? best.e.x - best.a.x : best.e.y - best.a.y;
+    const t = den ? (vert ? g.x - best.a.x : g.y - best.a.y) / den : NaN;
+    if (t >= 0 && t <= 1) Object.assign(best, { t, p: { x: best.a.x + (best.e.x - best.a.x) * t, y: best.a.y + (best.e.y - best.a.y) * t } });
   }
   return best;
 }
@@ -574,7 +593,8 @@ export function endFramePick() {
 /** A primary click while picking: hand the position along the nearest selected beam to the dialog. */
 export function finishFramePick(screen: Pt) {
   if (movePicking()) return clickMovePick(screen);
-  const h = beamPick(doSnap(screen).p);
+  const s = doSnap(screen);
+  const h = beamPick(s.p, s.guides);
   const done = useFramePick.getState().done;
   endFramePick();
   if (h && done) done(h.t, h.len);

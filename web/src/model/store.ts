@@ -405,8 +405,9 @@ export function sectionColor(name: string) {
 /** Transient, high-frequency state for tool previews (kept apart so the element layers never re-render on mouse move). */
 export interface Preview {
   cursor: Pt | null;
-  snap: { p: Pt; kind: string } | null;
+  snap: { p: Pt; kind: string; guides?: Pt[] } | null;
   track: Pt | null; // base point for typed relative input
+  tracks: Pt[]; // recently hovered snap points the cursor can line up with (temporary alignment guides)
   rubber: Pt[]; // in-progress polyline (world)
   rubberClosed: boolean;
   box: { a: Pt; b: Pt } | null; // selection window (world)
@@ -424,6 +425,7 @@ export const usePreview = create<Preview & { set: (p: Partial<Preview>) => void 
   cursor: null,
   snap: null,
   track: null,
+  tracks: [],
   rubber: [],
   rubberClosed: false,
   box: null,

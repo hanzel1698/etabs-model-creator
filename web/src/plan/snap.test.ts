@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { snapPoint } from './snap';
+import { snapPoint, trackSnap } from './snap';
 import { emptyModel, type Model } from '../model/types';
 
 describe('intersection snap', () => {
@@ -25,5 +25,20 @@ describe('intersection snap', () => {
     const s = snapPoint(m, { x: 2550, y: 3920 }, 200, { story: 'Story1' });
     expect(s.kind).toBe('intersection');
     expect(s.p).toEqual({ x: 2500, y: 4000 });
+  });
+});
+
+describe('tracking snap', () => {
+  const t = [{ x: 1000, y: 0 }, { x: 0, y: 2000 }];
+  it('locks onto the vertical line through a tracked point', () => {
+    expect(trackSnap({ x: 1040, y: 5000 }, t, 100)).toMatchObject({ p: { x: 1000, y: 5000 }, kind: 'track' });
+  });
+  it('locks onto the crossing of one point X and another point Y', () => {
+    const s = trackSnap({ x: 980, y: 2050 }, t, 100)!;
+    expect(s.p).toEqual({ x: 1000, y: 2000 });
+    expect(s.guides).toHaveLength(2);
+  });
+  it('gives nothing when nothing lines up', () => {
+    expect(trackSnap({ x: 500, y: 500 }, t, 100)).toBeNull();
   });
 });

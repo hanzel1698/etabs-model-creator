@@ -544,9 +544,18 @@ function Overlay() {
       items.push(<path key="midm" d={`M${m.x} ${m.y - 7}L${m.x + 7} ${m.y + 6}L${m.x - 7} ${m.y + 6}Z`} fill="none" stroke={c} strokeWidth={2} />);
     }
   }
-  if (pv.track && tool !== 'select') {
-    const t = S(pv.track);
-    items.push(<path key="trk" d={`M${t.x - 4} ${t.y}h8M${t.x} ${t.y - 4}v8`} stroke="#9ad" />);
+  pv.tracks.forEach((q, i) => {
+    const t = S(q);
+    items.push(<path key={'trk' + i} d={`M${t.x - 4} ${t.y}h8M${t.x} ${t.y - 4}v8`} stroke="#9ad" />);
+  });
+  if (pv.snap?.guides) {
+    const p = S(pv.snap.p);
+    pv.snap.guides.forEach((g, i) => {
+      const a = S(g);
+      const L = Math.hypot(p.x - a.x, p.y - a.y) || 1;
+      const far = 4000 / L; // run on past the cursor
+      items.push(<line key={'tg' + i} x1={a.x} y1={a.y} x2={p.x + (p.x - a.x) * far} y2={p.y + (p.y - a.y) * far} stroke="#9ad" strokeDasharray="6 4" strokeWidth={1} />);
+    });
   }
   if (pv.snap) {
     const p = S(pv.snap.p);
@@ -558,9 +567,9 @@ function Overlay() {
     else if (k === 'mid') mark = <path d={`M${p.x} ${p.y - 7}L${p.x + 7} ${p.y + 6}L${p.x - 7} ${p.y + 6}Z`} fill="none" stroke={c} strokeWidth={2} />;
     else if (k === 'perp') mark = <path d={`M${p.x - 7} ${p.y + 7}H${p.x + 7}M${p.x - 7} ${p.y + 7}V${p.y - 7}M${p.x - 7} ${p.y}H${p.x}V${p.y + 7}`} fill="none" stroke={c} strokeWidth={2} />;
     else if (k === 'near' || k === 'face') mark = <path d={`M${p.x - 6} ${p.y - 6}L${p.x + 6} ${p.y + 6}L${p.x - 6} ${p.y + 6}L${p.x + 6} ${p.y - 6}Z`} fill="none" stroke={c} strokeWidth={1.5} />;
-    else if (k === 'ortho' || k === 'align') mark = <circle cx={p.x} cy={p.y} r={3} fill={c} />;
+    else if (k === 'ortho' || k === 'align' || k === 'track') mark = <circle cx={p.x} cy={p.y} r={3} fill={c} />;
     else mark = <rect x={p.x - 6} y={p.y - 6} width={12} height={12} fill="none" stroke={c} strokeWidth={2} />;
-    items.push(<g key="snap">{mark}<text x={p.x + 10} y={p.y - 10} fill={c} fontSize={11}>{k}</text></g>);
+    items.push(<g key="snap">{mark}<text x={p.x + 10} y={p.y - 10} fill={c} fontSize={11}>{pv.snap.guides?.length === 1 ? `track ${fmt(Math.hypot(pv.snap.p.x - pv.snap.guides[0].x, pv.snap.p.y - pv.snap.guides[0].y))}` : k}</text></g>);
   }
   if (cur && pv.rubber.length && pv.hint && tool !== 'region') {
     const p = S(cur);
