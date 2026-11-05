@@ -1,4 +1,4 @@
-import { useApp, usePreview, drawStories, toast, visibleModel, type ToolName } from '../model/store';
+import { useApp, usePreview, drawStories, drawDz, toast, planModel, type ToolName } from '../model/store';
 import type { Beam, Model, Pt } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
@@ -177,7 +177,7 @@ export function doSnap(screen: Pt): Snap {
   const rub = P().rubber;
   const from = rub.length ? rub[rub.length - 1] : null;
   // region corners and reference point are raw DXF points: never snap them to model elements
-  const m = visibleModel(A());
+  const m = planModel(A());
   const tol = SNAP_PX / viewport.k;
   const s = snapPoint(t === 'region' ? { ...m, grids: [], columns: [], beams: [], slabs: [] } : m, w, tol, {
     story: A().activeStory,
@@ -319,13 +319,13 @@ export function onClick(pt: Pt) {
         return;
       }
       const q = alignedColumnPoint(pt);
-      commit((m) => addColumns(m, [q], drawStories(), A().active.column, A().columnAngle));
+      commit((m) => addColumns(m, [q], drawStories(), A().active.column, A().columnAngle, drawDz()));
       return;
     }
     case 'beam': {
       if (!p.rubber.length) return p.set({ rubber: [pt] });
       const a = p.rubber[p.rubber.length - 1];
-      commitBeams((m) => addBeams(m, [[a, pt]], drawStories(), A().active.beam));
+      commitBeams((m) => addBeams(m, [[a, pt]], drawStories(), A().active.beam, drawDz()));
       return p.set({ rubber: [pt] });
     }
     case 'beamOffset': {
@@ -336,11 +336,12 @@ export function onClick(pt: Pt) {
     case 'slab': {
       const m = A().model;
       const story = A().activeStory;
-      const segs: [Pt, Pt][] = m.beams.filter((b) => b.story === story).map((b) => [{ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }]);
+      // on a reference plane, only its own beams close a bay
+      const segs: [Pt, Pt][] = planModel(A()).beams.filter((b) => b.story === story).map((b) => [{ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }]);
       let bay = findBay(segs, pt);
       if (!bay) bay = findBay(gridSegs(m), pt);
       if (!bay) return toast('No closed bay found here. Use “Draw slab” to draw it.');
-      for (const st of drawStories()) commit((mm) => addSlab(mm, bay!, st, A().active.slab));
+      for (const st of drawStories()) commit((mm) => addSlab(mm, bay!, st, A().active.slab, drawDz()));
       return;
     }
     case 'panel': {
@@ -473,7 +474,7 @@ function createOffsetBeam(line: [Pt, Pt]) {
       [a, b] = [add(a, { x: d.x * t0, y: d.y * t0 }), add(a, { x: d.x * t1, y: d.y * t1 })];
     }
   }
-  commitBeams((m) => addBeams(m, [[a, b]], drawStories(), A().active.beam));
+  commitBeams((m) => addBeams(m, [[a, b]], drawStories(), A().active.beam, drawDz()));
   P().set({ input: '' });
 }
 
@@ -483,7 +484,7 @@ export function finishPolygon() {
   const pts = p.rubber;
   if (pts.length < 3) return;
   if (t === 'slabDraw') {
-    for (const st of drawStories()) A().commit((m) => addSlab(m, pts, st, A().active.slab));
+    for (const st of drawStories()) A().commit((m) => addSlab(m, pts, st, A().active.slab, drawDz()));
     p.set({ rubber: [] });
   } else if (t === 'area') {
     let per = 0;
@@ -649,7 +650,7 @@ export function fillIntersections(a: Pt, b: Pt) {
     return s.x >= minX && s.x <= maxX && s.y >= minY && s.y <= maxY;
   });
   if (!pts.length) return toast('No grid intersections in the window.');
-  A().commit((m) => addColumns(m, pts, drawStories(), A().active.column, A().columnAngle));
+  A().commit((m) => addColumns(m, pts, drawStories(), A().active.column, A().columnAngle, drawDz()));
   toast(`Placed columns at ${pts.length} intersections.`);
 }
 
@@ -662,7 +663,7 @@ export type Grip = { id: string; end: 1 | 2 };
 /** The end grip of a selected beam (active story) or grid under the cursor, if any. */
 export function gripAt(screen: Pt): Grip | null {
   const { selection, activeStory } = A();
-  const model = visibleModel(A());
+  const model = planModel(A());
   const s = new Set(selection);
   const w = viewport.toWorld(screen);
   let best: Grip | null = null,
@@ -684,7 +685,7 @@ export function gripAt(screen: Pt): Grip | null {
 
 /** Snapped position for a dragged grip; the element itself is left out so it can't snap to its own end or line. A grid end stays on the grid's line. */
 function gripSnap(g: Grip, screen: Pt): { s: Snap; fixed: Pt; p: Pt } | null {
-  const m = visibleModel(A());
+  const m = planModel(A());
   const b = m.beams.find((x) => x.id === g.id);
   const gr = b ? undefined : m.grids.find((x) => x.id === g.id);
   const e = b ?? gr;

@@ -1,5 +1,5 @@
-import { lazy, memo, Suspense, useEffect, useRef } from 'react';
-import { useApp, usePreview } from './model/store';
+import { lazy, memo, Suspense, useEffect, useMemo, useRef } from 'react';
+import { useApp, usePreview, planeLevel } from './model/store';
 import { PlanView, fitAll } from './plan/PlanView';
 import { setTool, onCancel, onInput, finishPolygon, resetTool } from './plan/tools';
 import { LeftPanel } from './ui/LeftPanel';
@@ -9,7 +9,7 @@ import { openDialog } from './ui/dialogState';
 import { deleteIds } from './model/ops';
 import { restoreModel, startAutosave, downloadProject, saveProjectAs, forgetSaveTarget, openProject } from './model/persist';
 import { loadDxfFile, loadPdfFile, restoreUnderlay } from './underlay/store';
-import { columnOn, emptyModel } from './model/types';
+import { columnOn, emptyModel, placeAt, storyElevations } from './model/types';
 import { fmt } from './model/geom';
 import { startSessionLog, log, toggleLog, useLog } from './log/sessionLog';
 import { LogPanel } from './ui/LogPanel';
@@ -170,18 +170,35 @@ export function App() {
   );
 }
 
-/** Step the active story up or down (stories are stored bottom to top). */
+/** Step the active story up or down (stories are stored bottom to top); with "Ref planes" ticked, reference planes are steps too. */
 function StoryStepper() {
-  const stories = useApp((s) => s.model.stories);
+  const model = useApp((s) => s.model);
   const active = useApp((s) => s.activeStory);
-  const i = stories.findIndex((s) => s.name === active);
-  const up = stories[i + 1]?.name,
-    down = i > 0 ? stories[i - 1].name : undefined;
+  const plane = useApp((s) => planeLevel(s) && s.activePlane);
+  const withPlanes = useApp((s) => s.refPlanesInPlan);
+  const levels = useMemo(() => {
+    const el = storyElevations(model);
+    const out: { name: string; z: number; story: string; plane?: string }[] = model.stories.map((s) => ({ name: s.name, z: el[s.name].top, story: s.name }));
+    if (withPlanes)
+      for (const r of model.refPlanes) {
+        const p = placeAt(model, r.z);
+        if (p?.dz) out.push({ name: r.name, z: r.z, story: p.story, plane: r.id }); // a plane on a story level is that story
+      }
+    return out.sort((a, b) => a.z - b.z);
+  }, [model, withPlanes]);
+  const i = levels.findIndex((l) => (plane ? l.plane === plane : !l.plane && l.story === active));
+  const up = levels[i + 1],
+    down = i > 0 ? levels[i - 1] : undefined;
+  const go = (l: (typeof levels)[number]) => (l.plane ? useApp.getState().setActivePlane(l.plane, l.story) : useApp.getState().setActiveStory(l.story));
+  const name = levels[i]?.name ?? active;
   return (
     <>
-      <button disabled={!up} onClick={() => up && useApp.getState().setActiveStory(up)} title={up ? `Story up: ${up}` : 'Top story'}>▲</button>
-      <button disabled={!down} onClick={() => down && useApp.getState().setActiveStory(down)} title={down ? `Story down: ${down}` : 'Bottom story'}>▼</button>
-      <span className="story-step" title={active}>{active}</span>
+      <label className="small" style={{ marginRight: 8 }} title="Step through reference planes too; on one, the plan shows and draws only its elements">
+        <input type="checkbox" checked={withPlanes} onChange={() => useApp.getState().toggleRefPlanesInPlan()} /> Ref planes
+      </label>
+      <button disabled={!up} onClick={() => up && go(up)} title={up ? `Up: ${up.name}` : 'Top level'}>▲</button>
+      <button disabled={!down} onClick={() => down && go(down)} title={down ? `Down: ${down.name}` : 'Bottom level'}>▼</button>
+      <span className="story-step" title={plane ? `Reference plane ${name} (in ${active})` : active}>{plane ? `⊟ ${name}` : name}</span>
     </>
   );
 }

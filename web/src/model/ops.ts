@@ -157,10 +157,10 @@ export function addBeams(m: Model, segs: [Pt, Pt][], stories: string[], section:
   return beams.length === m.beams.length ? m : { ...m, beams };
 }
 
-export function addSlab(m: Model, pts: Pt[], story: string, section: string): Model {
+export function addSlab(m: Model, pts: Pt[], story: string, section: string, dz = 0): Model {
   if (pts.length < 3 || Math.abs(polyArea(pts)) < 1) return m;
   const ccw = polyArea(pts) < 0 ? [...pts].reverse() : pts;
-  return { ...m, slabs: [...m.slabs, { id: uid(), story, pts: ccw, section }] };
+  return { ...m, slabs: [...m.slabs, withDz({ id: uid(), story, pts: ccw, section }, dz)] };
 }
 
 /** Beams along grid lines between consecutive columns on the given story. */

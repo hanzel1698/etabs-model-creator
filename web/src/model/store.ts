@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { emptyModel, type FrameLoad, type Model, type Pt, type ShellLoad } from './types';
+import { emptyModel, placeAt, type FrameLoad, type Model, type Pt, type ShellLoad } from './types';
 import { shortFrameLoad, frameLoadUnit } from './loads';
 import type { PanelSize } from './ops';
 import { defaultLoadFilter, type LoadFilterState } from './loadFilter';
@@ -58,6 +58,12 @@ interface AppState {
 
   activeStory: string;
   setActiveStory: (s: string) => void;
+  /** reference plane (id) the plan shows, under activeStory; only while refPlanesInPlan */
+  activePlane: string | null;
+  setActivePlane: (id: string, story: string) => void;
+  /** the story stepper also steps through reference planes */
+  refPlanesInPlan: boolean;
+  toggleRefPlanesInPlan: () => void;
   tool: ToolName;
   setTool: (t: ToolName) => void;
   active: { column: string; beam: string; slab: string };
@@ -207,7 +213,11 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   activeStory: 'Story1',
-  setActiveStory: (s) => set({ activeStory: s, selection: [] }),
+  setActiveStory: (s) => set({ activeStory: s, activePlane: null, selection: [] }),
+  activePlane: null,
+  setActivePlane: (id, story) => set({ activeStory: story, activePlane: id, selection: [] }),
+  refPlanesInPlan: false,
+  toggleRefPlanesInPlan: () => set((s) => ({ refPlanesInPlan: !s.refPlanesInPlan, activePlane: null, selection: [] })),
   tool: 'select',
   setTool: (t) => set({ tool: t }),
   active: { column: 'C400x400', beam: 'B300x500', slab: 'S150' },
@@ -359,9 +369,33 @@ export function visibleModel(s: Pick<AppState, 'model' | 'show' | 'hidden'>): Mo
   return v;
 }
 
-/** Stories that new elements are drawn on. */
+/** The reference plane shown in plan as { story, dz } off that story's level, or null on a story level. */
+export function planeLevel(s: Pick<AppState, 'model' | 'activeStory' | 'activePlane' | 'refPlanesInPlan'>): { story: string; dz: number } | null {
+  const rp = s.refPlanesInPlan && s.activePlane ? s.model.refPlanes.find((r) => r.id === s.activePlane) : undefined;
+  const p = rp && placeAt(s.model, rp.z);
+  return p && p.story === s.activeStory ? p : null;
+}
+
+let planCache: { v: Model; story: string; dz: number; out: Model } | null = null;
+/** visibleModel, cut down to the active reference plane's elements while one is shown. For the plan only. */
+export function planModel(s: AppState): Model {
+  const v = visibleModel(s);
+  const l = planeLevel(s);
+  if (!l) return v;
+  if (planCache && planCache.v === v && planCache.story === l.story && planCache.dz === l.dz) return planCache.out;
+  const on = (x: { story: string; dz?: number }) => x.story === l.story && Math.abs((x.dz ?? 0) - l.dz) < 1;
+  const out = { ...v, columns: v.columns.filter(on), beams: v.beams.filter(on), slabs: v.slabs.filter(on) };
+  planCache = { v, story: l.story, dz: l.dz, out };
+  return out;
+}
+
+/** Level offset new elements are drawn at: the shown reference plane's, else 0. */
+export const drawDz = () => planeLevel(useApp.getState())?.dz ?? 0;
+
+/** Stories that new elements are drawn on (only the plane's story while a reference plane is shown). */
 export const drawStories = () => {
   const s = useApp.getState();
+  if (planeLevel(s)) return [s.activeStory];
   return [s.activeStory, ...s.alsoStories.filter((x) => x !== s.activeStory && s.model.stories.some((st) => st.name === x))];
 };
 
