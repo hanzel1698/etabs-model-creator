@@ -115,6 +115,9 @@ interface AppState {
 
   selection: string[];
   setSelection: (ids: string[]) => void;
+  /** set by Select-by: the selection survives story/plane/view switches until Esc or another selection */
+  keepSel: boolean;
+  prevKeep: boolean;
   /** the selection before the last change that replaced or cleared it (view only, not saved) */
   prevSelection: string[];
   /** bring back the previous selection; doing it again swaps back */
@@ -235,11 +238,11 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   activeStory: 'Story1',
-  setActiveStory: (s) => set({ activeStory: s, activePlane: null, selection: [] }),
+  setActiveStory: (name) => set((s) => ({ activeStory: name, activePlane: null, ...(s.keepSel ? {} : { selection: [] }) })),
   activePlane: null,
-  setActivePlane: (id, story) => set({ activeStory: story, activePlane: id, selection: [] }),
+  setActivePlane: (id, story) => set((s) => ({ activeStory: story, activePlane: id, ...(s.keepSel ? {} : { selection: [] }) })),
   refPlanesInPlan: false,
-  toggleRefPlanesInPlan: () => set((s) => ({ refPlanesInPlan: !s.refPlanesInPlan, activePlane: null, selection: [] })),
+  toggleRefPlanesInPlan: () => set((s) => ({ refPlanesInPlan: !s.refPlanesInPlan, activePlane: null, ...(s.keepSel ? {} : { selection: [] }) })),
   tool: 'select',
   setTool: (t) => set({ tool: t }),
   active: { column: 'C400x400', beam: 'B300x500', slab: 'S150' },
@@ -297,14 +300,16 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   selection: [],
-  setSelection: (ids) => set((s) => ({ selection: noGrids(s, ids) })),
+  setSelection: (ids) => set((s) => ({ selection: noGrids(s, ids), keepSel: false })),
+  keepSel: false,
+  prevKeep: false,
   prevSelection: [],
   restoreSelection: () =>
     set((s) => {
       // leave out what has been hidden since, like toggleShow/hideIds do
       const off = new Set([...s.hidden, ...switchedOff(s.model, s.show)]);
       const ids = noGrids(s, s.prevSelection.filter((id) => !off.has(id)));
-      return ids.length ? { selection: ids } : {};
+      return ids.length ? { selection: ids, keepSel: s.prevKeep } : {};
     }),
 
   viewRotation: 0,
@@ -371,7 +376,7 @@ useApp.subscribe((s, p) => {
   if (s.selection === p.selection || !p.selection.length) return;
   const now = new Set(s.selection);
   if (p.selection.length === now.size && p.selection.every((id) => now.has(id))) return;
-  useApp.setState({ prevSelection: p.selection });
+  useApp.setState({ prevSelection: p.selection, prevKeep: p.keepSel });
 });
 
 /** drop grid ids while grids are locked */

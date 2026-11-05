@@ -49,6 +49,7 @@ export function SelectByDialog() {
       if (first) st.setActiveStory(first.story);
     }
     st.setSelection(addTo ? [...new Set([...st.selection, ...ids])] : ids);
+    useApp.setState({ keepSel: true });
     toast(`Selected ${ids.length}: ${nCols} columns, ${nBeams} beams, ${nSlabs} slabs` + (ids.length > onActive && onActive ? ` (${onActive} on ${active}; the rest on other stories).` : '.'));
     closeDialog();
   };

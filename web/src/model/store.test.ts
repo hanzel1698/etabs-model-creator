@@ -61,6 +61,23 @@ describe('previous selection', () => {
     useApp.getState().restoreSelection();
     expect(useApp.getState().selection).toEqual(['a']);
   });
+
+  it('Select-by selection survives story switches until Esc, and comes back sticky', () => {
+    useApp.setState({ selection: [], prevSelection: [], hidden: [] });
+    const st = useApp.getState;
+    st().setSelection(['a', 'b']);
+    useApp.setState({ keepSel: true }); // what SelectByDialog does
+    st().setActiveStory('Story2');
+    expect(st().selection).toEqual(['a', 'b']);
+    st().setSelection([]); // Esc
+    st().restoreSelection();
+    expect(st().selection).toEqual(['a', 'b']);
+    st().setActiveStory('Story1');
+    expect(st().selection).toEqual(['a', 'b']);
+    st().setSelection(['c']); // manual pick ends it
+    st().setActiveStory('Story2');
+    expect(st().selection).toEqual([]);
+  });
 });
 
 describe('colorKey', () => {
