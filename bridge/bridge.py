@@ -130,7 +130,8 @@ def get_stories(m):
     r = ok(m.Story.GetStories_2(0.0, 0, [], [], [], [], [], [], [], []), "Story.GetStories_2")
     base, n, names, elevs, heights, master, similar = r[0], r[1], lst(r[2]), lst(r[3]), lst(r[4]), lst(r[5]), lst(r[6])
     rows = sorted(zip(names, elevs, heights, master, similar), key=lambda t: t[1])
-    return base, [{"name": a, "height": h, "isMaster": bool(ms), "similarTo": sim or ""} for a, e, h, ms, sim in rows]
+    # ETABS stores elevations and derives heights by subtraction (16.7 - 13.1 = 3.5999999999999996 m), so round off float noise
+    return round(base, 6), [{"name": a, "height": round(h, 6), "isMaster": bool(ms), "similarTo": sim or ""} for a, e, h, ms, sim in rows]
 
 
 def read_table(m, key):
