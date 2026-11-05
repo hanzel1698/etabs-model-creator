@@ -194,7 +194,7 @@ export function doSnap(screen: Pt): Snap {
   const s = snapPoint(t === 'region' ? { ...m, grids: [], columns: [], beams: [], slabs: [] } : m, w, tol, {
     story: A().activeStory,
     from,
-    ortho: A().ortho && t !== 'region', // a box's opposite corner must not be locked level with the first
+    ortho: A().ortho && t !== 'region' && t !== 'stairBox' && t !== 'landing', // a box's opposite corner must not be locked level with the first
     underlay: A().show.underlay,
     only: snapKindsFor(t),
   });
