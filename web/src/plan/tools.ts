@@ -55,6 +55,8 @@ let offsetSrc: [Pt, Pt] | null = null;
 let offsetFromGrid = false;
 let offsetBase: Pt | null = null; // point picked off any grid/beam: waiting for two direction clicks
 let offsetDir: Pt[] = [];
+let offsetU: Pt | null = null; // point mode: unit offset direction (±x or ±y), waiting for the offset value
+let offsetGuide: { p: Pt; d: Pt } | null = null; // point mode: guide line (point + unit direction) the beam's start and end lock to
 
 export function resetTool() {
   regionRect = null;
@@ -64,8 +66,10 @@ export function resetTool() {
   offsetSrc = null;
   offsetBase = null;
   offsetDir = [];
+  offsetU = null;
+  offsetGuide = null;
   const hint = redrawId && A().tool === 'region' ? `Redraw region (${useUnderlay.getState().regions.find((r) => r.id === redrawId)?.stories.join(', ')}): click two corners around its plan.` : hints[A().tool];
-  P().set({ rubber: [], rubberClosed: false, box: null, measure: null, panel: null, offsetLine: null, input: '', track: null, tracks: [], mid: null, hint });
+  P().set({ rubber: [], rubberClosed: false, box: null, measure: null, panel: null, offsetLine: null, guide: null, input: '', track: null, tracks: [], mid: null, hint });
 }
 
 // ---------- mid between two points ----------
@@ -257,6 +261,18 @@ export function onMove(screen: Pt) {
     upd.snap = null;
     Object.assign(upd, offsetPreview(w, p.input));
   }
+  if (t === 'beamOffset' && offsetU && !offsetGuide) {
+    const w = viewport.toWorld(screen);
+    upd.cursor = w;
+    upd.snap = null;
+    Object.assign(upd, pointOffsetPreview(w, p.input));
+  }
+  if (t === 'beamOffset' && offsetGuide) {
+    const q = guidePoint(s.p);
+    upd.cursor = q;
+    upd.snap = { p: q, kind: 'align' };
+    upd.hint = last ? `Beam end on the guide: ${liveText(last, q)}` : 'Click the beam START point on the guide.';
+  }
   p.set(upd);
 }
 
@@ -315,9 +331,47 @@ function offsetPreview(w: Pt, input: string) {
   return { offsetLine: offsetSeg(src[0], src[1], d * off), hint: `Offset = ${fmt(off)}  (type a distance + Enter, or click)` };
 }
 
+/** Point mode: the base moved `off` along the chosen axis; distance typed or (rounded to 50) from the cursor. */
+function pointOffsetPreview(w: Pt, input: string) {
+  const b = offsetBase!,
+    u = offsetU!;
+  const typed = parseFloat(input);
+  const off = !isNaN(typed) ? Math.abs(typed) : Math.round(Math.abs((w.x - b.x) * u.x + (w.y - b.y) * u.y) / 50) * 50;
+  const q = { x: b.x + u.x * off, y: b.y + u.y * off };
+  return { offsetLine: [b, q] as [Pt, Pt], guide: { p: q, d: { x: -u.y, y: u.x } }, hint: `Offset = ${fmt(off)} along ${axisName(u)}  (type a distance + Enter, or click)` };
+}
+
+const axisName = (u: Pt) => (u.x > 0 ? '+X' : u.x < 0 ? '-X' : u.y > 0 ? '+Y' : '-Y');
+
+/** Fix the point-mode offset: keep its guide and wait for the beam start and end on it. */
+function setOffsetGuide(guide: { p: Pt; d: Pt }) {
+  offsetGuide = guide;
+  P().set({ offsetLine: null, guide, input: '', rubber: [], hint: `Guide ${guide.d.x ? 'horizontal' : 'vertical'}: click the beam START point on the guide.` });
+}
+
+/** Lock a point onto the offset guide; near a grid/beam crossing it snaps to that crossing. */
+function guidePoint(pt: Pt): Pt {
+  const { p: g, d } = offsetGuide!;
+  const t = (pt.x - g.x) * d.x + (pt.y - g.y) * d.y;
+  const q = { x: g.x + d.x * t, y: g.y + d.y * t };
+  const far = 1e7; // guide treated as unbounded
+  const a = { x: g.x - d.x * far, y: g.y - d.y * far },
+    b = { x: g.x + d.x * far, y: g.y + d.y * far };
+  const m = A().model;
+  const segs: [Pt, Pt][] = [...m.grids, ...m.beams.filter((x) => x.story === A().activeStory)].map((e) => [{ x: e.x1, y: e.y1 }, { x: e.x2, y: e.y2 }]);
+  let best = q,
+    bd = SNAP_PX / viewport.k;
+  for (const [s1, s2] of segs) {
+    const x = segIntersect(a, b, s1, s2);
+    if (x && dist(x.p, q) < bd) (bd = dist(x.p, q)), (best = x.p);
+  }
+  return best;
+}
+
 /** Typing in the on-canvas offset field: redraw the preview with the typed distance at once. */
 export function setOffsetInput(input: string) {
   const p = P();
+  if (offsetU && !offsetGuide) return p.set({ input, ...pointOffsetPreview(p.cursor ?? offsetBase!, input) });
   if (!offsetSrc) return p.set({ input });
   p.set({ input, ...offsetPreview(p.cursor ?? offsetSrc[0], input) });
 }
@@ -371,6 +425,14 @@ export function onClick(pt: Pt) {
       return p.set({ rubber: [pt] });
     }
     case 'beamOffset': {
+      if (offsetGuide) {
+        const q = guidePoint(pt);
+        if (!p.rubber.length) return p.set({ rubber: [q], hint: 'Click the beam END point on the guide.' });
+        if (dist(p.rubber[0], q) < 1) return;
+        commitBeams((m) => addBeams(m, [[p.rubber[0], q]], drawStories(), A().active.beam, drawDz()));
+        return resetTool();
+      }
+      if (offsetU) return p.guide && setOffsetGuide(p.guide);
       if (offsetBase) return pickOffsetDirection(pt);
       if (!offsetSrc) return pickOffsetSource(pt);
       if (p.offsetLine) createOffsetBeam(p.offsetLine);
@@ -570,11 +632,10 @@ function pickOffsetDirection(pt: Pt) {
     return P().set({ rubber: [pt], hint: 'Offset from point: WAITING FOR DIRECTION — click the 2nd direction point.' });
   }
   if (dist(offsetDir[0], pt) < 1) return toast('Click the 2nd direction point away from the 1st.');
-  offsetSrc = [offsetBase!, add(offsetBase!, sub(pt, offsetDir[0]))];
-  offsetFromGrid = false;
-  offsetBase = null;
-  offsetDir = [];
-  P().set({ rubber: [], hint: 'Move to the side, type a distance + Enter, or click.' });
+  const v = sub(pt, offsetDir[0]);
+  // the offset runs along the nearer axis: ±X gives a vertical guide, ±Y a horizontal one
+  offsetU = Math.abs(v.x) >= Math.abs(v.y) ? { x: Math.sign(v.x), y: 0 } : { x: 0, y: Math.sign(v.y) };
+  P().set({ rubber: [], hint: `Offset along ${axisName(offsetU)}: type a distance + Enter, or click.` });
 }
 
 function createOffsetBeam(line: [Pt, Pt]) {
@@ -618,6 +679,11 @@ export function onInput(text: string) {
   const t = A().tool;
   const p = P();
   p.set({ input: '' });
+  if (t === 'beamOffset' && offsetU && !offsetGuide) {
+    const d = parseFloat(text);
+    if (isNaN(d)) return;
+    return setOffsetGuide(pointOffsetPreview(offsetBase!, text).guide);
+  }
   if (t === 'beamOffset' && offsetSrc) {
     const d = parseFloat(text);
     if (isNaN(d)) return;
@@ -754,7 +820,7 @@ export function onCancel() {
   if (movePicking()) return endMovePick();
   if (picking()) return endFramePick();
   const p = P();
-  if (p.rubber.length || p.measure || p.panel || offsetSrc || regionRect || p.box) return resetTool();
+  if (p.rubber.length || p.measure || p.panel || offsetSrc || offsetBase || regionRect || p.box) return resetTool();
   if (A().tool !== 'select') setTool('select');
   else A().setSelection([]);
 }

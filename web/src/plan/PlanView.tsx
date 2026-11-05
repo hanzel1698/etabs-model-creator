@@ -565,6 +565,13 @@ function Overlay() {
     const [a, b] = pv.offsetLine.map(S);
     items.push(<line key="off" x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#ffc850" strokeWidth={2} strokeDasharray="8 4" />);
   }
+  if (pv.guide) {
+    const { p: g, d } = pv.guide;
+    const far = 4000 / viewport.k; // same reach as the column align guide
+    const a = S({ x: g.x - d.x * far, y: g.y - d.y * far }),
+      b = S({ x: g.x + d.x * far, y: g.y + d.y * far });
+    items.push(<line key="ofg" x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#ff9f43" strokeDasharray="10 5" strokeWidth={1.5} />);
+  }
   if (tool === 'column' && cur && !pv.box) {
     const sec = model.frameSections.find((s) => s.name === active.column);
     const ol = columnOutline({ x: cur.x, y: cur.y, angle, section: active.column }, sec).map(S);
