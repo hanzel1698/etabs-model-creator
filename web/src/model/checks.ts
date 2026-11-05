@@ -129,6 +129,9 @@ function checkColumns(m: Model, story: string, cols: Column[], out: Issue[]) {
 
 // ---------------- beams ----------------
 
+/** Same story and same offset: a beam/slab on a reference plane never clashes with one on the story level. */
+const sameLevel = (a: { dz?: number }, b: { dz?: number }) => Math.abs((a.dz ?? 0) - (b.dz ?? 0)) <= TOL;
+
 const ends = (b: Beam): [Pt, Pt] => [
   { x: b.x1, y: b.y1 },
   { x: b.x2, y: b.y2 },
@@ -161,6 +164,7 @@ function checkBeams(story: string, beams: Beam[], out: Issue[]) {
   const same: [string, string][] = [];
   const lap: { a: Beam; b: Beam; L: number; at: Pt }[] = [];
   eachPair(live, (b) => boxOf(ends(b)), (a, b) => {
+    if (!sameLevel(a, b)) return;
     const [a1, a2] = ends(a),
       [b1, b2] = ends(b);
     if ((dist(a1, b1) <= TOL && dist(a2, b2) <= TOL) || (dist(a1, b2) <= TOL && dist(a2, b1) <= TOL)) return void same.push([a.id, b.id]);
@@ -236,6 +240,7 @@ function checkSlabs(story: string, slabs: Slab[], out: Issue[]) {
   const same: [string, string][] = [];
   const lap: { a: Slab; b: Slab; at: Pt }[] = [];
   eachPair(live, (s) => boxOf(s.pts), (a, b) => {
+    if (!sameLevel(a, b)) return;
     if (sameOutline(a.pts, b.pts)) return void same.push([a.id, b.id]);
     const at = slabOverlap(a.pts, b.pts);
     if (at) lap.push({ a, b, at });
