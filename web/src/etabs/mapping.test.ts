@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyModel, type Model } from '../model/types';
+import { defaultStairParams, emptyModel, type Model } from '../model/types';
 import { applyImport, importElements, toPayload } from './mapping';
 import type { ImportResult } from './bridgeClient';
 
@@ -96,5 +96,21 @@ describe('reference planes', () => {
     expect(out.refPlanes.map(({ name, z }) => ({ name, z }))).toEqual([{ name: 'RP1', z: 1500 }]);
     expect(applyImport(m, { ...r, refPlanes: [] }, what).refPlanes).toBe(m.refPlanes);
     expect(applyImport(m, { ...r, refPlanes: [{ name: 'RP1', z: 1500 }] }, { ...what, refPlanes: false }).refPlanes).toBe(m.refPlanes);
+  });
+});
+
+describe('stairs stay out of ETABS', () => {
+  it('a model with stair regions pushes the same as one without', () => {
+    const p = { ...defaultStairParams() };
+    const stairs = [{ id: 'st', name: 'STAIR-01', x1: 0, y1: 0, x2: 3000, y2: 5000, flights: [{ id: 'f', name: 'F1', x: 0, y: 0, dir: '+x' as const, n: 10, T: 300, R: 150, t: 200, width: 1200, z0: 0 }], landings: [], spans: [], params: p }];
+    const opts = { updateStories: true, pushGrids: true, pushRefPlanes: true };
+    expect(toPayload({ ...src, stairs }, opts)).toEqual(toPayload(src, opts));
+  });
+  it("a pushed stair load's stair tag is not sent", () => {
+    const load = { pattern: 'SDL', kind: 'dist' as const, force: 'F' as const, dir: 'Gravity' as const, rel: false, d1: 500, d2: 2500, v1: 12, v2: 12 };
+    const withSrc = { ...src, beams: src.beams.map((b) => ({ ...b, loads: [{ ...load, src: 'st' }] })) };
+    const plain = { ...src, beams: src.beams.map((b) => ({ ...b, loads: [load] })) };
+    const opts = { updateStories: false, pushGrids: false };
+    expect(toPayload(withSrc, opts)).toEqual(toPayload(plain, opts));
   });
 });

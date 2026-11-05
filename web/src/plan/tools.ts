@@ -1,12 +1,14 @@
 import { useApp, usePreview, drawStories, drawDz, toast, planModel, type ToolName } from '../model/store';
-import type { Beam, Model, Pt } from '../model/types';
+import type { Beam, Flight, Model, Pt, Span, StairModel } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
 import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, onGridLine, panelSize, setBeamEnd, setGridEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
-import { columnOn, uid } from '../model/types';
+import { asStair, columnOn, storyElevations, uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, trackSnap, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
 import { viewport } from './viewport';
+import { addStair, commitStair } from '../stair/regions';
+import { flightFrom, flightGrips, flightStory, frame, OPPOSITE, reshapeFlight, type FlightEdge, landingStory, levelGuess, nextNames, clip, landingRect, rectPts, landingSides, reshapeLanding } from '../stair/stair';
 import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf, rectOf } from '../underlay/store';
 import { openDialog, useFramePick, useMovePick } from '../ui/dialogState';
 import { fitAll } from './PlanView';
@@ -30,7 +32,15 @@ const hints: Record<ToolName, string> = {
   region: 'DXF setup: click two corners around one story plan.',
   calibrate: 'Calibrate: click the two ends of a line whose real length you know.',
   origin: 'Click the point (e.g. grid A/1) that should become the model origin (0,0). The whole model moves with it.',
+  stairBox: 'Stair box: click two opposite corners around the stair (any story plan).',
+  flight: 'Click the bottom of the going, then a point along the UP direction (go sideways ≥ 300 mm to set the width).',
+  landing: 'Click two opposite corners. Its level is taken from the flight that ends in it.',
+  span: 'Click support to support along the spanning direction (snaps to beams).',
 };
+
+// tools that work inside a stair (the building is read-only there)
+const STAIR_MODE_TOOLS: ToolName[] = ['select', 'measure', 'angle', 'area', 'flight', 'landing', 'span'];
+const STAIR_TOOLS: ToolName[] = ['flight', 'landing', 'span'];
 
 // tools whose points snap to the underlay, so they must not run on the raw (setup) DXF
 const DRAW_TOOLS: ToolName[] = ['grid', 'column', 'beam', 'slabDraw'];
@@ -69,6 +79,8 @@ export function midLock(g: Pt, q: Pt) {
 
 export function setTool(t: ToolName) {
   if (t === 'grid' && A().gridLock) return toast('Grids are locked. Unlock them to draw grids.');
+  if (A().activeStair && !STAIR_MODE_TOOLS.includes(t)) return toast('Inside a stair the building is read-only. Use “Back to model” to edit it.');
+  if (!A().activeStair && STAIR_TOOLS.includes(t)) return toast('Open a stair from Stairs in the left panel to draw flights, landings and spans.');
   redrawId = null;
   A().setTool(t);
   if (t === 'region' || t === 'calibrate') {
@@ -225,7 +237,9 @@ export function onMove(screen: Pt) {
   if (s.kind !== 'none' && s.kind !== 'near' && s.kind !== 'ortho' && s.kind !== 'track') upd.track = s.p;
   const last = p.rubber[p.rubber.length - 1];
   if (last && (t === 'beam' || t === 'grid' || t === 'slabDraw' || t === 'area' || t === 'measure' || t === 'angle' || t === 'calibrate')) upd.hint = liveText(last, s.p);
-  if (t === 'region' && !regionRect && p.rubber.length === 1) upd.box = { a: p.rubber[0], b: s.p };
+  if ((t === 'region' && !regionRect) || t === 'stairBox' || t === 'landing') if (p.rubber.length === 1) upd.box = { a: p.rubber[0], b: s.p };
+  if (last && t === 'flight') upd.hint = flightHint(last, s.p);
+  if (last && t === 'span') upd.hint = liveText(last, s.p);
   if (t === 'column' && !A().colAlign.picking && A().colAlign.mode !== 'off' && A().colAlign.ref) {
     const q = alignedColumnPoint(s.p);
     upd.cursor = q;
@@ -279,6 +293,16 @@ export function commitBeams(fn: (m: Model) => Model) {
   if (msg) toast(msg);
   if (sized) logAutoSizes(sized.m, sized.ids, A().active.beam);
 }
+
+/** The open stair as drawn (building cut to its box, plus the stair). */
+const SM = () => asStair(planModel(A()));
+
+function flightHint(a: Pt, b: Pt) {
+  const f = flightFrom(SM(), a, b, 0);
+  return f ? flightText(f) : liveText(a, b);
+}
+
+const flightText = (f: Flight) => `${f.n} risers × ${f.R} = ${fmt(f.n * f.R)} rise · going ${fmt((f.n - 1) * f.T)} · width ${fmt(f.width)}`;
 
 const distToSegLine = (p: Pt, [a, b]: [Pt, Pt]) => Math.abs(side(p, a, b)) / (dist(a, b) || 1);
 
@@ -393,6 +417,55 @@ export function onClick(pt: Pt) {
       requestAnimationFrame(() => fitAll());
       toast(`Region redrawn for ${u.regions.find((r) => r.id === id)?.stories.join(', ')}. Its new reference point is the model origin (0,0).`);
       return;
+    }
+    case 'flight': {
+      if (!p.rubber.length) return p.set({ rubber: [pt] });
+      const a = p.rubber[0];
+      const m = SM();
+      const f = flightFrom(m, a, pt, levelGuess(m, a.x, a.y, 50) ?? storyElevations(m)[A().activeStory]?.bottom ?? 0);
+      if (!f) return toast(`A flight needs at least one tread (${m.stair.T} mm) along the going.`);
+      commitStair((mm) => ({ ...mm, flights: [...mm.flights, f] }));
+      A().setSelection([f.id]);
+      return p.set({ rubber: [] });
+    }
+    case 'landing': {
+      if (!p.rubber.length) return p.set({ rubber: [pt] });
+      const a = p.rubber[0];
+      if (Math.abs(pt.x - a.x) < 100 || Math.abs(pt.y - a.y) < 100) return toast('Landing is too small.');
+      const m = SM();
+      const l = { id: uid(), name: nextNames(m.landings.map((x) => x.name), 'L')(), x: Math.min(a.x, pt.x), y: Math.min(a.y, pt.y), w: Math.abs(pt.x - a.x), h: Math.abs(pt.y - a.y), t: m.stair.tl, z: storyElevations(m)[A().activeStory]?.top ?? 0 };
+      const r = landingRect(l);
+      // level of the flight whose top ends in it
+      for (const f of m.flights) {
+        const F = frame(f),
+          mx = F.O[0] + F.u[0] * F.L + (F.v[0] * F.w) / 2,
+          my = F.O[1] + F.u[1] * F.L + (F.v[1] * F.w) / 2;
+        if (mx >= r.x0 - 20 && mx <= r.x1 + 20 && my >= r.y0 - 20 && my <= r.y1 + 20) {
+          l.z = f.z0 + F.H;
+          break;
+        }
+      }
+      commitStair((mm) => ({ ...mm, landings: [...mm.landings, l] }));
+      A().setSelection([l.id]);
+      return p.set({ rubber: [], box: null });
+    }
+    case 'span': {
+      if (!p.rubber.length) return p.set({ rubber: [pt] });
+      const a = p.rubber[0];
+      if (dist(a, pt) < 100) return;
+      const m = SM();
+      const sp = { id: uid(), name: nextNames(m.spans.map((x) => x.name), 'S')(), story: A().activeStory, x1: a.x, y1: a.y, x2: pt.x, y2: pt.y, width: m.stair.width };
+      const f = m.flights.find((f) => clip(sp.x1, sp.y1, sp.x2, sp.y2, frame(f).r));
+      if (f) sp.width = f.width;
+      commitStair((mm) => ({ ...mm, spans: [...mm.spans, sp] }));
+      A().setSelection([sp.id]);
+      return p.set({ rubber: [] });
+    }
+    case 'stairBox': {
+      if (!p.rubber.length) return p.set({ rubber: [pt], hint: 'Click the opposite corner of the stair box.' });
+      const a = p.rubber[0];
+      resetTool();
+      return addStair(a, pt);
     }
     case 'calibrate': {
       const st = A().activeStory;
@@ -658,59 +731,130 @@ export function fillIntersections(a: Pt, b: Pt) {
 
 // ---------- beam and grid end grips (select tool) ----------
 
-export type Grip = { id: string; end: 1 | 2 };
+/** A beam, grid or span end, a landing corner (index into rectPts; the opposite corner stays put) or side midpoint (index into landingSides; the opposite side stays put), a span side midpoint (width, about the axis), or a flight edge. */
+export type Grip = { id: string; end: 1 | 2 } | { id: string; corner: number } | { id: string; lside: number } | { id: string; side: 1 | -1 } | { id: string; edge: FlightEdge };
 
-/** The end grip of a selected beam (active story) or grid under the cursor, if any. */
+/** Span axis midpoint and unit normal. */
+function spanMid(sp: Span) {
+  const L = Math.hypot(sp.x2 - sp.x1, sp.y2 - sp.y1) || 1;
+  return { c: { x: (sp.x1 + sp.x2) / 2, y: (sp.y1 + sp.y2) / 2 }, n: { x: -(sp.y2 - sp.y1) / L, y: (sp.x2 - sp.x1) / L } };
+}
+
+/** A span's grips: its two ends (the end edge midpoints) and the midpoints of its two long sides. */
+export function spanGrips(sp: Span): [Grip, Pt][] {
+  const { c, n } = spanMid(sp),
+    h = sp.width / 2;
+  return [
+    [{ id: sp.id, end: 1 }, { x: sp.x1, y: sp.y1 }],
+    [{ id: sp.id, end: 2 }, { x: sp.x2, y: sp.y2 }],
+    [{ id: sp.id, side: 1 }, { x: c.x + n.x * h, y: c.y + n.y * h }],
+    [{ id: sp.id, side: -1 }, { x: c.x - n.x * h, y: c.y - n.y * h }],
+  ];
+}
+
+/** The grip under the cursor: an end of a selected beam (active story) or grid, or a grip of a selected flight, landing or span (inside a stair, where beams and grids have none). */
 export function gripAt(screen: Pt): Grip | null {
-  const { selection, activeStory } = A();
-  const model = planModel(A());
+  const { selection, activeStory, activeStair } = A();
+  const model = SM();
   const s = new Set(selection);
   const w = viewport.toWorld(screen);
   let best: Grip | null = null,
     bd = 7 / viewport.k;
-  for (const b of model.beams)
-    if (s.has(b.id) && b.story === activeStory)
-      for (const end of [1, 2] as const) {
-        const d = dist(w, end === 1 ? { x: b.x1, y: b.y1 } : { x: b.x2, y: b.y2 });
-        if (d < bd) (bd = d), (best = { id: b.id, end });
-      }
-  for (const g of model.grids)
-    if (s.has(g.id))
-      for (const end of [1, 2] as const) {
-        const d = dist(w, end === 1 ? { x: g.x1, y: g.y1 } : { x: g.x2, y: g.y2 });
-        if (d < bd) (bd = d), (best = { id: g.id, end });
-      }
+  const near = (q: Pt, g: Grip) => {
+    const d = dist(w, q);
+    if (d < bd) (bd = d), (best = g);
+  };
+  if (!activeStair) {
+    for (const b of model.beams) if (s.has(b.id) && b.story === activeStory) for (const end of [1, 2] as const) near(end === 1 ? { x: b.x1, y: b.y1 } : { x: b.x2, y: b.y2 }, { id: b.id, end });
+    for (const g of model.grids) if (s.has(g.id)) for (const end of [1, 2] as const) near(end === 1 ? { x: g.x1, y: g.y1 } : { x: g.x2, y: g.y2 }, { id: g.id, end });
+  }
+  for (const l of model.landings)
+    if (s.has(l.id) && landingStory(model, l) === activeStory) {
+      rectPts(landingRect(l)).forEach((q, corner) => near(q, { id: l.id, corner }));
+      landingSides(l).forEach((q, lside) => near(q, { id: l.id, lside }));
+    }
+  for (const sp of model.spans) if (s.has(sp.id) && sp.story === activeStory) for (const [g, q] of spanGrips(sp)) near(q, g);
+  for (const f of model.flights) if (s.has(f.id) && flightStory(model, f) === activeStory) for (const [edge, q] of Object.entries(flightGrips(f)) as [FlightEdge, Pt][]) near(q, { id: f.id, edge });
   return best;
 }
 
 /** Snapped position for a dragged grip; the element itself is left out so it can't snap to its own end or line. A grid end stays on the grid's line. */
 function gripSnap(g: Grip, screen: Pt): { s: Snap; fixed: Pt; p: Pt } | null {
-  const m = planModel(A());
+  const m = SM();
+  const snapAt = (mm: StairModel, from: Pt, ortho = false) => snapPoint(mm, viewport.toWorld(screen), SNAP_PX / viewport.k, { story: A().activeStory, from, ortho, underlay: A().show.underlay });
+  if ('corner' in g) {
+    const l = m.landings.find((x) => x.id === g.id);
+    if (!l) return null;
+    const fixed = rectPts(landingRect(l))[(g.corner + 2) % 4];
+    const s = snapAt({ ...m, landings: m.landings.filter((x) => x.id !== g.id) }, fixed);
+    return { s, fixed, p: s.p };
+  }
+  if ('lside' in g) {
+    const l = m.landings.find((x) => x.id === g.id);
+    if (!l) return null;
+    const s = snapAt({ ...m, landings: m.landings.filter((x) => x.id !== g.id) }, landingSides(l)[(g.lside + 2) % 4]);
+    // only the dragged side moves: the preview runs between the reshaped landing's opposite side midpoints
+    const sides = landingSides(reshapeLanding(l, g.lside, s.p));
+    return { s, fixed: sides[(g.lside + 2) % 4], p: sides[g.lside] };
+  }
+  if ('edge' in g) {
+    const f = m.flights.find((x) => x.id === g.id);
+    if (!f) return null;
+    const s = snapAt({ ...m, flights: m.flights.filter((x) => x.id !== g.id) }, flightGrips(f)[OPPOSITE[g.edge]]);
+    // whole treads / whole mm: the preview runs between the reshaped flight's opposite grips
+    const nf = reshapeFlight(f, g.edge, s.p);
+    return { s, fixed: flightGrips(nf)[OPPOSITE[g.edge]], p: flightGrips(nf)[g.edge] };
+  }
+  if ('side' in g) {
+    const sp = m.spans.find((x) => x.id === g.id);
+    if (!sp) return null;
+    const { c, n } = spanMid(sp);
+    const s = snapAt(m, c);
+    // width stays centred on the axis: both sides move by the cursor's distance from it
+    const d = Math.abs((s.p.x - c.x) * n.x + (s.p.y - c.y) * n.y);
+    return { s, fixed: { x: c.x - n.x * d, y: c.y - n.y * d }, p: { x: c.x + n.x * d, y: c.y + n.y * d } };
+  }
   const b = m.beams.find((x) => x.id === g.id);
   const gr = b ? undefined : m.grids.find((x) => x.id === g.id);
-  const e = b ?? gr;
+  const e = b ?? gr ?? m.spans.find((x) => x.id === g.id);
   if (!e) return null;
   const fixed = g.end === 1 ? { x: e.x2, y: e.y2 } : { x: e.x1, y: e.y1 };
-  const s = snapPoint({ ...m, beams: m.beams.filter((x) => x.id !== g.id), grids: m.grids.filter((x) => x.id !== g.id) }, viewport.toWorld(screen), SNAP_PX / viewport.k, {
-    story: A().activeStory,
-    from: fixed,
-    ortho: !gr && A().ortho,
-    underlay: A().show.underlay,
-  });
+  const s = snapAt({ ...m, beams: m.beams.filter((x) => x.id !== g.id), grids: m.grids.filter((x) => x.id !== g.id) }, fixed, !gr && A().ortho);
   return { s, fixed, p: gr ? onGridLine(gr, s.p) : s.p };
 }
 
 export function gripMove(g: Grip, screen: Pt) {
   const r = gripSnap(g, screen);
   if (!r) return;
-  P().set({ grip: [r.fixed, r.p], cursor: r.p, snap: r.s.kind === 'none' ? null : r.s, hint: liveText(r.fixed, r.p) });
+  const f = 'edge' in g && SM().flights.find((x) => x.id === g.id);
+  const hint = f ? flightText(reshapeFlight(f, g.edge, r.p)) : liveText(r.fixed, r.p);
+  P().set({ grip: [r.fixed, r.p], cursor: r.p, snap: r.s.kind === 'none' ? null : r.s, hint });
 }
 
 export function gripDrop(g: Grip, screen: Pt) {
   const r = gripSnap(g, screen);
   P().set({ grip: null, snap: null, hint: hints.select });
   if (!r) return;
+  if ('corner' in g) {
+    const { fixed: a, p: b } = r;
+    if (Math.abs(b.x - a.x) < 100 || Math.abs(b.y - a.y) < 100) return toast('Landing is too small.');
+    return commitStair((m) => ({ ...m, landings: m.landings.map((l) => (l.id === g.id ? { ...l, x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) } : l)) }));
+  }
+  if ('lside' in g) {
+    const l = SM().landings.find((x) => x.id === g.id);
+    const nl = l && reshapeLanding(l, g.lside, r.s.p);
+    if (!nl) return;
+    if (nl.w < 100 || nl.h < 100) return toast('Landing is too small.');
+    return commitStair((m) => ({ ...m, landings: m.landings.map((x) => (x.id === g.id ? nl : x)) }));
+  }
+  if ('edge' in g) return commitStair((m) => ({ ...m, flights: m.flights.map((f) => (f.id === g.id ? reshapeFlight(f, g.edge, r.p) : f)) }));
+  const editSpan = (f: (x: Span) => Partial<Span>) => commitStair((m) => ({ ...m, spans: m.spans.map((x) => (x.id === g.id ? { ...x, ...f(x), auto: false } : x)) }));
+  if ('side' in g) {
+    const w = Math.round(dist(r.fixed, r.p));
+    return w < 100 ? toast('Span is too narrow.') : editSpan(() => ({ width: w }));
+  }
   if (dist(r.fixed, r.p) < 1) return toast('An element needs two different end points.');
+  if (SM().spans.some((x) => x.id === g.id)) return editSpan(() => (g.end === 1 ? { x1: r.p.x, y1: r.p.y } : { x2: r.p.x, y2: r.p.y }));
   if (A().model.grids.some((x) => x.id === g.id)) return A().commit((m) => setGridEnd(m, g.id, g.end, r.p));
   commitBeams((m) => setBeamEnd(m, g.id, g.end, r.p));
 }
@@ -746,6 +890,16 @@ export function hitTest(m: Model, screen: Pt, story: string): string | null {
       if (d < bd) (bd = d), (best = b.id);
     }
   if (best) return best;
+  const sm = asStair(m);
+  for (const sp of sm.spans)
+    if (sp.story === story) {
+      const d = distToSeg(w, { x: sp.x1, y: sp.y1 }, { x: sp.x2, y: sp.y2 });
+      if (d < bd) (bd = d), (best = sp.id);
+    }
+  if (best) return best;
+  const inR = (r: { x0: number; y0: number; x1: number; y1: number }) => w.x >= r.x0 && w.x <= r.x1 && w.y >= r.y0 && w.y <= r.y1;
+  for (const f of sm.flights) if (flightStory(sm, f) === story && inR(frame(f).r)) return f.id;
+  for (const l of sm.landings) if (landingStory(sm, l) === story && inR(landingRect(l))) return l.id;
   for (const g of m.grids) {
     const d = distToSeg(w, { x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 });
     if (d < bd) (bd = d), (best = g.id);
@@ -794,6 +948,10 @@ export function boxSelect(m: Model, a: Pt, b: Pt, story: string, crossing: boole
   for (const c of m.columns) if (columnOn(m, c, story) && test([c], false)) ids.push(c.id);
   for (const bm of m.beams) if (bm.story === story && test([{ x: bm.x1, y: bm.y1 }, { x: bm.x2, y: bm.y2 }], false)) ids.push(bm.id);
   for (const s of m.slabs) if (s.story === story && test(s.pts, true)) ids.push(s.id);
+  const sm = asStair(m);
+  for (const f of sm.flights) if (flightStory(sm, f) === story && test(rectPts(frame(f).r), true)) ids.push(f.id);
+  for (const l of sm.landings) if (landingStory(sm, l) === story && test(rectPts(landingRect(l)), true)) ids.push(l.id);
+  for (const sp of sm.spans) if (sp.story === story && test([{ x: sp.x1, y: sp.y1 }, { x: sp.x2, y: sp.y2 }], false)) ids.push(sp.id);
   for (const g of m.grids) if (test([{ x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 }], false)) ids.push(g.id);
   if (A().show.nodes) for (const n of cachedStoryNodes(m, story)) if (test([n], false)) ids.push(n.id);
   return ids;

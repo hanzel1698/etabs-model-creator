@@ -1,4 +1,5 @@
-import { columnSpan, levelZ, storyElevations, type Grid, type Model, type Pt } from '../model/types';
+import { asStair, columnSpan, levelZ, storyElevations, type Grid, type Model, type Pt } from '../model/types';
+import { frame as flightFrame, landingRect, profile } from '../stair/stair';
 import { cross, dot, len, sub } from '../model/geom';
 import { columnOutline } from '../plan/snap';
 
@@ -12,6 +13,8 @@ export interface ElevBeam { id: string; section: string; s0: number; s1: number;
 /** a beam crossing the grid, drawn as its cut cross-section */
 export interface ElevCut { id: string; section: string; s0: number; s1: number; z: number; depth: number }
 export interface ElevSlab { id: string; section: string; s0: number; s1: number; z: number; t: number }
+/** a flight or landing outline in (s, z); `near` = it lies within the tolerance of the grid line, else it is seen beyond */
+export interface ElevStair { id: string; kind: 'flight' | 'landing'; name: string; pts: [number, number][]; keys: [number, number][]; risers?: { s0: number; s1: number; zs: number[] }; near: boolean }
 
 export interface Elevation {
   levels: ElevLevel[]; // bottom → top, the base first
@@ -21,6 +24,7 @@ export interface Elevation {
   beams: ElevBeam[];
   cuts: ElevCut[];
   slabs: ElevSlab[];
+  stair: ElevStair[];
 }
 
 /** Everything within `tol` mm of the grid line, seen square-on to it. */
@@ -103,7 +107,56 @@ export function elevationAt(m: Model, g: Grid, tol: number): Elevation {
     for (const [s0, s1] of spans) slabs.push({ id: sl.id, section: sl.section, s0, s1, z, t });
   }
 
-  return { levels, refPlanes, grids, columns, beams, cuts, slabs };
+  // flights and landings, projected square-on to the grid (a flight along it shows its stepped profile)
+  const stair: ElevStair[] = [];
+  const sm = asStair(m); // only a stair's view model has flights and landings
+  const band = (pts: Pt[]) => {
+    const o = pts.map(off);
+    return Math.min(...o) <= tol && Math.max(...o) >= -tol;
+  };
+  for (const f of sm.flights) {
+    const F = flightFrame(f);
+    const corners = [
+      { x: F.r.x0, y: F.r.y0 },
+      { x: F.r.x1, y: F.r.y1 },
+      { x: F.r.x0, y: F.r.y1 },
+      { x: F.r.x1, y: F.r.y0 },
+    ];
+    const along = dot({ x: F.u[0], y: F.u[1] }, u);
+    if (Math.abs(along) > 0.99) {
+      const s0 = st({ x: F.O[0], y: F.O[1] });
+      stair.push({ id: f.id, kind: 'flight', name: f.name, pts: profile(f).map(([s, z]) => [s0 + along * s, f.z0 + z]), keys: [[s0, f.z0], [s0 + along * F.L, f.z0 + F.H]], near: band(corners) });
+    } else if (Math.abs(along) < 0.01) {
+      const ss = corners.map(st),
+        a = Math.min(...ss),
+        c = Math.max(...ss),
+        ts = (f.t * Math.hypot(f.R, f.T)) / f.T;
+      stair.push({
+        id: f.id,
+        kind: 'flight',
+        name: f.name,
+        pts: [[a, f.z0 - ts], [c, f.z0 - ts], [c, f.z0 + F.H], [a, f.z0 + F.H]],
+        keys: [[a, f.z0], [c, f.z0], [a, f.z0 + F.H], [c, f.z0 + F.H]],
+        risers: { s0: a, s1: c, zs: Array.from({ length: f.n }, (_, i) => f.z0 + (i + 1) * f.R) },
+        near: band(corners),
+      });
+    }
+  }
+  for (const l of sm.landings) {
+    const r = landingRect(l),
+      corners = [
+        { x: r.x0, y: r.y0 },
+        { x: r.x1, y: r.y1 },
+        { x: r.x0, y: r.y1 },
+        { x: r.x1, y: r.y0 },
+      ],
+      ss = corners.map(st),
+      a = Math.min(...ss),
+      c = Math.max(...ss);
+    stair.push({ id: l.id, kind: 'landing', name: l.name, pts: [[a, l.z - l.t], [c, l.z - l.t], [c, l.z], [a, l.z]], keys: [[a, l.z], [c, l.z]], near: band(corners) });
+  }
+
+  return { levels, refPlanes, grids, columns, beams, cuts, slabs, stair };
 }
 
 /** Stretches of the line at offset `at` that lie inside the polygon, as [s0, s1] stations. */

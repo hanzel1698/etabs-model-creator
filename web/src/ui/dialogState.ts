@@ -19,7 +19,11 @@ export type Dialog =
   | { kind: 'is875' }
   | { kind: 'frameLoad'; edit?: LoadEdit }
   | { kind: 'shellLoad'; edit?: LoadEdit }
-  | { kind: 'jointLoad'; edit?: LoadEdit };
+  | { kind: 'jointLoad'; edit?: LoadEdit }
+  | { kind: 'stairParams' }
+  | { kind: 'stairResults' }
+  | { kind: 'stairPush' }
+  | { kind: 'stairSetLoads' };
 
 /** An assigned load being edited: its key (see *LoadKey; a joint load's id) and the elements that carry it. */
 export type LoadEdit = { key: string; ids: string[] };

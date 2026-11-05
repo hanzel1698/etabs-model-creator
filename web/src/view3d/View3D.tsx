@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
-import { columnOn, columnSpan, levelZ, placeAt, storyElevations, type Column, type FrameLoad, type LoadDir, type Model } from '../model/types';
+import { asStair, columnOn, columnSpan, levelZ, placeAt, storyElevations, type Column, type FrameLoad, type LoadDir, type Model } from '../model/types';
+import { flightStory, frame as flightFrame, landingStory, profile } from '../stair/stair';
 import { addBeams, addColumns, gridIntersections } from '../model/ops';
 import { commitBeams } from '../plan/tools';
 import { pointInPoly } from '../model/geom';
@@ -209,6 +210,11 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     g.add(label(named(j.pattern, `↓ ${describeJointLoad(j.f)}`), LOAD_COLOR, new THREE.Vector3(j.x * S, z * S, -j.y * S), null, false));
   }
   if (loads) g.add(...buildLoadPlots(m, lf, vis, colVis, clip));
+  const ghost = (key: string, color: string) => {
+    if (!fills.has(key)) fills.set(key, new THREE.MeshBasicMaterial({ color: new THREE.Color(color), transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: clip }));
+    return fills.get(key)!;
+  };
+  stairMeshes(m, sel, vis, ghost, ghost('__selStair', '#39ff9a')).forEach((x) => g.add(x));
   return g;
 }
 
@@ -463,8 +469,38 @@ function build(m: Model, sel: Set<string>, onlyStory: string | null, clip: THREE
     mesh.userData.id = sl.id;
     g.add(mesh);
   }
+  stairMeshes(m, sel, vis, (k, c) => mat(k, c), selMat).forEach((x) => g.add(x));
   return g;
 }
+
+/** Flights (stepped profile extruded across the width) and landings (slabs) as solids. */
+function stairMeshes(model: Model, sel: Set<string>, vis: (story: string) => boolean, mat: (key: string, color: string) => THREE.Material, selMat: THREE.Material): THREE.Mesh[] {
+  const out: THREE.Mesh[] = [];
+  const m = asStair(model); // flights and landings only exist inside a stair
+  const V = (x: number, y: number) => new THREE.Vector3(x, 0, -y);
+  for (const f of m.flights) {
+    if (!vis(flightStory(m, f))) continue;
+    const F = flightFrame(f);
+    const geo = new THREE.ExtrudeGeometry(new THREE.Shape(profile(f).map(([s, z]) => new THREE.Vector2(s * S, z * S))), { depth: F.w * S, bevelEnabled: false });
+    const place = new THREE.Matrix4().makeBasis(V(...F.u), new THREE.Vector3(0, 1, 0), V(...F.v)).setPosition(F.O[0] * S, f.z0 * S, -F.O[1] * S);
+    // a mirrored basis (+x, -y flights) would turn the faces inside out: pre-mirror the extrusion depth so the net transform is a rotation
+    if (place.determinant() < 0) geo.applyMatrix4(new THREE.Matrix4().makeScale(1, 1, -1).setPosition(0, 0, F.w * S));
+    geo.applyMatrix4(place);
+    const mesh = new THREE.Mesh(geo, sel.has(f.id) ? selMat : mat('__flight', '#7aa2f7'));
+    mesh.userData.id = f.id;
+    out.push(mesh);
+  }
+  for (const l of m.landings) {
+    if (!vis(landingStory(m, l))) continue;
+    const geo = new THREE.BoxGeometry(l.w * S, l.t * S, l.h * S);
+    geo.translate((l.x + l.w / 2) * S, (l.z - l.t / 2) * S, -(l.y + l.h / 2) * S);
+    const mesh = new THREE.Mesh(geo, sel.has(l.id) ? selMat : mat('__landing', '#7cc685'));
+    mesh.userData.id = l.id;
+    out.push(mesh);
+  }
+  return out;
+}
+
 
 const stencilMat = (side: THREE.Side, op: THREE.StencilOp, transparent: boolean, plane: THREE.Plane) =>
   new THREE.MeshBasicMaterial({

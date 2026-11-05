@@ -5,6 +5,7 @@ import { SelectByDialog } from './SelectByDialog';
 import { PlanSheetsDialog } from './PlanSheetsDialog';
 import { Is875Dialog } from './Is875';
 import { FrameLoadDialog, JointLoadDialog, LoadPatternsDialog, ShellLoadDialog } from './LoadDialogs';
+import { StairParamsDialog, StairPushDialog, StairResultsDialog, StairSetLoadsDialog } from './StairPanel';
 import { useApp, toast } from '../model/store';
 import { generateGrids, lift, moveIds, oppositeLabelStart, replicate } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
@@ -72,6 +73,14 @@ export function Dialogs() {
       return <ShellLoadDialog edit={d.edit} />;
     case 'jointLoad':
       return <JointLoadDialog edit={d.edit} />;
+    case 'stairParams':
+      return <StairParamsDialog />;
+    case 'stairResults':
+      return <StairResultsDialog />;
+    case 'stairPush':
+      return <StairPushDialog />;
+    case 'stairSetLoads':
+      return <StairSetLoadsDialog />;
     default:
       return null;
   }

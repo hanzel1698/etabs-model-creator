@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { useApp, usePreview, planModel, planeLevel } from '../model/store';
+import { useApp, usePreview, planModel, planeLevel, viewModel } from '../model/store';
 import { cachedStoryNodes, isNodeId, type PanelSize } from '../model/ops';
 import { fmt } from '../model/geom';
-import { columnOn, terminatingColumns, type Beam, type Pt } from '../model/types';
+import { asStair, columnOn, terminatingColumns, type Beam, type Flight, type Landing, type Pt, type Span } from '../model/types';
+import { StairLayer } from './StairLayer';
+import { flightGrips, flightStory, landingStory, landingRect, landingSides, rectPts } from '../stair/stair';
 import { viewport } from './viewport';
-import { UnderlayLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
+import { UnderlayLayer, StairBoxLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
 import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
-import { onMove, onClick, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, midPicking, startMidPick, type Grip } from './tools';
+import { onMove, onClick, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, midPicking, startMidPick, spanGrips, type Grip } from './tools';
 import { columnOutline } from './snap';
 import { pasteLoads, type LoadClip } from '../model/loads';
 import { useUnderlay, regionFor } from '../underlay/store';
@@ -18,7 +20,8 @@ export function fitAll(w?: number, h?: number) {
   const el = document.getElementById('plan-host');
   const W = w ?? el?.clientWidth ?? 800,
     H = h ?? el?.clientHeight ?? 600;
-  const m = useApp.getState().model;
+  const st = useApp.getState();
+  const m = st.activeStair ? viewModel(st) : st.model;
   const xs: number[] = [],
     ys: number[] = [];
   m.grids.forEach((g) => (xs.push(g.x1, g.x2), ys.push(g.y1, g.y2)));
@@ -88,6 +91,9 @@ export function PlanView() {
   // View by load values: the load labels follow its pattern chips, not just the active pattern
   const loadPats = useMemo(() => (colorBy === 'value' ? viewPats : [pattern]), [colorBy, viewPats, pattern]);
   const gridLock = useApp((s) => s.gridLock);
+  const stairs = useApp((s) => s.model.stairs);
+  const activeStair = useApp((s) => s.activeStair);
+  const stairBoxes = useMemo(() => (activeStair ? stairs.filter((r) => r.id === activeStair) : stairs), [stairs, activeStair]);
   // the setup view shows the raw DXF: place this story's model on its region (reference point = model 0,0)
   const setupRef = useUnderlay((u) => (u.kind === 'dxf' && u.setupMode ? u.regions.find((r) => r.stories.includes(story))?.ref ?? null : null));
   // the cropped view names the story in a fixed banner at the top of the canvas, so it stays put while zooming
@@ -131,6 +137,11 @@ export function PlanView() {
   const ends = useMemo(() => { const t = terminatingColumns(model); return new Set(cols.filter((c) => c.story === story && t.has(c.id)).map((c) => c.id)); }, [model, cols, story]);
   const beams = useMemo(() => model.beams.filter((b) => b.story === story), [model.beams, story]);
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
+  // inside a stair: its flights, landings and spans on this story
+  const stair = useMemo(() => {
+    const sm = asStair(model);
+    return { flights: sm.flights.filter((f) => flightStory(sm, f) === story), landings: sm.landings.filter((l) => landingStory(sm, l) === story), spans: sm.spans.filter((s) => s.story === story) };
+  }, [model, story]);
   const legendItems = useMemo(() => [...cols, ...beams, ...(show.slabs ? slabs : [])], [cols, beams, slabs, show.slabs]);
   const gCols = useMemo(() => (below && show.ghostBelow ? model.columns.filter((c) => columnOn(model, c, below)) : []), [model, below, show.ghostBelow]);
   const gBeams = useMemo(() => (below && show.ghostBelow ? model.beams.filter((b) => b.story === below) : []), [model.beams, below, show.ghostBelow]);
@@ -314,19 +325,21 @@ export function PlanView() {
           {show.underlay && <UnderlayLayer story={story} viewRot={viewRot} />}
           <g transform={setupRef ? `translate(${setupRef.x} ${setupRef.y})` : undefined}>
             {show.slabs && <SlabLayer slabs={slabs} sel={sel} colorBy={colorBy} patterns={viewPats} />}
+            <StairBoxLayer stairs={stairBoxes} viewRot={viewRot} size={bubble} />
             {show.grids && <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} bubble={bubble} />}
             {show.gridDims && <GridDimLayer grids={model.grids} viewRot={viewRot} bubble={bubble} />}
             {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy="none" />}
             {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy="none" />}
             <BeamLayer beams={beams} sel={sel} colorBy={colorBy} patterns={viewPats} />
             <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} ends={ends} />
+            <StairLayer flights={stair.flights} landings={stair.landings} spans={stair.spans} sel={sel} viewRot={viewRot} ts={ts} />
             {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} showSlabs={show.slabs} />}
             {(show.loads || colorBy === 'value') && <LoadLayer m={model} story={story} patterns={loadPats} viewRot={viewRot} ts={ts} />}
           </g>
         </g>
         <IssueLayer story={story} offset={setupRef} />
         {show.nodes && <NodeLayer story={story} sel={sel} offset={setupRef} />}
-        {tool === 'select' && <GripLayer beams={[...beams, ...model.grids]} sel={sel} offset={setupRef} />}
+        {tool === 'select' && <GripLayer beams={activeStair ? [] : [...beams, ...model.grids]} {...stair} sel={sel} offset={setupRef} />}
         <Overlay />
       </svg>
       {menu && (
@@ -443,19 +456,21 @@ function IssueLayer({ story, offset }: { story: string; offset: Pt | null }) {
 }
 
 /** End grips on selected beams and grids (screen space, fixed size). Drag one to reshape or extend it. */
-function GripLayer({ beams, sel, offset }: { beams: Pick<Beam, 'id' | 'x1' | 'y1' | 'x2' | 'y2'>[]; sel: Set<string>; offset: Pt | null }) {
+function GripLayer({ beams, flights, landings, spans, sel, offset }: { beams: Pick<Beam, 'id' | 'x1' | 'y1' | 'x2' | 'y2'>[]; flights: Flight[]; landings: Landing[]; spans: Span[]; sel: Set<string>; offset: Pt | null }) {
   useVp();
   const ox = offset?.x ?? 0,
     oy = offset?.y ?? 0;
-  const picked = beams.filter((b) => sel.has(b.id));
+  const picked = [
+    ...beams.filter((b) => sel.has(b.id)).map((b) => ({ id: b.id, pts: [{ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }] })),
+    ...landings.filter((l) => sel.has(l.id)).map((l) => ({ id: l.id, pts: [...rectPts(landingRect(l)), ...landingSides(l)] })),
+    ...spans.filter((sp) => sel.has(sp.id)).map((sp) => ({ id: sp.id, pts: spanGrips(sp).map(([, q]) => q) })),
+    ...flights.filter((f) => sel.has(f.id)).map((f) => ({ id: f.id, pts: Object.values(flightGrips(f)) })),
+  ];
   if (picked.length > 200) return null;
   return (
     <g className="grips">
       {picked.flatMap((b) =>
-        [
-          { x: b.x1, y: b.y1 },
-          { x: b.x2, y: b.y2 },
-        ].map((q, i) => {
+        b.pts.map((q, i) => {
           const p = viewport.toScreen({ x: q.x + ox, y: q.y + oy });
           return <rect key={b.id + i} x={p.x - 4.5} y={p.y - 4.5} width={9} height={9} fill="#4aa3ff" stroke="var(--bg)" strokeWidth={1.5} />;
         }),
@@ -486,7 +501,7 @@ function Overlay() {
     );
   }
   const cur = pv.snap?.p ?? pv.cursor;
-  if (pv.rubber.length && cur && tool !== 'region') {
+  if (pv.rubber.length && cur && tool !== 'region' && tool !== 'stairBox') {
     const pts = [...pv.rubber, cur].map(S);
     const closing = (tool === 'slabDraw' || tool === 'area') && pv.rubber.length >= 2;
     items.push(<polyline key="rub" points={pts.map((p) => `${p.x},${p.y}`).join(' ')} fill={closing ? 'rgba(255,200,80,.08)' : 'none'} stroke="#ffc850" strokeWidth={1.5} strokeDasharray="6 3" />);

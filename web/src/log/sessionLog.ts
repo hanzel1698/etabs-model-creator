@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { useApp, COLOR_BY, type ShowFlags, type ToolName } from '../model/store';
 import { useDialog, type Dialog } from '../ui/dialogState';
 import { explainAutoSize } from '../model/autoBeam';
-import type { Beam, Column, FrameSection, Grid, JointLoad, LoadPattern, Material, Model, Pt, RefPlane, Slab, SlabSection, Story } from '../model/types';
+import type { Beam, Column, FrameSection, Grid, JointLoad, LoadPattern, Material, Model, Pt, RefPlane, Slab, SlabSection, StairRegion, Story } from '../model/types';
 import { describeFrameLoad, describeJointLoad, describeShellLoad } from '../model/loads';
 
 export type LogLevel = 'info' | 'warn' | 'error';
@@ -131,6 +131,10 @@ const refPlaneWords: Words<RefPlane> = {
   describe: (r) => `reference plane ${r.name} at ${mm(r.z)} mm`,
   compare: (a, b) => [...field('name', a.name, b.name), ...field('elevation', a.z, b.z, ' mm')],
 };
+const stairWords: Words<StairRegion> = {
+  describe: (s) => `stair ${s.name} (${mm(Math.abs(s.x2 - s.x1))} × ${mm(Math.abs(s.y2 - s.y1))} mm box)`,
+  compare: (a, b) => [...field('name', a.name, b.name), ...(a.x1 !== b.x1 || a.y1 !== b.y1 || a.x2 !== b.x2 || a.y2 !== b.y2 ? ['box redrawn'] : [])],
+};
 const storyWords: Words<Story> = {
   describe: (s) => `story ${s.name}, ${mm(s.height)} mm high${s.isMaster ? ', master' : s.similarTo ? `, similar to ${s.similarTo}` : ''}`,
   compare: (a, b) => [
@@ -215,6 +219,7 @@ export function diffModel(a: Model, b: Model): string[] {
     ...diffList(a.materials, b.materials, 'material', name, materialWords),
     ...diffList(a.loadPatterns ?? [], b.loadPatterns ?? [], 'load pattern', name, patternWords),
     ...diffList(a.jointLoads ?? [], b.jointLoads ?? [], 'joint load', id, jointLoadWords),
+    ...diffList(a.stairs ?? [], b.stairs ?? [], 'stair', id, stairWords),
   ];
   if (a.stories !== b.stories && a.stories.map(name).join() !== b.stories.map(name).join() && a.stories.length === b.stories.length && !out.some((s) => s.includes('stor')))
     out.push(`Reordered stories (bottom → top): ${b.stories.map(name).join(', ')}`);
@@ -242,6 +247,10 @@ const TOOL_NAMES: Record<ToolName, string> = {
   region: 'Define story region',
   calibrate: 'Calibrate underlay',
   origin: 'Set origin',
+  stairBox: 'Stair box',
+  flight: 'Draw flight',
+  landing: 'Draw landing',
+  span: 'Draw design span',
 };
 const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   region: 'Story region',
@@ -262,6 +271,10 @@ const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   frameLoad: 'Frame load',
   shellLoad: 'Shell load',
   jointLoad: 'Joint load',
+  stairParams: 'Stair design parameters',
+  stairResults: 'Stair results',
+  stairPush: 'Push stair loads',
+  stairSetLoads: 'Set stair loads',
 };
 const SHOW_NAMES: Record<keyof ShowFlags, string> = {
   sectionLabels: 'section labels',

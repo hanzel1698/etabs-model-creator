@@ -198,7 +198,7 @@ export function describeJointLoad(f: Vec6): string {
 /** Short label for the plan: the value of a frame/shell load, or the main joint component. */
 export function shortFrameLoad(l: FrameLoad): string {
   if (l.kind === 'point') return `P${n(l.v1)}`;
-  return l.v1 === l.v2 ? n(l.v1) : `${n(l.v1)}→${n(l.v2)}`;
+  return (l.v1 === l.v2 ? n(l.v1) : `${n(l.v1)}→${n(l.v2)}`) + (l.set ? '*' : '');
 }
 
 /** Unit of a frame load's value: line or point, force or moment. */

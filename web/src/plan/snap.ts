@@ -1,4 +1,5 @@
-import { columnOn, type Model, type Pt, type Grid, type FrameSection } from '../model/types';
+import { asStair, columnOn, type Model, type Pt, type Grid, type FrameSection } from '../model/types';
+import { flightStory, frame, landingRect, landingStory, rectPts } from '../stair/stair';
 import { dist, distToSeg, mid, projectOnSeg, projectOnLine, rot, segIntersect, sub, add } from '../model/geom';
 import { gridIntersections } from '../model/ops';
 import { underlayGeom } from '../underlay/store';
@@ -85,6 +86,17 @@ export function snapPoint(m: Model, w: Pt, tol: number, o: SnapOpts): Snap {
     tryPt(mid(a, e), 'mid');
   }
   for (const s of m.slabs) if (s.story === o.story) for (const p of s.pts) tryPt(p, 'end');
+  // flight and landing outlines (inside a stair): corners and edge midpoints
+  const sm = asStair(m);
+  const stairs = [
+    ...sm.flights.filter((f) => flightStory(sm, f) === o.story).map((f) => rectPts(frame(f).r)),
+    ...sm.landings.filter((l) => landingStory(sm, l) === o.story).map((l) => rectPts(landingRect(l))),
+  ];
+  for (const ol of stairs)
+    ol.forEach((p, i) => {
+      tryPt(p, 'end');
+      tryPt(mid(p, ol[(i + 1) % 4]), 'mid');
+    });
 
   const ug = o.underlay !== false ? underlayGeom(o.story) : null;
   const near = ug ? ug.tree.search({ minX: w.x - tol, minY: w.y - tol, maxX: w.x + tol, maxY: w.y + tol }) : [];
@@ -107,6 +119,7 @@ export function snapPoint(m: Model, w: Pt, tol: number, o: SnapOpts): Snap {
   }
   for (const s of m.slabs) if (s.story === o.story) s.pts.forEach((p, i) => consider(p, s.pts[(i + 1) % s.pts.length]));
   for (const s of near) consider(s.a, s.b);
+  for (const ol of stairs) for (let i = 0; i < 4; i++) consider(ol[i], ol[(i + 1) % 4]);
   for (let i = 0; i < close.length; i++)
     for (let j = i + 1; j < close.length; j++) {
       const x = segIntersect(close[i][0], close[i][1], close[j][0], close[j][1], 1e-6);
@@ -128,6 +141,7 @@ export function snapPoint(m: Model, w: Pt, tol: number, o: SnapOpts): Snap {
   for (const b of beams) segs.push([{ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }, false]);
   for (const g of m.grids) segs.push([{ x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 }, false]);
   for (const s of near) segs.push([s.a, s.b, true]);
+  for (const ol of stairs) for (let i = 0; i < 4; i++) segs.push([ol[i], ol[(i + 1) % 4], false]);
 
   if (o.from) {
     for (const [a, b] of segs) {

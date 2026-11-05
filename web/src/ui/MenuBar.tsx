@@ -7,6 +7,10 @@ import { deleteIds } from '../model/ops';
 import { toggleLog, useLog } from '../log/sessionLog';
 import { openDialog } from './dialogState';
 import { activePattern, useLoadTargets } from './LoadDialogs';
+import { designModel } from '../model/store';
+import { autoSpans } from '../stair/stair';
+import { commitStair } from '../stair/regions';
+import { downloadCsv } from './StairPanel';
 
 export const TOOLS: { t: ToolName; label: string; key: string }[] = [
   { t: 'select', label: 'Select', key: 'V' },
@@ -16,6 +20,13 @@ export const TOOLS: { t: ToolName; label: string; key: string }[] = [
   { t: 'beamOffset', label: 'Offset beam', key: 'O' },
   { t: 'slab', label: 'Slab (bay)', key: 'S' },
   { t: 'slabDraw', label: 'Draw slab', key: 'P' },
+];
+/** Drawing tools while a stair is open (the building tools are read-only there). */
+export const STAIR_TOOLS: { t: ToolName; label: string; key: string }[] = [
+  { t: 'select', label: 'Select', key: 'V' },
+  { t: 'flight', label: 'Flight', key: 'W' },
+  { t: 'landing', label: 'Landing', key: 'L' },
+  { t: 'span', label: 'Span', key: 'N' },
 ];
 export const MEASURE: { t: ToolName; label: string; key: string }[] = [
   { t: 'measure', label: 'Distance', key: 'M' },
@@ -170,6 +181,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
   const pat = useApp((s) => activePattern(s));
   const logOpen = useLog((s) => s.open);
   const colorBy = useApp((s) => s.colorBy);
+  const inStair = useApp((s) => !!s.activeStair);
   const { frames, slabs, joints } = useLoadTargets();
   const st = useApp.getState;
   const none = !sel.length;
@@ -268,5 +280,19 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
     },
     { label: 'ETABS', items: [{ label: 'ETABS link…', title: 'Connect to ETABS, push the model or import from it', run: () => openDialog({ kind: 'etabs' }) }] },
   ];
+  if (inStair)
+    menus.push({
+      label: 'Stair',
+      items: [
+        { label: 'Auto spans', title: 'One design span per flight, through the landings it runs into, ending on the beams at matching levels (manual spans are kept)', run: () => commitStair(autoSpans) },
+        'sep',
+        { label: 'Design parameters…', run: () => openDialog({ kind: 'stairParams' }) },
+        { label: 'Results (IS 456)…', run: () => openDialog({ kind: 'stairResults' }) },
+        { label: 'Beam loads CSV', run: () => downloadCsv(designModel(st())!) },
+        'sep',
+        { label: 'Set stair loads…', disabled: !sel.length, title: 'Type the stair dead/live load on the selected beams (plan or 3D wireframe); it replaces the calculated value on the stretches the stair bears on', run: () => openDialog({ kind: 'stairSetLoads' }) },
+        { label: 'Push loads to model…', title: "Put this stair's dead and live beam loads on the model's beams, under patterns you pick", run: () => openDialog({ kind: 'stairPush' }) },
+      ],
+    });
   return <MenuBar menus={menus} />;
 }

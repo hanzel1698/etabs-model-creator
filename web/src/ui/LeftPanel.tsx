@@ -10,8 +10,13 @@ import { fitAll } from '../plan/PlanView';
 import { commitBeams, setTool } from '../plan/tools';
 import { autoSizeBeams, noFitNote } from '../model/autoBeam';
 import { fmt } from '../model/geom';
+import { StairSide, StairsList } from './StairSide';
 
 export function LeftPanel() {
+  return useApp((s) => !!s.activeStair) ? <StairSide /> : <BuildingSide />;
+}
+
+function BuildingSide() {
   const model = useApp((s) => s.model);
   const active = useApp((s) => s.activeStory);
   const also = useApp((s) => s.alsoStories);
@@ -58,6 +63,8 @@ export function LeftPanel() {
           <button onClick={() => st.setAlsoStories([])}>None</button>
         </div>
       </div>
+
+      <StairsList />
 
       <div className="section">
         <h4>

@@ -13,12 +13,14 @@ import { autoSizeBeams, noFitNote } from '../model/autoBeam';
 import { ChecksSection } from './Checks';
 import { LoadsSection, useViewPatterns } from './LoadDialogs';
 import { LoadFilterSection } from './LoadFilterSection';
+import { StairProps } from './StairPanel';
 
 export function RightPanel() {
   return (
     <div className="side right">
       <LoadFilterSection />
       <ViewByFilter />
+      <StairProps />
       <Properties />
       <LoadsSection />
       <ChecksSection />

@@ -23,6 +23,11 @@
   --slabEdge: rgba(72, 202, 228, 0.55);
   --sel: #39ff9a;
   --selFill: rgba(57, 255, 154, 0.18);
+  --flight: rgba(122, 162, 247, 0.22);
+  --flightEdge: #7aa2f7;
+  --landing: rgba(124, 198, 133, 0.22);
+  --landingEdge: #7cc685;
+  --span: #ff7a4d;
   --ghost: #6c7686;
   --label: #f3e3b0;
   --labelCol: #ffb3c4;
@@ -1284,3 +1289,44 @@ div.sheet-col-btns button {
   padding: 1px 5px;
   font-size: 11px;
 }
+.stair-row {
+  gap: 4px;
+}
+.stair-row .stair-name {
+  flex: 1;
+  font-weight: 600;
+}
+.stair-bar {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 4px;
+  background: #3a2a14;
+  border: 1px solid #ffa03c;
+  color: #ffd9a8;
+  font-size: 13px;
+}
+/* stair results report */
+.report{position:absolute;inset:0;overflow:auto;padding:16px 22px;user-select:text}
+.report h2{font-size:16px;margin:18px 0 8px}
+.report h4{margin:12px 0 6px}
+.report table{border-collapse:collapse;margin:6px 0 10px;font-size:12px}
+.report th,.report td{border:1px solid var(--line);padding:3px 8px;text-align:right}
+.report th{background:var(--panel2)}
+.report td:first-child,.report th:first-child{text-align:left}
+.report .card{border:1px solid var(--line);border-radius:6px;padding:10px 14px;margin:10px 0;background:var(--panel)}
+.report .ok{color:var(--ok);font-weight:600}
+.report .ng{color:var(--danger);font-weight:600}
+.report .calc{font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre-wrap;margin:4px 0}
+.report .info{color:var(--muted);font-size:12px}
+
+.stair-form{display:grid;grid-template-columns:1fr;gap:3px}
+.stair-form label{display:grid;grid-template-columns:1fr 96px;align-items:center;gap:6px;font-size:12px}
+.stair-form input,.stair-form select{width:100%}
+.report figure.dwg{margin:10px 0}
+.report figure.dwg figcaption{font-size:11px;color:var(--muted);margin-top:3px}

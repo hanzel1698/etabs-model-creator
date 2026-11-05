@@ -1,20 +1,89 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useApp, sectionColor, colorKey, visibleModel } from '../model/store';
+import { useApp, sectionColor, colorKey, visibleModel, toast } from '../model/store';
 import { useViewPatterns } from '../ui/LoadDialogs';
 import { ColorLegend } from '../plan/layers';
 import { fmt } from '../model/geom';
-import { elevationAt } from './elevation';
+import { elevationAt, type Elevation } from './elevation';
 import { addBeams, addColumns } from '../model/ops';
-import { placeAt, storyElevations } from '../model/types';
+import { asStair, placeAt, storyElevations, uid, type Flight, type FlightDir, type Grid, type Landing, type StairModel } from '../model/types';
 import { commitBeams } from '../plan/tools';
+import { autoSpans, nextNames } from '../stair/stair';
+import { commitStair } from '../stair/regions';
 
 const PAD = 60; // px around the drawing when fitting
 const SNAP = 12; // px: how close the cursor must be to a grid crossing to snap to it
 
+// ---------- drawing flights and landings in elevation (inside a stair) ----------
+
+type SZ = { s: number; z: number };
+type Snapped = SZ & { kind: string };
+
+/**
+ * Snap a point in elevation (s along the grid, z up): first to a key point (beam end, flight / landing corner),
+ * else s and z each to the nearest station (grid, column face) and level (story, reference plane, stair level).
+ */
+function snapSZ(e: Elevation, p: SZ, k: number, last: SZ | null): Snapped {
+  const tol = 10 / k;
+  const pts: [number, number][] = [...e.beams.flatMap((b) => [[b.s0, b.z], [b.s1, b.z]] as [number, number][]), ...e.stair.flatMap((x) => x.keys)];
+  let best: [number, number] | null = null,
+    bd = tol;
+  for (const q of pts) {
+    const d = Math.hypot(q[0] - p.s, q[1] - p.z);
+    if (d < bd) (bd = d), (best = q);
+  }
+  if (best) return { s: best[0], z: best[1], kind: 'end' };
+  const ss = [...e.grids.map((g) => g.s), ...e.columns.flatMap((c) => [c.s0, c.s1, (c.s0 + c.s1) / 2]), ...e.stair.flatMap((x) => x.keys.map((q) => q[0])), ...(last ? [last.s] : [])];
+  const zs = [...e.levels.map((l) => l.z), ...e.refPlanes.map((l) => l.z), ...e.stair.flatMap((x) => x.keys.map((q) => q[1])), ...(last ? [last.z] : [])];
+  const near = (v: number, c: number[]) => c.reduce<number | null>((a, x) => (Math.abs(x - v) < tol && (a === null || Math.abs(x - v) < Math.abs(a - v)) ? x : a), null);
+  const s = near(p.s, ss),
+    z = near(p.z, zs);
+  return { s: s ?? Math.round(p.s / 10) * 10, z: z ?? Math.round(p.z / 10) * 10, kind: s !== null && z !== null ? 'station × level' : s !== null ? 'station' : z !== null ? 'level' : '' };
+}
+
+/**
+ * The plan band a stair element drawn on grid `g` occupies: along the grid from station a to c, across from
+ * `off` to `off + width` on the chosen side. Null for a skewed grid (flights run along X or Y).
+ */
+function bandRect(g: Grid, a: number, c: number, off: number, width: number, side: 1 | -1) {
+  if (g.dir === 'G') return null;
+  const L = Math.hypot(g.x2 - g.x1, g.y2 - g.y1) || 1,
+    ux = (g.x2 - g.x1) / L,
+    uy = (g.y2 - g.y1) / L,
+    nx = -uy * side,
+    ny = ux * side;
+  const pts = [a, c].flatMap((s) => [off, off + width].map((o) => ({ x: g.x1 + ux * s + nx * o, y: g.y1 + uy * s + ny * o })));
+  const xs = pts.map((p) => p.x),
+    ys = pts.map((p) => p.y);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), ux, uy };
+}
+
+function flightOnGrid(m: StairModel, g: Grid, a: SZ, b: SZ, off: number, side: 1 | -1): Flight | string {
+  const [lo, hi] = a.z <= b.z ? [a, b] : [b, a];
+  const H = hi.z - lo.z,
+    L = Math.abs(hi.s - lo.s);
+  if (H < 50) return 'Click the bottom, then the top of the flight at a higher level.';
+  const n = Math.max(2, Math.round(H / m.stair.R));
+  if (L < 100) return 'The flight needs a going along the grid.';
+  const r = bandRect(g, lo.s, hi.s, off, m.stair.width, side);
+  if (!r) return 'Flights run along X or Y: pick a grid parallel to X or Y.';
+  const sg = Math.sign(hi.s - lo.s),
+    alongX = Math.abs(r.ux) > 0.5;
+  const dir = ((sg * (alongX ? r.ux : r.uy) > 0 ? '+' : '-') + (alongX ? 'x' : 'y')) as FlightDir;
+  const round1 = (v: number) => Math.round(v * 10) / 10;
+  return { id: uid(), name: nextNames(m.flights.map((f) => f.name), 'F')(), x: r.x, y: r.y, dir, n, R: round1(H / n), T: round1(L / (n - 1)), t: m.stair.t, width: m.stair.width, z0: lo.z };
+}
+
+function landingOnGrid(m: StairModel, g: Grid, a: SZ, b: SZ, off: number, side: 1 | -1): Landing | string {
+  if (Math.abs(b.s - a.s) < 100) return 'Click the two ends of the landing along the grid.';
+  const r = bandRect(g, a.s, b.s, off, m.stair.width, side);
+  if (!r) return 'Landings are drawn on grids parallel to X or Y.';
+  return { id: uid(), name: nextNames(m.landings.map((l) => l.name), 'L')(), x: r.x, y: r.y, w: r.w, h: r.h, z: a.z, t: m.stair.tl };
+}
+
 /** Elevation along one grid line: levels, crossing grids, and the columns, beams and slabs on that line. */
 export function ElevView() {
   const model = useApp((s) => visibleModel(s));
-  const grids = useApp((s) => s.model.grids);
+  const grids = model.grids; // inside a stair: only the grids crossing its box, cut to it
   const gridId = useApp((s) => s.elevGrid);
   const selection = useApp((s) => s.selection);
   const colorBy = useApp((s) => s.colorBy);
@@ -28,6 +97,11 @@ export function ElevView() {
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const tool = useApp((s) => s.tool);
   const drawing = tool === 'column' || tool === 'beam';
+  const stairDraw = tool === 'flight' || tool === 'landing';
+  const [side, setSide] = useState<1 | -1>(1);
+  const [off, setOff] = useState(0);
+  const [chain, setChain] = useState<SZ | null>(null); // first click of a flight or landing
+  const [cur, setCur] = useState<Snapped | null>(null);
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null); // px in the view
   const [start, setStart] = useState<{ s: number; z: number; z0: number; story: string; dz: number } | null>(null); // beam chain's last point
 
@@ -44,7 +118,7 @@ export function ElevView() {
 
   const extent = () => {
     if (!e || !grid) return null;
-    const ss = [0, Math.hypot(grid.x2 - grid.x1, grid.y2 - grid.y1), ...e.grids.map((g) => g.s), ...e.columns.flatMap((c) => [c.s0, c.s1]), ...e.beams.flatMap((b) => [b.s0, b.s1])];
+    const ss = [0, Math.hypot(grid.x2 - grid.x1, grid.y2 - grid.y1), ...e.grids.map((g) => g.s), ...e.columns.flatMap((c) => [c.s0, c.s1]), ...e.beams.flatMap((b) => [b.s0, b.s1]), ...e.stair.filter((x) => x.near).flatMap((x) => x.pts.map((p) => p[0]))];
     const zs = [...e.levels, ...e.refPlanes].map((l) => l.z);
     return { s0: Math.min(...ss), s1: Math.max(...ss), z0: Math.min(...zs), z1: Math.max(...zs) };
   };
@@ -60,9 +134,9 @@ export function ElevView() {
   };
   // refit when the grid changes or the view is resized
   useEffect(fit, [grid?.id, size.w, size.h]);
-  useEffect(() => setStart(null), [tool, grid?.id]);
+  useEffect(() => (setStart(null), setChain(null)), [tool, grid?.id]);
   useEffect(() => {
-    const k = (ev: KeyboardEvent) => ev.key === 'Escape' && setStart(null);
+    const k = (ev: KeyboardEvent) => ev.key === 'Escape' && (setStart(null), setChain(null));
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, []);
@@ -71,7 +145,7 @@ export function ElevView() {
   const Y = (z: number) => -view.k * z + view.ty;
 
   const pick = (id: string, ev: React.PointerEvent) => {
-    if (drag.current?.moved || drawing) return;
+    if (drag.current?.moved || drawing || stairDraw) return;
     const st = useApp.getState();
     st.setSelection(ev.ctrlKey ? (st.selection.includes(id) ? st.selection.filter((x) => x !== id) : [...st.selection, id]) : [id]);
   };
@@ -110,6 +184,24 @@ export function ElevView() {
     setStart(snap);
   };
 
+  const toSZ = (ev: React.PointerEvent): SZ => {
+    const r = host.current!.getBoundingClientRect();
+    return { s: (ev.clientX - r.left - view.tx) / view.k, z: (view.ty - (ev.clientY - r.top)) / view.k };
+  };
+  // first click: the bottom of a flight / one end of a landing; second click makes it (auto spans follow)
+  const clickStair = (ev: React.PointerEvent) => {
+    if (!e || !grid) return;
+    const p = snapSZ(e, toSZ(ev), view.k, chain);
+    if (!chain) return setChain(p);
+    const m = asStair(model);
+    const made = tool === 'flight' ? flightOnGrid(m, grid, chain, p, off, side) : landingOnGrid(m, grid, chain, p, off, side);
+    if (typeof made === 'string') return toast(made);
+    commitStair((mm) => autoSpans('n' in made ? { ...mm, flights: [...mm.flights, made] } : { ...mm, landings: [...mm.landings, made as Landing] }));
+    useApp.getState().setSelection([made.id]);
+    setChain(null);
+  };
+  const poly = (pts: [number, number][]) => pts.map(([s, z]) => `${X(s)},${Y(z)}`).join(' ');
+
   const x = extent();
   const sl = x ? X(x.s0) - 30 : 0,
     sr = x ? X(x.s1) + 30 : 0;
@@ -135,6 +227,7 @@ export function ElevView() {
       onPointerMove={(ev) => {
         const r = host.current!.getBoundingClientRect();
         if (drawing) setMouse({ x: ev.clientX - r.left, y: ev.clientY - r.top });
+        if (stairDraw && e) setCur(snapSZ(e, toSZ(ev), view.k, chain));
         const d = drag.current;
         if (!d || !ev.buttons) return;
         const dx = ev.clientX - d.x,
@@ -145,13 +238,18 @@ export function ElevView() {
         d.y = ev.clientY;
         setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
       }}
-      onPointerLeave={() => setMouse(null)}
+      onPointerLeave={() => (setMouse(null), setCur(null))}
       onContextMenu={(ev) => {
-        if (!drawing) return;
+        if (!drawing && !stairDraw) return;
         ev.preventDefault();
         setStart(null); // right-click ends the beam chain
+        setChain(null);
       }}
       onPointerUp={(ev) => {
+        if (stairDraw) {
+          if (ev.button === 0 && drag.current && !drag.current.moved) clickStair(ev);
+          return void setTimeout(() => (drag.current = null));
+        }
         if (drawing) {
           if (ev.button === 0 && drag.current && !drag.current.moved) place();
           return void setTimeout(() => (drag.current = null));
@@ -189,6 +287,29 @@ export function ElevView() {
               ? 'Click between two levels to place a column on this grid line (snaps to grid crossings).'
               : 'Click start, then end on a level (chained). Right-click/Esc ends the chain.'}
           </span>
+        )}
+        {stairDraw && (
+          <>
+            <label title="Which side of the grid line the stair lies on (in plan)">
+              Side{' '}
+              <select value={side} onChange={(ev) => setSide(+ev.target.value as 1 | -1)}>
+                <option value={1}>left of grid</option>
+                <option value={-1}>right of grid</option>
+              </select>
+            </label>
+            <label title="Gap between the grid line and the stair edge, mm">
+              Offset <input type="number" step={50} value={off} style={{ width: 60 }} onChange={(ev) => setOff(+ev.target.value || 0)} />
+            </label>
+            <span className="muted">
+              {tool === 'flight'
+                ? chain
+                  ? 'Click the top of the flight (on the upper level).'
+                  : 'Click the bottom of the flight; risers are fitted to the rise, treads to the going.'
+                : chain
+                  ? 'Click the other end of the landing.'
+                  : 'Click one end of the landing at its level.'}
+            </span>
+          </>
         )}
       </div>
       {!grid || !e || !x ? (
@@ -272,6 +393,40 @@ export function ElevView() {
               <rect key={c.id} x={X(c.s0)} y={Y(c.z1)} width={view.k * (c.s1 - c.s0)} height={view.k * (c.z1 - c.z0)} fill={fill(c.id, 'var(--col)')} fillOpacity={0.75} stroke="var(--colEdge)" onPointerUp={(ev) => pick(c.id, ev)} style={{ cursor: 'pointer' }} />
             ))}
             </>
+          )}
+          {/* flights and landings: solid when within the tolerance of the grid, faint when seen beyond it */}
+          <g style={{ cursor: stairDraw ? undefined : 'pointer' }}>
+            {e.stair.map((st) => {
+              const s = sel.has(st.id),
+                fl = st.kind === 'flight';
+              return (
+                <g key={st.id} opacity={st.near ? 1 : 0.35} onPointerUp={(ev) => pick(st.id, ev)}>
+                  <polygon points={poly(st.pts)} fill={s ? 'var(--selFill)' : fl ? 'var(--flight)' : 'var(--landing)'} stroke={s ? 'var(--sel)' : fl ? 'var(--flightEdge)' : 'var(--landingEdge)'} strokeWidth={s ? 2 : 1} />
+                  {st.risers && <path d={st.risers.zs.map((z) => `M${X(st.risers!.s0)} ${Y(z)}H${X(st.risers!.s1)}`).join('')} stroke="var(--flightEdge)" strokeWidth={0.5} />}
+                  {names && (
+                    <text x={X(st.pts.reduce((a, p) => a + p[0], 0) / st.pts.length)} y={Y(Math.max(...st.pts.map((p) => p[1])))} dy={-4} textAnchor="middle" fontSize={11} fill={fl ? 'var(--flightEdge)' : 'var(--landingEdge)'} className="halo nosel">
+                      {st.name}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+          {stairDraw && (
+            <g className="nosel" pointerEvents="none">
+              {chain && cur && <line x1={X(chain.s)} y1={Y(chain.z)} x2={X(cur.s)} y2={Y(cur.z)} stroke="#ffc850" strokeWidth={2} strokeDasharray="6 3" />}
+              {chain && <circle cx={X(chain.s)} cy={Y(chain.z)} r={4} fill="#ffc850" />}
+              {cur && (
+                <>
+                  <rect x={X(cur.s) - 5} y={Y(cur.z) - 5} width={10} height={10} fill="none" stroke="#39ff9a" strokeWidth={1.5} />
+                  <text x={X(cur.s) + 12} y={Y(cur.z) + 20} fill="#ffc850" fontSize={12} className="halo">
+                    {`s ${fmt(cur.s)}  z ${fmt(cur.z)}`}
+                    {chain ? `  ·  Δs ${fmt(cur.s - chain.s)}  Δz ${fmt(cur.z - chain.z)}` : ''}
+                    {cur.kind ? `  [${cur.kind}]` : ''}
+                  </text>
+                </>
+              )}
+            </g>
           )}
           {names && (
             <g className="nosel" fontSize={11}>

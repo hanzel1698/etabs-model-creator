@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo } from 'react';
 import { useApp, sectionColor, colorKey, type ColorBy } from '../model/store';
-import { columnOn, levelTag, type Beam, type Column, type FrameLoad, type FrameSection, type Grid, type Model, type Slab } from '../model/types';
+import { columnOn, levelTag, type Beam, type Column, type FrameLoad, type FrameSection, type Grid, type Model, type Slab, type StairRegion } from '../model/types';
 import { angleDeg, fmt, polyArea } from '../model/geom';
 import { gridDimensions } from '../model/ops';
 import { describeJointLoad, shortFrameLoad } from '../model/loads';
@@ -113,6 +113,24 @@ export const GridLayer = memo(function GridLayer({ grids, sel, viewRot, showLabe
           </g>
         );
       })}
+    </g>
+  );
+});
+
+// ---------------- stair boxes ----------------
+
+/** Stair regions as dashed boxes named at their top-left corner (`active` drawn alone, while designing it). */
+export const StairBoxLayer = memo(function StairBoxLayer({ stairs, viewRot, size }: { stairs: StairRegion[]; viewRot: number; size: number }) {
+  return (
+    <g className="stair-boxes">
+      {stairs.map((s) => (
+        <g key={s.id}>
+          <rect x={s.x1} y={s.y1} width={s.x2 - s.x1} height={s.y2 - s.y1} fill="rgba(255,160,60,.06)" stroke="#ffa03c" strokeWidth={1.5} strokeDasharray="8 5" style={NS} />
+          <text transform={textTransform(s.x1, s.y2, viewRot)} dx={size * 0.2} dy={size * 0.8} fontSize={size * 0.6} fill="#ffa03c" fontWeight={700} className="nosel">
+            {s.name}
+          </text>
+        </g>
+      ))}
     </g>
   );
 });

@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { useApp, colorKey, colorGroups } from './store';
-import { emptyModel, type FrameSection } from './types';
+import { describe, expect, it, vi } from 'vitest';
+import { useApp, colorKey, colorGroups, visibleModel } from './store';
+import { defaultStairParams, emptyModel, type FrameSection } from './types';
+import { commitStair, deleteStairIds } from '../stair/regions';
 
 const rect = (name: string, t2: number, t3: number): FrameSection => ({ name, shape: 'Rectangle', t2, t3, material: '4000Psi', fromEtabs: false });
 
@@ -91,5 +92,44 @@ describe('colorGroups', () => {
     useApp.setState({ hidden: ['a', 'b', 'c'] });
     useApp.getState().unhideIds(['a', 'c']);
     expect(useApp.getState().hidden).toEqual(['b']);
+  });
+});
+
+describe('stair mode', () => {
+  const beam = { id: 'b', story: 'Story1', x1: 0, y1: 500, x2: 9000, y2: 500, section: 'B300x500' };
+  const stair = { id: 'st', name: 'STAIR-01', x1: 0, y1: 0, x2: 3000, y2: 3000, flights: [], landings: [], spans: [], params: defaultStairParams() };
+  const start = () => {
+    useApp.getState().setModel({ ...emptyModel(), beams: [beam], slabs: [{ id: 's', story: 'Story1', pts: [], section: 'S150' }], stairs: [stair] });
+    useApp.getState().enterStair('st');
+  };
+  it('keeps the building read-only but lets stair data change', () => {
+    vi.stubGlobal('window', globalThis); // the refusal shows a toast
+    start();
+    const st = useApp.getState();
+    st.commit((m) => ({ ...m, beams: [] }));
+    expect(useApp.getState().model.beams).toHaveLength(1);
+    st.commit((m) => ({ ...m, stairs: [{ ...stair, name: 'STAIR-A' }] }));
+    expect(useApp.getState().model.stairs[0].name).toBe('STAIR-A');
+    st.commit((m) => ({ ...m, beams: [] }), { main: true });
+    expect(useApp.getState().model.beams).toHaveLength(0);
+  });
+  it('shows the building cut to the box, without slabs, and all of it again after leaving', () => {
+    start();
+    const v = visibleModel(useApp.getState());
+    expect(v.slabs).toHaveLength(0);
+    expect(v.beams[0]).toMatchObject({ x1: 0, x2: 3001 });
+    useApp.getState().exitStair();
+    expect(visibleModel(useApp.getState()).beams[0].x2).toBe(9000);
+  });
+  it('stair edits land in the open stair only, renumbered bottom-up, and can be deleted', () => {
+    start();
+    const f = (id: string, z0: number) => ({ id, name: 'F9', x: 500, y: 500, dir: '+x' as const, n: 8, T: 250, R: 150, t: 150, width: 1000, z0 });
+    commitStair((m) => ({ ...m, flights: [...m.flights, f('up', 1200), f('low', 0)] }));
+    const r = useApp.getState().model.stairs[0];
+    expect(r.flights.map((x) => [x.id, x.name])).toEqual([['up', 'F2'], ['low', 'F1']]);
+    expect(useApp.getState().model.beams).toHaveLength(1);
+    deleteStairIds(['up', 'b']); // the building beam is read-only here
+    expect(useApp.getState().model.stairs[0].flights.map((x) => x.id)).toEqual(['low']);
+    expect(useApp.getState().model.beams).toHaveLength(1);
   });
 });

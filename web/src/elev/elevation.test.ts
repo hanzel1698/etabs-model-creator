@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { elevationAt } from './elevation';
-import { emptyModel, type Grid, type Model } from '../model/types';
+import { asStair, emptyModel, type Grid, type Model } from '../model/types';
 
 const grid = (id: string, label: string, x1: number, y1: number, x2: number, y2: number): Grid => ({ id, label, dir: x1 === x2 ? 'X' : 'Y', x1, y1, x2, y2, bubble: 'start' });
 const A = grid('A', 'A', -1000, 0, 13000, 0);
@@ -40,5 +40,15 @@ describe('elevation at a grid', () => {
   });
   it('cuts slabs whose edge lies on the grid', () => {
     expect(e.slabs.map((s) => [s.id, s.s0, s.s1, s.z, s.t])).toEqual([['s', 1000, 7000, 3000, 150]]);
+  });
+});
+
+describe('stair in elevation', () => {
+  it('has no stair outside a stair, and draws a flight along the grid as its stepped profile', () => {
+    expect(elevationAt(m, A, 300).stair).toEqual([]);
+    const f = { id: 'f', name: 'F1', x: 1000, y: 0, dir: '+x' as const, n: 4, T: 300, R: 150, t: 150, width: 1000, z0: 0 };
+    const st = elevationAt({ ...asStair(m), flights: [f] } as Model, A, 300).stair[0];
+    expect(st).toMatchObject({ id: 'f', kind: 'flight', near: true });
+    expect(st.keys).toEqual([[2000, 0], [2900, 600]]); // station from grid start at x -1000; going 3 × 300, rise 4 × 150
   });
 });

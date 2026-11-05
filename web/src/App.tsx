@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useMemo, useRef } from 'react';
-import { useApp, usePreview, planeLevel } from './model/store';
+import { useApp, usePreview, planeLevel, visibleModel, viewModel } from './model/store';
 import { PlanView, fitAll } from './plan/PlanView';
 import { setTool, onCancel, onInput, finishPolygon, resetTool } from './plan/tools';
 import { LeftPanel } from './ui/LeftPanel';
@@ -7,6 +7,7 @@ import { RightPanel } from './ui/RightPanel';
 import { Dialogs } from './ui/Dialogs';
 import { openDialog } from './ui/dialogState';
 import { deleteIds } from './model/ops';
+import { deleteStairIds } from './stair/regions';
 import { restoreModel, startAutosave, downloadProject, saveProjectAs, forgetSaveTarget, openProject } from './model/persist';
 import { loadDxfFile, loadPdfFile, restoreUnderlay } from './underlay/store';
 import { columnOn, emptyModel, placeAt, storyElevations } from './model/types';
@@ -16,7 +17,7 @@ import { LogPanel } from './ui/LogPanel';
 import { IssueBadge, watchIssues } from './ui/Checks';
 import { ElevView } from './elev/ElevView';
 import { PatternPicker } from './ui/LoadDialogs';
-import { MainMenu, TOOLS, MEASURE } from './ui/MenuBar';
+import { MainMenu, TOOLS, MEASURE, STAIR_TOOLS } from './ui/MenuBar';
 
 const View3D = lazy(() => import('./view3d/View3D'));
 
@@ -32,6 +33,9 @@ export function App() {
   const panel = useApp((s) => s.panel);
   const toast = useApp((s) => s.toast);
   const ortho = useApp((s) => s.ortho);
+  const stairName = useApp((s) => s.model.stairs.find((r) => r.id === s.activeStair)?.name);
+  // entering or leaving a stair frames its box (or the building) in the plan
+  useEffect(() => void requestAnimationFrame(() => fitAll()), [!!stairName]);
   const fileRef = useRef<HTMLInputElement>(null);
   const ulRef = useRef<HTMLInputElement>(null);
 
@@ -64,7 +68,8 @@ export function App() {
       }
       if (inInput) return;
       if (e.key === 'Delete' && st.selection.length) {
-        st.commit((m) => deleteIds(m, st.selection));
+        if (st.activeStair) deleteStairIds(st.selection);
+        else st.commit((m) => deleteIds(m, st.selection));
         st.setSelection([]);
         return;
       }
@@ -81,7 +86,7 @@ export function App() {
         return;
       }
       const k = e.key.toUpperCase();
-      const hit = [...TOOLS, ...MEASURE].find((x) => x.key === k);
+      const hit = [...(st.activeStair ? STAIR_TOOLS : TOOLS), ...MEASURE].find((x) => x.key === k);
       if (hit) return setTool(hit.t);
       if (k === 'F') return fitAll();
       if (k === 'E' && st.selection.length) return openDialog({ kind: 'replicate' });
@@ -116,7 +121,7 @@ export function App() {
           onUnderlay={() => ulRef.current?.click()}
         />
         <div className="toolbar">
-          {TOOLS.map((x) => (
+          {(stairName ? STAIR_TOOLS : TOOLS).map((x) => (
             <button key={x.t} className={'tool ' + (tool === x.t ? 'on' : '')} onClick={() => setTool(x.t)} title={`${x.label} (${x.key})`}>
               {x.label} <kbd>{x.key}</kbd>
             </button>
@@ -159,6 +164,12 @@ export function App() {
             <View3D />
           </Suspense>
         )}
+        {stairName && (
+          <div className="stair-bar">
+            Stair design: <b>{stairName}</b> <span className="muted">· building read-only</span>
+            <button onClick={() => useApp.getState().exitStair()}>Back to model</button>
+          </div>
+        )}
         {toast && <div className="toast">{toast}</div>}
         <MeasureBox />
         <LogPanel />
@@ -172,7 +183,7 @@ export function App() {
 
 /** Step the active story up or down (stories are stored bottom to top); with "Ref planes" ticked, reference planes are steps too. */
 function StoryStepper() {
-  const model = useApp((s) => s.model);
+  const model = useApp(visibleModel); // inside a stair: only the stories its box reaches
   const active = useApp((s) => s.activeStory);
   const plane = useApp((s) => planeLevel(s) && s.activePlane);
   const withPlanes = useApp((s) => s.refPlanesInPlan);
@@ -211,7 +222,7 @@ function MeasureBox() {
 
 /** Element counts on the active story, with model totals. Kept apart from the status bar so it only re-renders on model changes. */
 const Counts = memo(function Counts({ story }: { story: string }) {
-  const m = useApp((s) => s.model);
+  const m = useApp(viewModel); // inside a stair: what its box shows
   const n = (arr: { story: string }[]) => [arr.filter((x) => x.story === story).length, arr.length];
   const [c, ct] = [m.columns.filter((x) => columnOn(m, x, story)).length, m.columns.length],
     [b, bt] = n(m.beams),
