@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { columnOn, emptyModel, placeAt, type FrameLoad, type Model, type Pt, type ShellLoad, type StairModel } from './types';
 import { stairContext } from '../stair/context';
-import { applyStairLoads, defaultPattern, stairLoadRows } from '../stair/push';
+import { rangeFor, rangeLevels, rangesOf } from '../stair/ranges';
+import { applyStairLoads, defaultPattern, rangeSrc, stairLoadRows } from '../stair/push';
 import { shortFrameLoad, frameLoadUnit } from './loads';
 import type { PanelSize } from './ops';
 import { defaultLoadFilter, type LoadFilterState } from './loadFilter';
@@ -142,6 +143,9 @@ interface AppState {
   viewPatterns: string[];
   setViewPatterns: (p: string[]) => void;
   invertPdf: boolean;
+  /** the plan's underlay comes from the story below the active one (for drawing between levels); always so inside a stair */
+  underlayBelow: boolean;
+  toggleUnderlayBelow: () => void;
   toggleInvertPdf: () => void;
 
   toast: string;
@@ -151,6 +155,9 @@ interface AppState {
   activeStair: string | null;
   enterStair: (id: string) => void;
   exitStair: () => void;
+  /** typical range of the open stair being designed (see stair/ranges.ts); null = its first */
+  activeRange: string | null;
+  setActiveRange: (id: string) => void;
 }
 
 const HISTORY = 200;
@@ -330,6 +337,8 @@ export const useApp = create<AppState>((set, get) => ({
   viewPatterns: [],
   setViewPatterns: (viewPatterns) => set({ viewPatterns }),
   invertPdf: true,
+  underlayBelow: false,
+  toggleUnderlayBelow: () => set((s) => ({ underlayBelow: !s.underlayBelow })),
   toggleInvertPdf: () => set((s) => ({ invertPdf: !s.invertPdf })),
 
   toast: '',
@@ -340,10 +349,21 @@ export const useApp = create<AppState>((set, get) => ({
     const s = get();
     const r = s.model.stairs.find((x) => x.id === id);
     if (!r) return;
+    const rg = rangesOf(s.model, r)[0];
+    const lv = rg && rangeLevels(s.model, rg);
     const names = stairContext(s.model, r).stories.map((x) => x.name);
-    set({ activeStair: id, selection: [], hidden: [], activePlane: null, tool: 'select', activeStory: names.includes(s.activeStory) ? s.activeStory : names[names.length - 1] ?? s.activeStory });
+    const story = lv ? lv.story : names.includes(s.activeStory) ? s.activeStory : names[names.length - 1] ?? s.activeStory;
+    set({ activeStair: id, activeRange: rg?.id ?? null, selection: [], hidden: [], activePlane: null, tool: 'select', activeStory: story });
   },
-  exitStair: () => set({ activeStair: null, selection: [], tool: 'select' }),
+  exitStair: () => set({ activeStair: null, activeRange: null, selection: [], tool: 'select' }),
+  activeRange: null,
+  setActiveRange: (id) => {
+    const s = get();
+    const r = s.model.stairs.find((x) => x.id === s.activeStair);
+    const rg = r && rangesOf(s.model, r).find((x) => x.id === id);
+    const lv = rg && rangeLevels(s.model, rg);
+    set({ activeRange: id, activePlane: null, selection: [], ...(lv ? { activeStory: lv.story } : {}) });
+  },
 }));
 
 // remember the last non-empty selection whenever something replaces it, so an accidental click can be undone
@@ -371,26 +391,29 @@ const switchedOff = (m: Model, show: ShowFlags) => [
   ...m.beams.filter((b) => !beamOn(b, show)).map((b) => b.id),
 ];
 
-let stairCache: { m: Model; id: string; v: Model } | null = null;
+let stairCache: { m: Model; id: string; rg?: string; v: Model } | null = null;
+type StairSel = Pick<AppState, 'model' | 'activeStair' | 'activeRange'>;
 /** The model the views work on: the building, or inside a stair the building cut to that stair's box (beams clipped for display). */
-export function viewModel(s: Pick<AppState, 'model' | 'activeStair'>): Model {
+export function viewModel(s: StairSel): Model {
   const r = s.activeStair ? s.model.stairs.find((x) => x.id === s.activeStair) : undefined;
   if (!r) return s.model;
-  if (stairCache && stairCache.m === s.model && stairCache.id === r.id) return stairCache.v;
+  const rg = rangeFor(s.model, r, s.activeRange);
+  if (stairCache && stairCache.m === s.model && stairCache.id === r.id && stairCache.rg === rg?.id) return stairCache.v;
   // the stair's beam loads as a push would put them (replacing what it pushed before), so plan and 3D show them
   const rows = stairLoadRows(designModel(s)!, r.overrides);
-  const withLoads = applyStairLoads(s.model, r.id, rows, defaultPattern(s.model.loadPatterns, 'dl', r.dlPattern), defaultPattern(s.model.loadPatterns, 'll', r.llPattern));
-  stairCache = { m: s.model, id: r.id, v: stairContext(withLoads, r, true) };
+  const withLoads = applyStairLoads(s.model, rg ? rangeSrc(r.id, rg.id) : r.id, rows, defaultPattern(s.model.loadPatterns, 'dl', r.dlPattern), defaultPattern(s.model.loadPatterns, 'll', r.llPattern));
+  stairCache = { m: s.model, id: r.id, rg: rg?.id, v: stairContext(withLoads, r, true, rg) };
   return stairCache.v;
 }
 
-let designCache: { m: Model; id: string; v: StairModel } | null = null;
+let designCache: { m: Model; id: string; rg?: string; v: StairModel } | null = null;
 /** The open stair for design: like viewModel but with beams whole, so beam load positions are along the real beams. Null outside a stair. */
-export function designModel(s: Pick<AppState, 'model' | 'activeStair'>): StairModel | null {
+export function designModel(s: StairSel): StairModel | null {
   const r = s.activeStair ? s.model.stairs.find((x) => x.id === s.activeStair) : undefined;
   if (!r) return null;
-  if (designCache && designCache.m === s.model && designCache.id === r.id) return designCache.v;
-  designCache = { m: s.model, id: r.id, v: stairContext(s.model, r) };
+  const rg = rangeFor(s.model, r, s.activeRange);
+  if (designCache && designCache.m === s.model && designCache.id === r.id && designCache.rg === rg?.id) return designCache.v;
+  designCache = { m: s.model, id: r.id, rg: rg?.id, v: stairContext(s.model, r, false, rg) };
   return designCache.v;
 }
 
@@ -399,7 +422,7 @@ let visCache: { m: Model; show: ShowFlags; hidden: string[]; v: Model } | null =
  * The model as shown: columns, beams and slabs that are switched off or hidden are left out.
  * For drawing, picking and snapping only; edits always go to `model`. Same object while nothing changes.
  */
-export function visibleModel(s: Pick<AppState, 'model' | 'show' | 'hidden' | 'activeStair'>): Model {
+export function visibleModel(s: Pick<AppState, 'model' | 'show' | 'hidden' | 'activeStair' | 'activeRange'>): Model {
   const c = visCache;
   const m = viewModel(s);
   if (c && c.m === m && c.hidden === s.hidden && c.show.columns === s.show.columns && c.show.beams === s.show.beams && c.show.beamsX === s.show.beamsX && c.show.beamsY === s.show.beamsY && c.show.slabs === s.show.slabs) return c.v;

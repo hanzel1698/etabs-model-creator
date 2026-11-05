@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { designModel, toast, useApp } from '../model/store';
-import { applyStairLoads, defaultPattern, hasStairLoads, stairLoadRows, type PushRow } from '../stair/push';
+import { allRangeLoads, applyStairLoads, defaultPattern, hasStairLoads, rangeSrc, repeatRows, stairLoadRows, type PushRow } from '../stair/push';
+import { rangeFor, rangeLevels, rangesOf } from '../stair/ranges';
 import { closeDialog } from './dialogState';
 import { log } from '../log/sessionLog';
 import { startMovePick } from '../plan/tools';
-import { beamEndsZ, storyElevations, type Beam, type Flight, type Landing, type StairModel as Model, type Span, type StairParams, type StairRegion } from '../model/types';
+import { beamEndsZ, storyElevations, type Beam, type Flight, type Landing, type StairModel as Model, type Span, type StairParams, type StairRegion, type TypicalRange, type Model as MainModel } from '../model/types';
 import { commitStair } from '../stair/regions';
 import { Modal } from './Dialogs';
 import { analyze, beamFlipped, beamLoads, beamName, frame, gridRef, suggestWaist, withWaist, type Transfer } from '../stair/stair';
@@ -376,12 +377,37 @@ function designCalc(m: Model, A: NonNullable<ReturnType<typeof analyze>>) {
   Check:    L/d = ${f2(d.ld, 2)} ≤ (L/d)_allow = ${f2(d.ldAllow, 2)}  → ${okS(d.defl)}`;
 }
 
-/** `act`: include the "use suggested waist" buttons (the in-app modal, not the print). */
-export function resultsHtml(m: Model, act = false) {
+/** The typical range a report covers, and every load all the stair's ranges put on its beams (see allRangeLoads). */
+export type ReportRange = { rg: TypicalRange; story: string; repeats: number; all: ReturnType<typeof allRangeLoads> };
+
+/** Report context for the open stair's active range. */
+export function reportRange(s: { model: MainModel; activeStair: string | null; activeRange: string | null }): ReportRange | undefined {
+  const r = s.model.stairs.find((x) => x.id === s.activeStair),
+    rg = r && rangeFor(s.model, r, s.activeRange),
+    lv = rg && rangeLevels(s.model, rg);
+  return r && rg && lv ? { rg, story: lv.story, repeats: lv.repeats, all: allRangeLoads(s.model, r) } : undefined;
+}
+
+/** Floor beams that also carry loads from another storey or range: every stair load on them, so the beam is designed for all of it. */
+function combinedHtml(m: Model, out: ReturnType<typeof beamLoads>['out'], R: ReportRange) {
+  let h = '';
+  for (const [b, rows] of out) {
+    const es = R.all.get(b.id) ?? [];
+    if (es.length <= rows.length) continue;
+    h += `<tr><td colspan="6"><b>${esc(beamTag(m, b))}</b> ${esc(gridRef(m, b))}</td></tr>`;
+    for (const e of es) h += `<tr><td>${esc(`${e.range.from} → ${e.range.to}`)}${e.range.id === R.rg.id ? ' (this range)' : ''}</td><td>${esc(e.span)}</td><td>${f2(e.d1 / 1000)}</td><td>${f2(e.d2 / 1000)}</td><td>${f2(e.dl)}</td><td>${f2(e.ll)}</td></tr>`;
+  }
+  return h
+    ? `<h3>Combined at level — all stair loads on shared floor beams</h3><div class="info">These beams also carry the flight arriving from the storey below or leaving to the storey above (a repeat of this range or another range). All the loads a push of every range puts on each, from the beam's start (x1, y1), in m.</div><table><tr><th>From range</th><th>Span</th><th>Start (m)</th><th>End (m)</th><th>Dead (kN/m)</th><th>Live (kN/m)</th></tr>${h}</table>`
+    : '';
+}
+
+/** `act`: include the "use suggested waist" buttons (the in-app modal, not the print). `R`: the typical range it covers. */
+export function resultsHtml(m: Model, act = false, R?: ReportRange) {
   const p = m.stair,
     { out, warn } = beamLoads(m),
     fig = { n: 2 };
-  let h = suggestHtml(m, act) + (act ? deflAlert(m) : '');
+  let h = (R ? `<h2>Typical stories ${esc(R.rg.from)} → ${esc(R.rg.to)}</h2><div class="info">Designed on storey ${esc(R.story)}${R.repeats > 1 ? `, repeated over ${R.repeats} storeys` : ''}. Beams are numbered for this range only.</div>` : '') + suggestHtml(m, act) + (act ? deflAlert(m) : '');
   h += `<h2>Stair layout</h2>${planSvg(m)}${notationHtml()}`;
   if (m.flights.length) h += '<h2>Flight elevations</h2>' + m.flights.map((f) => flightSvg(f, fig.n++)).join('');
   h += unitWeightsHtml(m, fig);
@@ -397,6 +423,7 @@ export function resultsHtml(m: Model, act = false) {
     rows.forEach((r, i) => (h += `<tr><td>${i ? '' : esc(beamTag(m, b))}</td><td>${i ? '' : esc(gridRef(m, b))}</td><td>${i ? '' : f2(L)}</td><td>${esc(r.sp.name)}</td><td>${f2(r.a / 1000)}</td><td>${f2(r.b / 1000)}</td><td>${f2(r.dl)}</td><td>${f2(r.ll)}</td><td>${f2(r.fu)}</td></tr>`));
   }
   h += '</table>';
+  if (R) h += combinedHtml(m, out, R);
   for (const [b, rows] of out) h += beamLoadSvg(m, b, rows, rows.length ? fig.n++ : 0);
   h += beamTrail(m, out);
   if (warn.length) h += '<div class="card"><b class="ng">Warnings</b><ul>' + warn.map((w) => `<li>${esc(w)}</li>`).join('') + '</ul></div>';
@@ -440,10 +467,27 @@ function applyWaist(e: { target: EventTarget }) {
 
 export function StairResultsDialog() {
   const m = useApp(designModel);
-  if (!m) return null;
+  const model = useApp((s) => s.model);
+  const region = useApp(openRegion);
+  const activeRange = useApp((s) => s.activeRange);
+  if (!m || !region) return null;
+  const R = reportRange({ model, activeStair: region.id, activeRange });
+  const rgs = rangesOf(model, region);
+  // picking a range makes it the one designed, so suggested-waist buttons edit the range shown
+  const pick = rgs.length > 1 && (
+    <label className="row">
+      <span>Typical stories</span>
+      <select value={R?.rg.id} onChange={(e) => useApp.getState().setActiveRange(e.target.value)}>
+        {rgs.map((x) => (
+          <option key={x.id} value={x.id}>{x.from} → {x.to}</option>
+        ))}
+      </select>
+    </label>
+  );
   return (
-    <Modal wide title="Stair design results" footer={<><button onClick={() => downloadCsv(m)}>Beam loads CSV</button><button onClick={() => printReport(m)}>Print report</button></>}>
-      <div className="report-inline report" style={{ position: 'static', maxHeight: '70vh' }} onClick={applyWaist} dangerouslySetInnerHTML={{ __html: resultsHtml(m, true) }} />
+    <Modal wide title="Stair design results" footer={<><button onClick={() => downloadCsv(m, R)}>Beam loads CSV</button><button onClick={() => printReport(m, R)}>Print report</button></>}>
+      {pick}
+      <div className="report-inline report" style={{ position: 'static', maxHeight: '70vh' }} onClick={applyWaist} dangerouslySetInnerHTML={{ __html: resultsHtml(m, true, R) }} />
     </Modal>
   );
 }
@@ -456,7 +500,7 @@ function download(name: string, txt: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-export function downloadCsv(m: Model) {
+export function downloadCsv(m: Model, R?: ReportRange) {
   const { out } = beamLoads(m),
     L = ['Beam,Section,Grid,Load case,Start (m),End (m),Load (kN/m),Span'];
   for (const [b, rows] of out)
@@ -466,13 +510,13 @@ export function downloadCsv(m: Model) {
         ['Stair Live', r.ll],
       ] as const)
         L.push([beamName(m, b), b.section, `"${gridRef(m, b)}"`, c, f2(r.a / 1000, 3), f2(r.b / 1000, 3), f2(v, 3), r.sp.name].join(','));
-  download('stair-beam-loads.csv', L.join('\n'), 'text/csv');
+  download(R && R.rg.id !== 'all' ? `stair-beam-loads ${R.rg.from}-${R.rg.to}.csv` : 'stair-beam-loads.csv', L.join('\n'), 'text/csv');
 }
 
-function printReport(m: Model) {
+function printReport(m: Model, R?: ReportRange) {
   const w = window.open('', '_blank');
   if (!w) return;
-  w.document.write(`<!doctype html><title>Stair design report</title><style>body{font:12px system-ui;margin:20px}table{border-collapse:collapse;margin:6px 0}th,td{border:1px solid #999;padding:2px 6px;text-align:right}td:first-child,th:first-child{text-align:left}.calc{font-family:monospace;white-space:pre-wrap}.ok{color:#15803d}.ng{color:#c62828}.card{border:1px solid #ccc;padding:8px;margin:8px 0}.info{color:#555}figure.dwg{margin:10px 0;break-inside:avoid}figure.dwg figcaption{font-size:11px;color:#333;margin-top:3px}svg{max-width:100%;height:auto}h2{break-after:avoid}</style>${resultsHtml(m)}`);
+  w.document.write(`<!doctype html><title>Stair design report</title><style>body{font:12px system-ui;margin:20px}table{border-collapse:collapse;margin:6px 0}th,td{border:1px solid #999;padding:2px 6px;text-align:right}td:first-child,th:first-child{text-align:left}.calc{font-family:monospace;white-space:pre-wrap}.ok{color:#15803d}.ng{color:#c62828}.card{border:1px solid #ccc;padding:8px;margin:8px 0}.info{color:#555}figure.dwg{margin:10px 0;break-inside:avoid}figure.dwg figcaption{font-size:11px;color:#333;margin-top:3px}svg{max-width:100%;height:auto}h2{break-after:avoid}</style>${resultsHtml(m, false, R)}`);
   w.document.close();
   w.print();
 }
@@ -500,8 +544,14 @@ export function StairPushDialog() {
   const m = useApp(designModel);
   const region = useApp(openRegion);
   const pats = useApp((s) => s.model.loadPatterns);
-  const pushed = useApp((s) => !!region && hasStairLoads(s.model, region.id));
+  const full = useApp((s) => s.model);
+  const activeRange = useApp((s) => s.activeRange);
+  const rg = region && rangeFor(full, region, activeRange); // computed outside the selector: the default range is a new object each call
+  const src = region && rg ? rangeSrc(region.id, rg.id) : region?.id ?? '';
+  const pushed = useApp((s) => !!region && hasStairLoads(s.model, src));
   const rows = m && region ? stairLoadRows(m, region.overrides) : [];
+  const rep = rg ? repeatRows(full, rows, rg) : { rows, misses: [] };
+  const storeys = (rg && rangeLevels(full, rg)?.repeats) || 0;
   const [v, setV] = useState<Record<string, { dl: number; ll: number }>>({});
   const [dlp, setDlp] = useState(() => defaultPattern(pats, 'dl', region?.dlPattern));
   const [llp, setLlp] = useState(() => defaultPattern(pats, 'll', region?.llPattern));
@@ -510,15 +560,15 @@ export function StairPushDialog() {
   const set = (r: PushRow, k: 'dl' | 'll', x: number) => setV({ ...v, [r.key]: { ...val(r), [k]: x } });
   const push = () => {
     const vals = Object.fromEntries(rows.map((r) => [r.key, val(r)]));
-    const out = rows.map((r) => ({ ...r, ...vals[r.key] }));
-    useApp.getState().commit((mm) => applyStairLoads({ ...mm, stairs: mm.stairs.map((x) => (x.id === region.id ? { ...x, overrides: overridesOf(rows, vals), dlPattern: dlp, llPattern: llp } : x)) }, region.id, out, dlp, llp), { main: true });
-    log('Stair', `${region.name}: pushed ${out.length} stair load stretch(es) to ${new Set(out.map((r) => r.name)).size} beam(s), DL on ${dlp}, LL on ${llp}`);
+    const out = rep.rows.map((r) => ({ ...r, ...vals[r.key] }));
+    useApp.getState().commit((mm) => applyStairLoads({ ...mm, stairs: mm.stairs.map((x) => (x.id === region.id ? { ...x, overrides: overridesOf(rows, vals), dlPattern: dlp, llPattern: llp } : x)) }, src, out, dlp, llp), { main: true });
+    log('Stair', `${region.name}${rg ? ` ${rg.from} → ${rg.to}` : ''}: pushed ${out.length} stair load stretch(es) to ${new Set(out.map((r) => r.beam.id)).size} beam(s), DL on ${dlp}, LL on ${llp}${rep.misses.length ? `; no matching beam for ${rep.misses.join(', ')}` : ''}`);
     toast(`${region.name}: loads pushed to the model's beams.`);
     closeDialog();
   };
   const remove = () => {
-    useApp.getState().commit((mm) => applyStairLoads(mm, region.id, [], dlp, llp), { main: true });
-    log('Stair', `${region.name}: removed its pushed loads from the model`);
+    useApp.getState().commit((mm) => applyStairLoads(mm, src, [], dlp, llp), { main: true });
+    log('Stair', `${region.name}${rg ? ` ${rg.from} → ${rg.to}` : ''}: removed its pushed loads from the model`);
     closeDialog();
   };
   const num = (r: PushRow, k: 'dl' | 'll') => {
@@ -543,16 +593,17 @@ export function StairPushDialog() {
   return (
     <Modal
       wide
-      title={`Push ${region.name} loads to the model`}
+      title={`Push ${region.name}${rg ? ` (${rg.from} → ${rg.to})` : ''} loads to the model`}
       footer={
         <>
           {pushed && <button onClick={remove} title="Take this stair's pushed loads off the model's beams">Remove pushed loads</button>}
           <button onClick={closeDialog}>Cancel</button>
-          <button className="primary" disabled={!rows.length || !dlp || !llp} onClick={push}>{pushed ? 'Push again (replaces)' : 'Push'}</button>
+          <button className="primary" disabled={!rows.length || !dlp || !llp} onClick={push}>{pushed ? 'Push again (replaces)' : 'Push'}{storeys > 1 ? ` × ${storeys} storeys` : ''}</button>
         </>
       }
     >
-      <p className="hint">Unfactored stair reactions as uniform gravity loads (kN/m) on the stretch of each beam the span bears on. Edited values are kept for this stair; pushing again replaces this stair's earlier loads.</p>
+      <p className="hint">Unfactored stair reactions as uniform gravity loads (kN/m) on the stretch of each beam the span bears on. Edited values are kept for this stair; pushing again replaces this range's earlier loads.{storeys > 1 ? ` The rows below are the design storey; each is copied onto the beam at the same place on every storey up to ${rg!.to}.` : ''}</p>
+      {rep.misses.length > 0 && <p className="hint" style={{ color: 'var(--danger)' }}>No matching beam (skipped): {rep.misses.join(', ')}</p>}
       {pick(dlp, setDlp, 'Stair dead →')}
       {pick(llp, setLlp, 'Stair live →')}
       {rows.length ? (

@@ -1,5 +1,6 @@
-import { LEVEL_TOL, columnStories, placeAt, storyElevations, type Beam, type FrameLoad, type Model, type StairModel, type StairRegion } from '../model/types';
-import { clip, type Rect } from './stair';
+import { LEVEL_TOL, beamEndsZ, columnStories, placeAt, storyElevations, type Beam, type FrameLoad, type Model, type StairModel, type StairRegion, type TypicalRange } from '../model/types';
+import { clip, flightStory, landingStory, type Rect } from './stair';
+import { rangeLevels } from './ranges';
 
 /** Elements this close (mm) outside the box still count as inside. */
 const TOL = 1;
@@ -17,8 +18,31 @@ export const regionRect = (r: Pick<StairRegion, 'x1' | 'y1' | 'x2' | 'y2'>): Rec
  * positions stay true to the real beam), grids clipped to it, stories from the base up to the highest one with a
  * column, beam, flight or landing in the box (all stories when the box is empty), ref planes up to that level, no slabs.
  * `clipBeams` cuts beams to the box too (for drawing; their loads are moved onto the piece), keeping their ids.
+ * With a typical range `rg`, only its first storey is designed: stories up to it, beams from its bottom level to its
+ * top level (so B1… restarts per range), and the flights, landings and spans on that storey (a storey owns its top level).
  */
-export function stairContext(m: Model, r: StairRegion, clipBeams = false): StairModel {
+export function stairContext(m: Model, r: StairRegion, clipBeams = false, rg?: TypicalRange): StairModel {
+  const lv = rg ? rangeLevels(m, rg) : null;
+  if (lv) {
+    const full = stairContext(m, { ...r, flights: [], landings: [] }, clipBeams); // every column and beam in the box
+    const el = storyElevations(m),
+      inBand = (b: Beam) => (beamEndsZ(el, b) ?? [NaN]).every((z) => z >= lv.z0 - LEVEL_TOL && z <= lv.z1 + LEVEL_TOL);
+    const beams = full.beams.filter(inBand),
+      names = m.stories.map((s) => s.name),
+      // up to the designed storey, and any story a kept beam is filed on (one on an offset can sit a story lower)
+      stories = m.stories.slice(0, Math.max(lv.fi, ...beams.map((x) => names.indexOf(x.story))) + 1),
+      keep = new Set(stories.map((s) => s.name));
+    return {
+      ...full,
+      stories,
+      columns: full.columns.filter((c) => keep.has(c.story)),
+      beams,
+      refPlanes: m.refPlanes.filter((p) => p.z <= lv.z1 + LEVEL_TOL),
+      flights: r.flights.filter((f) => flightStory(m as StairModel, f) === lv.story),
+      landings: r.landings.filter((l) => landingStory(m as StairModel, l) === lv.story),
+      spans: r.spans.filter((sp) => sp.story === lv.story),
+    };
+  }
   const R = regionRect(r);
   const inside = (x: number, y: number) => x >= R.x0 && x <= R.x1 && y >= R.y0 && y <= R.y1;
   const columns = m.columns.filter((c) => inside(c.x, c.y));

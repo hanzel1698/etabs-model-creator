@@ -11,7 +11,7 @@ import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
 import { onMove, onClick, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, midPicking, startMidPick, spanGrips, type Grip } from './tools';
 import { columnOutline } from './snap';
 import { pasteLoads, type LoadClip } from '../model/loads';
-import { useUnderlay, regionFor } from '../underlay/store';
+import { useUnderlay, regionFor, underlayStory } from '../underlay/store';
 import { UnderlayCanvas } from './UnderlayCanvas';
 import { useIssues } from '../ui/Checks';
 import { useFramePick, useMovePick } from '../ui/dialogState';
@@ -104,7 +104,8 @@ export function PlanView() {
     const r = planeLevel(s) && s.model.refPlanes.find((x) => x.id === s.activePlane);
     return r ? `(${r.name} @ ${r.z >= 0 ? '+' : '−'}${Math.round(Math.abs(r.z))})` : '';
   });
-  const hasRegion = useUnderlay((u) => u.kind === 'dxf' && !!u.dxf && !u.setupMode && u.regions.some((r) => r.stories.includes(story)));
+  const uStory = useApp((s) => (s.activeStair || s.underlayBelow ? underlayStory(story) : story));
+  const hasRegion = useUnderlay((u) => u.kind === 'dxf' && !!u.dxf && !u.setupMode && u.regions.some((r) => r.stories.includes(uStory)));
 
   // keep the world transform in sync without re-rendering React
   useEffect(() => {
@@ -364,6 +365,7 @@ export function PlanView() {
         <div className="story-banner nosel">
           {story}
           {planeTag && <div className="plane-tag">{planeTag}</div>}
+          {uStory !== story && <div className="plane-tag">(underlay: {uStory})</div>}
         </div>
       )}
       <button className="zoom-ext" title="Zoom extents: the whole story region" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={fitStory}>

@@ -187,6 +187,8 @@ function StoryStepper() {
   const active = useApp((s) => s.activeStory);
   const plane = useApp((s) => planeLevel(s) && s.activePlane);
   const withPlanes = useApp((s) => s.refPlanesInPlan);
+  const below = useApp((s) => s.underlayBelow);
+  const inStair = useApp((s) => !!s.activeStair);
   const levels = useMemo(() => {
     const el = storyElevations(model);
     const out: { name: string; z: number; story: string; plane?: string }[] = model.stories.map((s) => ({ name: s.name, z: el[s.name].top, story: s.name }));
@@ -207,6 +209,11 @@ function StoryStepper() {
       <label className="small" style={{ marginRight: 8 }} title="Step through reference planes too; on one, the plan shows and draws only its elements">
         <input type="checkbox" checked={withPlanes} onChange={() => useApp.getState().toggleRefPlanesInPlan()} /> Ref planes
       </label>
+      {!inStair && ( // inside a stair the underlay is always the range's From level
+        <label className="small" style={{ marginRight: 8 }} title="Show the underlay of the story below the active one, e.g. the ground floor drawing while drawing beams or slabs up to the first floor">
+          <input type="checkbox" checked={below} onChange={() => useApp.getState().toggleUnderlayBelow()} /> Underlay below
+        </label>
+      )}
       <button disabled={!up} onClick={() => up && go(up)} title={up ? `Up: ${up.name}` : 'Top level'}>▲</button>
       <button disabled={!down} onClick={() => down && go(down)} title={down ? `Down: ${down.name}` : 'Bottom level'}>▼</button>
       <span className="story-step" title={plane ? `Reference plane ${name} (in ${active})` : active}>{plane ? `⊟ ${name}` : name}</span>

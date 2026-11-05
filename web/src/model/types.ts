@@ -132,6 +132,15 @@ export interface StairRegion {
   /** load patterns the last push used */
   dlPattern?: string;
   llPattern?: string;
+  /** typical story ranges designed separately; empty or missing = all stories same (see stair/ranges.ts) */
+  typicals?: TypicalRange[];
+}
+
+/** Stair levels `from` → `to` (story names, or 'Base') built alike; designed on its first storey and repeated up to `to`. */
+export interface TypicalRange {
+  id: string;
+  from: string;
+  to: string;
 }
 
 /** What the stair engine works on: the main model cut to one region (see stair/context.ts) plus that region's stair. */

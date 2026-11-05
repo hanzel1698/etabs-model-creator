@@ -3,7 +3,7 @@ import RBush from 'rbush';
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 import type { Pt } from '../model/types';
 import { parseDxf, readInsUnits, unitScaleFromInsunits, type DxfData } from './dxf';
-import { toast } from '../model/store';
+import { toast, useApp } from '../model/store';
 import { pdfPageCount, renderPdfPage, type RenderedPage } from './pdf';
 
 export interface Region {
@@ -235,13 +235,26 @@ export function withStories(regions: Region[], stories: string[], reg: Region): 
   return next.map((r) => (r.id === reg.id ? { ...reg, stories } : { ...r, stories: r.stories.filter((s) => !stories.includes(s)) })).filter((r) => r.stories.length);
 }
 
+/**
+ * Story whose drawing underlays `story`'s plan: the one below it while "Underlay below" is on, and always inside a stair
+ * (a storey is designed from the plan of its bottom level, a typical range's From level). The lowest keeps its own.
+ */
+export function underlayStory(story: string): string {
+  const a = useApp.getState();
+  if (!a.activeStair && !a.underlayBelow) return story;
+  const i = a.model.stories.findIndex((s) => s.name === story);
+  return i > 0 ? a.model.stories[i - 1].name : story;
+}
+
 /** Region for a story, or null (with no regions defined, the whole DXF is shown untransformed). */
 export function regionFor(story: string): Region | null {
-  return useUnderlay.getState().regions.find((r) => r.stories.includes(story)) ?? null;
+  const u = underlayStory(story);
+  return useUnderlay.getState().regions.find((r) => r.stories.includes(u)) ?? null;
 }
 
 export function sheetFor(story: string): PdfSheet | null {
-  return useUnderlay.getState().sheets.find((s) => s.story === story) ?? null;
+  const u = underlayStory(story);
+  return useUnderlay.getState().sheets.find((s) => s.story === u) ?? null;
 }
 
 // ---------- snapping geometry ----------
@@ -252,7 +265,7 @@ let cache: { key: string; tree: RBush<SegBox>; pts: Pt[] } | null = null;
 export function underlayGeom(story: string): { tree: RBush<SegBox>; pts: Pt[] } | null {
   const s = useUnderlay.getState();
   if (s.kind !== 'dxf' || !s.dxf) return null;
-  const key = `${story}|${s.version}|${s.setupMode}`;
+  const key = `${underlayStory(story)}|${s.version}|${s.setupMode}`;
   if (cache?.key === key) return cache;
   const reg = s.setupMode ? null : regionFor(story);
   if (!s.setupMode && s.regions.length && !reg) return null;

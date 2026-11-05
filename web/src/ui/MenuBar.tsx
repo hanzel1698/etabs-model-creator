@@ -10,7 +10,7 @@ import { activePattern, useLoadTargets } from './LoadDialogs';
 import { designModel } from '../model/store';
 import { autoSpans } from '../stair/stair';
 import { commitStair } from '../stair/regions';
-import { downloadCsv } from './StairPanel';
+import { downloadCsv, reportRange } from './StairPanel';
 
 export const TOOLS: { t: ToolName; label: string; key: string }[] = [
   { t: 'select', label: 'Select', key: 'V' },
@@ -288,7 +288,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
         'sep',
         { label: 'Design parameters…', run: () => openDialog({ kind: 'stairParams' }) },
         { label: 'Results (IS 456)…', run: () => openDialog({ kind: 'stairResults' }) },
-        { label: 'Beam loads CSV', run: () => downloadCsv(designModel(st())!) },
+        { label: 'Beam loads CSV', run: () => downloadCsv(designModel(st())!, reportRange(st())) },
         'sep',
         { label: 'Set stair loads…', disabled: !sel.length, title: 'Type the stair dead/live load on the selected beams (plan or 3D wireframe); it replaces the calculated value on the stretches the stair bears on', run: () => openDialog({ kind: 'stairSetLoads' }) },
         { label: 'Push loads to model…', title: "Put this stair's dead and live beam loads on the model's beams, under patterns you pick", run: () => openDialog({ kind: 'stairPush' }) },

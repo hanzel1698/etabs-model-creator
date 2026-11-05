@@ -1,5 +1,6 @@
 import { toast, useApp } from '../model/store';
-import { defaultStairParams, uid, type Model, type Pt, type StairModel } from '../model/types';
+import { defaultStairParams, uid, type Model, type Pt, type StairModel, type TypicalRange } from '../model/types';
+import { rangeFor, rangesOf } from './ranges';
 import { stairContext } from './context';
 import { renumber, spanKey } from './stair';
 import { applyStairLoads, hasStairLoads } from './push';
@@ -60,11 +61,14 @@ export function commitStair(fn: (m: StairModel) => StairModel) {
   useApp.getState().commit((m) => {
     const r = m.stairs.find((x) => x.id === id);
     if (!r) return m;
-    const prev = stairContext(m, r, true);
+    const prev = stairContext(m, r, true, rangeFor(m, r, useApp.getState().activeRange));
     let next = fn(prev);
     if (next.flights === prev.flights && next.landings === prev.landings && next.spans === prev.spans && next.stair === prev.stair) return m;
-    if (next.landings !== prev.landings) next = { ...next, landings: renumber(next.landings, 'L', (l) => [l.z, l.x, l.y]) };
-    if (next.flights !== prev.flights) next = { ...next, flights: renumber(next.flights, 'F', (f) => [f.z0, f.x, f.y]) };
+    // the context shows one range's storey: put the edited parts back among the stair's other ones
+    const merge = <T extends { id: string }>(all: T[], was: T[], now: T[]) => (now === was ? all : [...all.filter((x) => !was.some((w) => w.id === x.id)), ...now]);
+    next = { ...next, flights: merge(r.flights, prev.flights, next.flights), landings: merge(r.landings, prev.landings, next.landings), spans: merge(r.spans, prev.spans, next.spans) };
+    if (next.landings !== r.landings) next = { ...next, landings: renumber(next.landings, 'L', (l) => [l.z, l.x, l.y]) };
+    if (next.flights !== r.flights) next = { ...next, flights: renumber(next.flights, 'F', (f) => [f.z0, f.x, f.y]) };
     const n = next;
     next = { ...n, spans: renumber(n.spans, 'S', (sp) => spanKey(n, sp)) };
     const out = { ...r, flights: next.flights, landings: next.landings, spans: next.spans, params: next.stair };
@@ -83,4 +87,15 @@ export function deleteStairIds(ids: string[]) {
   };
   commitStair((m) => ({ ...m, flights: keep(m.flights), landings: keep(m.landings), spans: keep(m.spans) }));
   if (!hit) toast('Only flights, landings and spans can be deleted here; the building is read-only inside a stair.');
+}
+
+/** Replace the open stair's typical ranges ([] = all stories same); keeps the designed range when it still exists. */
+export function setTypicals(typicals: TypicalRange[]) {
+  const st = useApp.getState();
+  const id = st.activeStair;
+  if (!id) return;
+  st.commit((m) => ({ ...m, stairs: m.stairs.map((s) => (s.id === id ? { ...s, typicals } : s)) }));
+  const r = useApp.getState().model.stairs.find((s) => s.id === id)!;
+  const rgs = rangesOf(st.model, r);
+  if (!rgs.some((x) => x.id === st.activeRange) && rgs[0]) st.setActiveRange(rgs[0].id);
 }

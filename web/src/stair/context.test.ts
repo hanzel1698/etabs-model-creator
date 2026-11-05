@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultStairParams, emptyModel, type Model, type StairRegion } from '../model/types';
 import { stairContext } from './context';
+import { beamName } from './stair';
 
 const B = (id: string, story: string, x1: number, y1: number, x2: number, y2: number) => ({ id, story, x1, y1, x2, y2, section: 'B300x500' });
 const C = (id: string, story: string, x: number, y: number) => ({ id, story, x, y, section: 'C400x400', angle: 0 });
@@ -54,5 +55,21 @@ describe('stairContext for drawing (clipped beams)', () => {
     expect(b).toMatchObject({ id: 'cross', x1: -1, x2: 3001 });
     // the piece starts at x = -1, 1999 mm along the beam; the point load at 9000 is off it
     expect(b.loads!.map((l) => [l.d1, Math.round(l.d2)])).toEqual([[0, 2001]]);
+  });
+});
+
+describe('stairContext for a typical range', () => {
+  const beams = ['Story1', 'Story2', 'Story3'].map((s, i) => B(`b${i + 1}`, s, 0, 2000 + i, 3000, 2000 + i));
+  const L = (id: string, z: number) => ({ id, name: id, x: 0, y: 0, w: 1200, h: 1200, z, t: 200 });
+  const mm: Model = { ...m, beams, refPlanes: [] };
+  const rr = { ...region, landings: [L('l1', 3000), L('l2', 6000)] };
+  const c = stairContext(mm, rr, false, { id: 'a', from: 'Story1', to: 'Story3' });
+  it('keeps beams from the bottom to the top level of its first storey, numbered from B1', () => {
+    expect(c.beams.map((b) => b.id)).toEqual(['b1', 'b2']);
+    expect(c.beams.map((b) => beamName(c, b))).toEqual(['B1', 'B2']);
+  });
+  it('keeps only that storey: stories up to it and the landing on its top level', () => {
+    expect(c.stories.map((s) => s.name)).toEqual(['Story1', 'Story2']);
+    expect(c.landings.map((l) => l.id)).toEqual(['l2']);
   });
 });
