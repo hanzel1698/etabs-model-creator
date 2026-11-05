@@ -2,7 +2,7 @@ import { useApp, usePreview, drawStories, drawDz, toast, planModel, type ToolNam
 import type { Beam, Flight, Model, Pt, Span, StairModel } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
-import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, onGridLine, panelSize, setBeamEnd, setGridEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
+import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, onGridLine, panelSize, reshapeSlab, setBeamEnd, slabGrips, setGridEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
 import { asStair, columnOn, placeAt, storyElevations, uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, trackSnap, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
@@ -744,8 +744,8 @@ export function fillIntersections(a: Pt, b: Pt) {
 
 // ---------- beam and grid end grips (select tool) ----------
 
-/** A beam, grid or span end, a landing corner (index into rectPts; the opposite corner stays put) or side midpoint (index into landingSides; the opposite side stays put), a span side midpoint (width, about the axis), or a flight edge. */
-export type Grip = { id: string; end: 1 | 2 } | { id: string; corner: number } | { id: string; lside: number } | { id: string; side: 1 | -1 } | { id: string; edge: FlightEdge };
+/** A slab vertex or edge midpoint (index into slabGrips), a beam, grid or span end, a landing corner (index into rectPts; the opposite corner stays put) or side midpoint (index into landingSides; the opposite side stays put), a span side midpoint (width, about the axis), or a flight edge. */
+export type Grip = { id: string; end: 1 | 2 } | { id: string; corner: number } | { id: string; lside: number } | { id: string; side: 1 | -1 } | { id: string; edge: FlightEdge } | { id: string; vtx: number };
 
 /** Span axis midpoint and unit normal. */
 function spanMid(sp: Span) {
@@ -780,6 +780,7 @@ export function gripAt(screen: Pt): Grip | null {
   if (!activeStair) {
     for (const b of model.beams) if (s.has(b.id) && b.story === activeStory) for (const end of [1, 2] as const) near(end === 1 ? { x: b.x1, y: b.y1 } : { x: b.x2, y: b.y2 }, { id: b.id, end });
     for (const g of model.grids) if (s.has(g.id)) for (const end of [1, 2] as const) near(end === 1 ? { x: g.x1, y: g.y1 } : { x: g.x2, y: g.y2 }, { id: g.id, end });
+    for (const sl of model.slabs) if (s.has(sl.id) && sl.story === activeStory) slabGrips(sl.pts).forEach((q, vtx) => near(q, { id: sl.id, vtx }));
   }
   for (const l of model.landings)
     if (s.has(l.id) && landingStory(model, l) === activeStory) {
@@ -792,9 +793,17 @@ export function gripAt(screen: Pt): Grip | null {
 }
 
 /** Snapped position for a dragged grip; the element itself is left out so it can't snap to its own end or line. A grid end stays on the grid's line. */
-function gripSnap(g: Grip, screen: Pt): { s: Snap; fixed: Pt; p: Pt } | null {
+function gripSnap(g: Grip, screen: Pt): { s: Snap; fixed: Pt; p: Pt; poly?: Pt[] } | null {
   const m = SM();
   const snapAt = (mm: StairModel, from: Pt, ortho = false) => snapPoint(mm, viewport.toWorld(screen), SNAP_PX / viewport.k, { story: A().activeStory, from, ortho, underlay: A().show.underlay });
+  if ('vtx' in g) {
+    const sl = m.slabs.find((x) => x.id === g.id);
+    if (!sl) return null;
+    const fixed = slabGrips(sl.pts)[g.vtx];
+    const s = snapAt({ ...m, slabs: m.slabs.filter((x) => x.id !== g.id) }, fixed);
+    const poly = reshapeSlab(sl.pts, g.vtx, s.p);
+    return { s, fixed, p: s.p, poly: [...poly, poly[0]] };
+  }
   if ('corner' in g) {
     const l = m.landings.find((x) => x.id === g.id);
     if (!l) return null;
@@ -841,13 +850,18 @@ export function gripMove(g: Grip, screen: Pt) {
   if (!r) return;
   const f = 'edge' in g && SM().flights.find((x) => x.id === g.id);
   const hint = f ? flightText(reshapeFlight(f, g.edge, r.p)) : liveText(r.fixed, r.p);
-  P().set({ grip: [r.fixed, r.p], cursor: r.p, snap: r.s.kind === 'none' ? null : r.s, hint });
+  P().set({ grip: r.poly ?? [r.fixed, r.p], cursor: r.p, snap: r.s.kind === 'none' ? null : r.s, hint });
 }
 
 export function gripDrop(g: Grip, screen: Pt) {
   const r = gripSnap(g, screen);
   P().set({ grip: null, snap: null, hint: hints.select });
   if (!r) return;
+  if ('vtx' in g) {
+    const pts = r.poly!.slice(0, -1);
+    if (Math.abs(polyArea(pts)) < 10_000) return toast('Slab is too small.');
+    return A().commit((m) => ({ ...m, slabs: m.slabs.map((x) => (x.id === g.id ? { ...x, pts } : x)) }));
+  }
   if ('corner' in g) {
     const { fixed: a, p: b } = r;
     if (Math.abs(b.x - a.x) < 100 || Math.abs(b.y - a.y) < 100) return toast('Landing is too small.');

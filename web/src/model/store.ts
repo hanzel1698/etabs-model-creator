@@ -521,7 +521,7 @@ export interface Preview {
   input: string; // command line text
   measure: { pts: Pt[]; text: string } | null;
   offsetLine: [Pt, Pt] | null;
-  grip: [Pt, Pt] | null; // beam being reshaped: fixed end, dragged end (world)
+  grip: Pt[] | null; // element being reshaped: fixed end then dragged end, or a slab's reshaped outline (world)
   panel: PanelSize | null; // Panel Size & Type result, drawn as dimensions inside the panel
   pick: { a: Pt; p: Pt; text: string } | null; // frame load distance pick: beam start, picked point (world)
   mid: { pts: Pt[]; guide: Pt | null; vertical?: boolean } | null; // "Mid between two points": picked points, then their midpoint whose vertical or horizontal line the next click locks to

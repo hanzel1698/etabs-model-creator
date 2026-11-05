@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp, usePreview, planModel, planeLevel, viewModel, visibleModel } from '../model/store';
-import { cachedStoryNodes, isNodeId, type PanelSize } from '../model/ops';
+import { cachedStoryNodes, isNodeId, slabGrips, type PanelSize } from '../model/ops';
 import { fmt } from '../model/geom';
-import { asStair, columnOn, terminatingColumns, type Beam, type Flight, type Landing, type Pt, type Span } from '../model/types';
+import { asStair, columnOn, terminatingColumns, type Beam, type Flight, type Landing, type Pt, type Slab, type Span } from '../model/types';
 import { StairLayer } from './StairLayer';
 import { flightGrips, flightStory, landingStory, landingRect, landingSides, rectPts } from '../stair/stair';
 import { viewport } from './viewport';
@@ -343,7 +343,7 @@ export function PlanView() {
         </g>
         <IssueLayer story={story} offset={setupRef} />
         {show.nodes && <NodeLayer story={story} sel={sel} offset={setupRef} />}
-        {tool === 'select' && <GripLayer beams={activeStair ? [] : [...beams, ...model.grids]} {...stair} sel={sel} offset={setupRef} />}
+        {tool === 'select' && <GripLayer beams={activeStair ? [] : [...beams, ...model.grids]} slabs={activeStair ? [] : slabs} {...stair} sel={sel} offset={setupRef} />}
         <Overlay />
       </svg>
       {menu && (
@@ -461,12 +461,13 @@ function IssueLayer({ story, offset }: { story: string; offset: Pt | null }) {
 }
 
 /** End grips on selected beams and grids (screen space, fixed size). Drag one to reshape or extend it. */
-function GripLayer({ beams, flights, landings, spans, sel, offset }: { beams: Pick<Beam, 'id' | 'x1' | 'y1' | 'x2' | 'y2'>[]; flights: Flight[]; landings: Landing[]; spans: Span[]; sel: Set<string>; offset: Pt | null }) {
+function GripLayer({ beams, slabs, flights, landings, spans, sel, offset }: { beams: Pick<Beam, 'id' | 'x1' | 'y1' | 'x2' | 'y2'>[]; slabs: Slab[]; flights: Flight[]; landings: Landing[]; spans: Span[]; sel: Set<string>; offset: Pt | null }) {
   useVp();
   const ox = offset?.x ?? 0,
     oy = offset?.y ?? 0;
   const picked = [
     ...beams.filter((b) => sel.has(b.id)).map((b) => ({ id: b.id, pts: [{ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }] })),
+    ...slabs.filter((s) => sel.has(s.id)).map((s) => ({ id: s.id, pts: slabGrips(s.pts) })),
     ...landings.filter((l) => sel.has(l.id)).map((l) => ({ id: l.id, pts: [...rectPts(landingRect(l)), ...landingSides(l)] })),
     ...spans.filter((sp) => sel.has(sp.id)).map((sp) => ({ id: sp.id, pts: spanGrips(sp).map(([, q]) => q) })),
     ...flights.filter((f) => sel.has(f.id)).map((f) => ({ id: f.id, pts: Object.values(flightGrips(f)) })),
@@ -519,8 +520,7 @@ function Overlay() {
   }
   if (pv.panel) items.push(<PanelDims key="pnl" s={pv.panel} />);
   if (pv.grip) {
-    const [a, b] = pv.grip.map(S);
-    items.push(<line key="grip" x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#4aa3ff" strokeWidth={2} strokeDasharray="8 4" />);
+    items.push(<polyline key="grip" points={pv.grip.map(S).map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#4aa3ff" strokeWidth={2} strokeDasharray="8 4" />);
   }
   if (pv.pick) {
     const a = S(pv.pick.a),

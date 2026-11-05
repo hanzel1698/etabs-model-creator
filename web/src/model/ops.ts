@@ -376,6 +376,35 @@ export function setBeamEnd(m: Model, id: string, end: 1 | 2, p: Pt): Model {
   return { ...m, beams: m.beams.map((x) => (x.id === id ? nb : x)) };
 }
 
+/** A slab's grips: its vertices (index < n), then its edge midpoints (index n + i for edge i → i+1). */
+export const slabGrips = (pts: Pt[]): Pt[] => [...pts, ...pts.map((a, i) => ({ x: (a.x + pts[(i + 1) % pts.length].x) / 2, y: (a.y + pts[(i + 1) % pts.length].y) / 2 }))];
+
+/** Slab outline with grip `k` dragged to `p`. A vertex moves to `p`, and a neighbour sharing its x or y follows so square corners stay square; an edge moves along its own normal, keeping its direction. */
+export function reshapeSlab(pts: Pt[], k: number, p: Pt): Pt[] {
+  const n = pts.length;
+  const out = pts.map((q) => ({ ...q }));
+  if (k < n) {
+    const v = pts[k];
+    for (const j of [(k + n - 1) % n, (k + 1) % n]) {
+      if (Math.abs(pts[j].x - v.x) < TOL) out[j].x = p.x;
+      if (Math.abs(pts[j].y - v.y) < TOL) out[j].y = p.y;
+    }
+    out[k] = { x: p.x, y: p.y };
+    return out;
+  }
+  const i = k - n,
+    j = (i + 1) % n;
+  const a = pts[i],
+    b = pts[j],
+    L = dist(a, b) || 1;
+  const nx = -(b.y - a.y) / L,
+    ny = (b.x - a.x) / L;
+  const d = (p.x - (a.x + b.x) / 2) * nx + (p.y - (a.y + b.y) / 2) * ny;
+  out[i] = { x: a.x + nx * d, y: a.y + ny * d };
+  out[j] = { x: b.x + nx * d, y: b.y + ny * d };
+  return out;
+}
+
 /** Moves one end of a grid along its own line (extend or shorten), so the grid keeps its direction. */
 export function setGridEnd(m: Model, id: string, end: 1 | 2, p: Pt): Model {
   const g = m.grids.find((x) => x.id === id);
