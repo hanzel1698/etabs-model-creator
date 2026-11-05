@@ -605,25 +605,35 @@ export function spanKey(m: Model, sp: Span): number[] {
   return [isFinite(f) ? f : isFinite(l) ? l : storyElevations(m)[sp.story]?.bottom ?? 0, Math.min(sp.x1, sp.x2), Math.min(sp.y1, sp.y2)];
 }
 
-/** New flight from the bottom of the going at `a` towards `b` (the drag also sets the width when it goes sideways ≥ 300 mm). */
-export function flightFrom(m: Model, a: Pt, b: Pt, z0: number): Flight | null {
+/** UP direction of a pointer move from `a` to `b`: its dominant axis and sign. */
+export const dirOf = (a: Pt, b: Pt): FlightDir => {
+  const dx = b.x - a.x,
+    dy = b.y - a.y,
+    ax = Math.abs(dx) >= Math.abs(dy);
+  return (((ax ? dx : dy) >= 0 ? '+' : '-') + (ax ? 'x' : 'y')) as FlightDir;
+};
+
+/**
+ * New flight filling the box with corners `a`, `b`, going UP along `dir`: the going is the box side along `dir`, rounded to whole treads
+ * from the bottom end of the box; the other side is the width (≥ 300 mm).
+ */
+export function flightFrom(m: Model, a: Pt, b: Pt, dir: FlightDir, z0: number): Flight | null {
   const p = m.stair,
-    dx = b.x - a.x,
-    dy = b.y - a.y;
-  const ax = Math.abs(dx) >= Math.abs(dy),
-    len = Math.abs(ax ? dx : dy),
-    lat = Math.abs(ax ? dy : dx);
-  if (len < p.T) return null;
+    x0 = Math.min(a.x, b.x),
+    y0 = Math.min(a.y, b.y),
+    x1 = Math.max(a.x, b.x),
+    y1 = Math.max(a.y, b.y);
+  const ax = dir[1] === 'x',
+    neg = dir[0] === '-',
+    len = ax ? x1 - x0 : y1 - y0,
+    lat = ax ? y1 - y0 : x1 - x0;
+  if (len < p.T || lat < 300) return null;
   const n = Math.max(2, Math.round(len / p.T) + 1),
-    L = (n - 1) * p.T,
-    w = lat >= 300 ? Math.round(lat) : p.width,
-    sg = Math.sign(ax ? dx : dy),
-    ls = (ax ? dy : dx) < 0 && lat >= 300;
-  const dir = ((sg > 0 ? '+' : '-') + (ax ? 'x' : 'y')) as FlightDir;
+    L = (n - 1) * p.T;
   const name = nextNames(m.flights.map((f) => f.name), 'F')();
-  const o = { id: uid(), name, dir, n, T: p.T, R: p.R, t: p.t, width: w, z0, x: 0, y: 0 };
-  if (ax) (o.x = sg > 0 ? a.x : a.x - L), (o.y = ls ? a.y - w : a.y);
-  else (o.y = sg > 0 ? a.y : a.y - L), (o.x = ls ? a.x - w : a.x);
+  const o = { id: uid(), name, dir, n, T: p.T, R: p.R, t: p.t, width: Math.round(lat), z0, x: x0, y: y0 };
+  if (ax) o.x = neg ? x1 - L : x0;
+  else o.y = neg ? y1 - L : y0;
   return o;
 }
 

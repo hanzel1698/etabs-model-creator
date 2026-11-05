@@ -3,12 +3,12 @@ import type { Beam, Flight, Model, Pt, Span, StairModel } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
 import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, onGridLine, panelSize, setBeamEnd, setGridEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
-import { asStair, columnOn, storyElevations, uid } from '../model/types';
+import { asStair, columnOn, placeAt, storyElevations, uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, trackSnap, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
 import { viewport } from './viewport';
 import { addStair, commitStair } from '../stair/regions';
-import { flightFrom, flightGrips, flightStory, frame, OPPOSITE, reshapeFlight, type FlightEdge, landingStory, levelGuess, nextNames, clip, landingRect, rectPts, landingSides, reshapeLanding } from '../stair/stair';
+import { dirOf, flightFrom, flightGrips, flightStory, frame, OPPOSITE, reshapeFlight, type FlightEdge, landingStory, levelGuess, nextNames, clip, landingRect, rectPts, landingSides, reshapeLanding } from '../stair/stair';
 import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf, rectOf } from '../underlay/store';
 import { openDialog, useFramePick, useMovePick } from '../ui/dialogState';
 import { fitAll } from './PlanView';
@@ -33,7 +33,7 @@ const hints: Record<ToolName, string> = {
   calibrate: 'Calibrate: click the two ends of a line whose real length you know.',
   origin: 'Click the point (e.g. grid A/1) that should become the model origin (0,0). The whole model moves with it.',
   stairBox: 'Stair box: click two opposite corners around the stair (any story plan).',
-  flight: 'Click the bottom of the going, then a point along the UP direction (go sideways ≥ 300 mm to set the width).',
+  flight: 'Click two opposite corners of the flight, then click a start and an end point to show the UP direction. Risers come from the stair’s tread and rise.',
   landing: 'Click two opposite corners. Its level is taken from the flight that ends in it.',
   span: 'Click support to support along the spanning direction (snaps to beams).',
 };
@@ -47,6 +47,7 @@ const DRAW_TOOLS: ToolName[] = ['grid', 'column', 'beam', 'slabDraw'];
 
 // tool-local state
 let regionRect: { a: Pt; b: Pt } | null = null;
+let flightBox: { a: Pt; b: Pt } | null = null; // flight tool: box drawn, waiting for the UP direction
 let redrawId: string | null = null; // region tool is re-picking this region's box and reference point
 let calibPts: Pt[] = [];
 let calibStage: 'dist' | 'ref' = 'dist';
@@ -55,6 +56,7 @@ let offsetFromGrid = false;
 
 export function resetTool() {
   regionRect = null;
+  flightBox = null;
   calibPts = [];
   calibStage = 'dist';
   offsetSrc = null;
@@ -194,7 +196,7 @@ export function doSnap(screen: Pt): Snap {
   const s = snapPoint(t === 'region' ? { ...m, grids: [], columns: [], beams: [], slabs: [] } : m, w, tol, {
     story: A().activeStory,
     from,
-    ortho: A().ortho && t !== 'region' && t !== 'stairBox' && t !== 'landing', // a box's opposite corner must not be locked level with the first
+    ortho: A().ortho && t !== 'region' && t !== 'stairBox' && t !== 'landing' && t !== 'flight', // a box's opposite corner must not be locked level with the first
     underlay: A().show.underlay,
     only: snapKindsFor(t),
   });
@@ -237,8 +239,8 @@ export function onMove(screen: Pt) {
   if (s.kind !== 'none' && s.kind !== 'near' && s.kind !== 'ortho' && s.kind !== 'track') upd.track = s.p;
   const last = p.rubber[p.rubber.length - 1];
   if (last && (t === 'beam' || t === 'grid' || t === 'slabDraw' || t === 'area' || t === 'measure' || t === 'angle' || t === 'calibrate')) upd.hint = liveText(last, s.p);
-  if ((t === 'region' && !regionRect) || t === 'stairBox' || t === 'landing') if (p.rubber.length === 1) upd.box = { a: p.rubber[0], b: s.p };
-  if (last && t === 'flight') upd.hint = flightHint(last, s.p);
+  if ((t === 'region' && !regionRect) || t === 'stairBox' || t === 'landing' || (t === 'flight' && !flightBox)) if (p.rubber.length === 1) upd.box = { a: p.rubber[0], b: s.p };
+  if (last && t === 'flight') upd.hint = flightBox ? flightHint(flightBox, last, s.p) : liveText(last, s.p);
   if (last && t === 'span') upd.hint = liveText(last, s.p);
   if (t === 'column' && !A().colAlign.picking && A().colAlign.mode !== 'off' && A().colAlign.ref) {
     const q = alignedColumnPoint(s.p);
@@ -297,9 +299,9 @@ export function commitBeams(fn: (m: Model) => Model) {
 /** The open stair as drawn (building cut to its box, plus the stair). */
 const SM = () => asStair(planModel(A()));
 
-function flightHint(a: Pt, b: Pt) {
-  const f = flightFrom(SM(), a, b, 0);
-  return f ? flightText(f) : liveText(a, b);
+function flightHint(box: { a: Pt; b: Pt }, a: Pt, b: Pt) {
+  const f = flightFrom(SM(), box.a, box.b, dirOf(a, b), 0);
+  return f ? `UP ${dirOf(a, b)} · ${flightText(f)}` : 'Too small for a flight in this direction.';
 }
 
 const flightText = (f: Flight) => `${f.n} risers × ${f.R} = ${fmt(f.n * f.R)} rise · going ${fmt((f.n - 1) * f.T)} · width ${fmt(f.width)}`;
@@ -421,12 +423,20 @@ export function onClick(pt: Pt) {
     case 'flight': {
       if (!p.rubber.length) return p.set({ rubber: [pt] });
       const a = p.rubber[0];
+      if (!flightBox) {
+        if (Math.abs(pt.x - a.x) < 100 || Math.abs(pt.y - a.y) < 100) return toast('Flight box is too small.');
+        flightBox = { a, b: pt };
+        return p.set({ rubber: [], box: flightBox, hint: 'Click the start point, then the end point, to show the UP direction.' });
+      }
       const m = SM();
-      const f = flightFrom(m, a, pt, levelGuess(m, a.x, a.y, 50) ?? storyElevations(m)[A().activeStory]?.bottom ?? 0);
-      if (!f) return toast(`A flight needs at least one tread (${m.stair.T} mm) along the going.`);
+      const f = flightFrom(m, flightBox.a, flightBox.b, dirOf(a, pt), 0);
+      if (!f) return toast(`A flight needs at least one tread (${m.stair.T} mm) along the UP direction and a width of 300 mm across it.`);
+      const O = frame(f).O; // bottom corner
+      f.z0 = levelGuess(m, O[0], O[1], 50) ?? storyElevations(m)[A().activeStory]?.bottom ?? 0;
       commitStair((mm) => ({ ...mm, flights: [...mm.flights, f] }));
       A().setSelection([f.id]);
-      return p.set({ rubber: [] });
+      flightBox = null;
+      return p.set({ rubber: [], box: null, hint: hints.flight });
     }
     case 'landing': {
       if (!p.rubber.length) return p.set({ rubber: [pt] });
@@ -435,16 +445,19 @@ export function onClick(pt: Pt) {
       const m = SM();
       const l = { id: uid(), name: nextNames(m.landings.map((x) => x.name), 'L')(), x: Math.min(a.x, pt.x), y: Math.min(a.y, pt.y), w: Math.abs(pt.x - a.x), h: Math.abs(pt.y - a.y), t: m.stair.tl, z: storyElevations(m)[A().activeStory]?.top ?? 0 };
       const r = landingRect(l);
-      // level of the flight whose top ends in it
+      // level of a flight whose top ends in it: only flights topping out on this story (stacked stairs repeat the plan),
+      // and of those the one nearest the story level (a box can also swallow a short flight up to a reference plane)
+      const storyTop = l.z;
+      let best: number | null = null;
       for (const f of m.flights) {
         const F = frame(f),
+          top = f.z0 + F.H,
           mx = F.O[0] + F.u[0] * F.L + (F.v[0] * F.w) / 2,
           my = F.O[1] + F.u[1] * F.L + (F.v[1] * F.w) / 2;
-        if (mx >= r.x0 - 20 && mx <= r.x1 + 20 && my >= r.y0 - 20 && my <= r.y1 + 20) {
-          l.z = f.z0 + F.H;
-          break;
-        }
+        if (placeAt(m, top)?.story !== A().activeStory || mx < r.x0 - 20 || mx > r.x1 + 20 || my < r.y0 - 20 || my > r.y1 + 20) continue;
+        if (best === null || Math.abs(top - storyTop) < Math.abs(best - storyTop)) best = top;
       }
+      l.z = best ?? storyTop;
       commitStair((mm) => ({ ...mm, landings: [...mm.landings, l] }));
       A().setSelection([l.id]);
       return p.set({ rubber: [], box: null });
