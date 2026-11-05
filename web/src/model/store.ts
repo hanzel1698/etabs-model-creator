@@ -425,10 +425,11 @@ export function planeLevel(s: Pick<AppState, 'model' | 'activeStory' | 'activePl
 }
 
 let planCache: { v: Model; story: string; dz: number; out: Model } | null = null;
-/** visibleModel, cut down to the active reference plane's beams and slabs (and all its story's columns, which pass through it) while one is shown. For the plan only. */
+/** visibleModel, cut down to the shown level's beams and slabs (and all its story's columns, which pass through it) while Ref planes is on. For the plan only. */
 export function planModel(s: AppState): Model {
   const v = visibleModel(s);
-  const l = planeLevel(s);
+  // story step while Ref planes is on: the story level only, offset beams/slabs live on their plane's step
+  const l = planeLevel(s) ?? (s.refPlanesInPlan ? { story: s.activeStory, dz: 0 } : null);
   if (!l) return v;
   if (planCache && planCache.v === v && planCache.story === l.story && planCache.dz === l.dz) return planCache.out;
   const on = (x: { story: string; dz?: number }) => x.story === l.story && Math.abs((x.dz ?? 0) - l.dz) < 1;

@@ -145,8 +145,9 @@ export function PlanView() {
     return { flights: sm.flights.filter((f) => flightStory(sm, f) === story), landings: sm.landings.filter((l) => landingStory(sm, l) === story), spans: sm.spans.filter((s) => s.story === story) };
   }, [model, story]);
   const legendItems = useMemo(() => [...cols, ...beams, ...(show.slabs ? slabs : [])], [cols, beams, slabs, show.slabs]);
-  const gCols = useMemo(() => (below && show.ghostBelow ? model.columns.filter((c) => columnOn(model, c, below)) : []), [model, below, show.ghostBelow]);
-  const gBeams = useMemo(() => (below && show.ghostBelow ? model.beams.filter((b) => b.story === below) : []), [model.beams, below, show.ghostBelow]);
+  // ghosts come from the full model: planModel keeps only the level in view while Ref planes is on
+  const gCols = useMemo(() => (below && show.ghostBelow ? full.columns.filter((c) => columnOn(full, c, below)) : []), [full, below, show.ghostBelow]);
+  const gBeams = useMemo(() => (below && show.ghostBelow ? full.beams.filter((b) => b.story === below && !b.dz) : []), [full.beams, below, show.ghostBelow]);
   const empty = useMemo(() => new Set<string>(), []);
 
   // ---------- input ----------
