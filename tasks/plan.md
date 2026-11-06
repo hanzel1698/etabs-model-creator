@@ -56,7 +56,7 @@ Your answers:
    - The Excel builder, which stays in the old repo.
 
 ## Task list
-Tests: `npm test` (vitest) · build: `npm run build` · dev: `npm run dev` (5173). All run in `web/`.
+Tests: `npm test` (vitest) · build: `npm run build` · dev: `npm run dev` (15173). All run in `web/`.
 
 ### Phase 1: Foundation
 - [ ] **T1: Types and engine port (M).**

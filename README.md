@@ -12,7 +12,7 @@ web app (static, GitHub Pages)  ⇄  bridge/bridge.py on http://127.0.0.1:8765  
 pip install -r bridge/requirements.txt
 python bridge/bridge.py          # with ETABS 22 open
 npm --prefix web install
-npm --prefix web run dev         # http://localhost:5173
+npm --prefix web run dev         # http://127.0.0.1:15173
 ```
 
 The hosted Pages build works the same way: it calls the bridge on `127.0.0.1:8765` from your PC. The URL can be changed in the ETABS dialog.
