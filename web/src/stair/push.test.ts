@@ -89,6 +89,15 @@ describe('typical range push', () => {
     expect(p.rows.map((r) => [r.beam.id, r.d1, r.d2])).toEqual([['b1', 2000, 3000], ['b2', 0, 1000]]);
     expect(repeatRows({ ...mm, beams: [beams[0]] }, [row(0, 0, 1, 1)], Bq).misses).toEqual(['B1 on Story2']);
   });
+  it('maps onto a longer beam and across a beam split on that line', () => {
+    const longer: Model = { ...mm, beams: [beams[0], { ...beams[1], x1: -1500, x2: 6000 }] };
+    expect(repeatRows(longer, [row(0, 0, 1000, 5)], Bq).rows.map((r) => [r.beam.id, r.d1, r.d2])).toEqual([['b1', 0, 1000], ['b2', 1500, 2500]]);
+    const split: Model = { ...mm, beams: [beams[0], { ...beams[1], x2: 600 }, { ...beams[1], id: 'b2b', x1: 600 }, { ...beams[1], id: 'off', y1: 500, y2: 500 }] };
+    const p = repeatRows(split, [row(0, 0, 1000, 5)], Bq);
+    expect(p.rows.map((r) => [r.beam.id, r.d1, r.d2])).toEqual([['b1', 0, 1000], ['b2', 0, 600], ['b2b', 0, 400]]);
+    expect(p.misses).toEqual([]);
+    expect(repeatRows({ ...mm, beams: [beams[0], { ...beams[1], x2: 600 }] }, [row(0, 0, 1000, 5)], Bq).misses).toEqual(['B1 on Story2']);
+  });
 });
 
 describe('allRangeLoads', () => {

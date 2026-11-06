@@ -43,8 +43,9 @@ const owns = (l: string | undefined, src: string) => !!l && (l === src || l.star
 
 /**
  * The rows of a range's design storey copied up every storey it repeats over: copy k goes onto the beam k stories up
- * at the same plan position and offset. A floor beam between two copies gets the arriving flight of one and the
- * departing flight of the next, as separate loads. `misses` names copies with no such beam (skipped).
+ * at the same plan position and offset, on whichever beams of that line cover it (a split beam takes it in pieces).
+ * A floor beam between two copies gets the arriving flight of one and the departing flight of the next, as separate
+ * loads. `misses` names copies not fully covered by a beam (uncovered part skipped).
  */
 export function repeatRows<R extends Pick<PushRow, 'beam' | 'd1' | 'd2' | 'name'>>(m: Model, rows: R[], rg: TypicalRange) {
   const lv = rangeLevels(m, rg),
@@ -62,13 +63,26 @@ export function repeatRows<R extends Pick<PushRow, 'beam' | 'd1' | 'd2' | 'name'
         continue;
       }
       const st = names[i + k];
-      const c = m.beams.find((x) => x.story === st && same(x.dz ?? 0, b.dz ?? 0) && ((same(x.x1, b.x1) && same(x.y1, b.y1) && same(x.x2, b.x2) && same(x.y2, b.y2)) || (same(x.x1, b.x2) && same(x.y1, b.y2) && same(x.x2, b.x1) && same(x.y2, b.y1))));
-      if (!c) {
-        misses.push(`${r.name} on ${st ?? `story ${i + k + 1}`}`);
-        continue;
+      // the loaded stretch in plan; it goes on whichever beams on that line cover it (split, longer or reversed alike)
+      const ux = (b.x2 - b.x1) / L,
+        uy = (b.y2 - b.y1) / L,
+        P = [r.d1, r.d2].map((d) => [b.x1 + ux * d, b.y1 + uy * d]);
+      let got = 0;
+      for (const c of m.beams) {
+        if (c.story !== st || !same(c.dz ?? 0, b.dz ?? 0)) continue;
+        const Lc = Math.hypot(c.x2 - c.x1, c.y2 - c.y1);
+        if (Lc < 1) continue;
+        const vx = (c.x2 - c.x1) / Lc,
+          vy = (c.y2 - c.y1) / Lc;
+        if (P.some(([x, y]) => Math.abs((x - c.x1) * vy - (y - c.y1) * vx) > 10)) continue; // off this beam's line
+        const [t1, t2] = P.map(([x, y]) => (x - c.x1) * vx + (y - c.y1) * vy).sort((p, q) => p - q),
+          d1 = Math.max(t1, 0),
+          d2 = Math.min(t2, Lc);
+        if (d2 - d1 < 1) continue;
+        out.push({ ...r, beam: c, d1, d2 });
+        got += d2 - d1;
       }
-      const flip = !same(c.x1, b.x1) || !same(c.y1, b.y1); // drawn the other way: distances run from the other end
-      out.push({ ...r, beam: c, d1: flip ? L - r.d2 : r.d1, d2: flip ? L - r.d1 : r.d2 });
+      if (!got || got < r.d2 - r.d1 - 10) misses.push(`${r.name} on ${st ?? `story ${i + k + 1}`}`);
     }
   }
   return { rows: out, misses: [...new Set(misses)] };
