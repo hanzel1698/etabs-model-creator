@@ -1,5 +1,5 @@
 import { LEVEL_TOL, beamEndsZ, columnStories, placeAt, storyElevations, type Beam, type FrameLoad, type Model, type StairModel, type StairRegion, type TypicalRange } from '../model/types';
-import { clip, flightStory, landingStory, type Rect } from './stair';
+import { clip, flightStory, type Rect } from './stair';
 import { rangeLevels } from './ranges';
 
 /** Elements this close (mm) outside the box still count as inside. */
@@ -19,7 +19,7 @@ export const regionRect = (r: Pick<StairRegion, 'x1' | 'y1' | 'x2' | 'y2'>): Rec
  * column, beam, flight or landing in the box (all stories when the box is empty), ref planes up to that level, no slabs.
  * `clipBeams` cuts beams to the box too (for drawing; their loads are moved onto the piece), keeping their ids.
  * With a typical range `rg`, only its first storey is designed: stories up to it, beams from its bottom level to its
- * top level (so B1… restarts per range), and the flights, landings and spans on that storey (a storey owns its top level).
+ * top level (so B1… restarts per range), the flights and spans on that storey, and the landings from its bottom level to its top level.
  */
 export function stairContext(m: Model, r: StairRegion, clipBeams = false, rg?: TypicalRange): StairModel {
   const lv = rg ? rangeLevels(m, rg) : null;
@@ -39,7 +39,8 @@ export function stairContext(m: Model, r: StairRegion, clipBeams = false, rg?: T
       beams,
       refPlanes: m.refPlanes.filter((p) => p.z <= lv.z1 + LEVEL_TOL),
       flights: r.flights.filter((f) => flightStory(m as StairModel, f) === lv.story),
-      landings: r.landings.filter((l) => landingStory(m as StairModel, l) === lv.story),
+      // the storey's bottom level too: a landing there is where its first flight starts (drawn on the From level's plan)
+      landings: r.landings.filter((l) => l.z >= lv.z0 - LEVEL_TOL && l.z <= lv.z1 + LEVEL_TOL),
       spans: r.spans.filter((sp) => sp.story === lv.story),
     };
   }

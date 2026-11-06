@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { columnOn, emptyModel, placeAt, type FrameLoad, type Model, type Pt, type ShellLoad, type StairModel } from './types';
+import { asStair, columnOn, emptyModel, placeAt, storyElevations, type FrameLoad, type Model, type Pt, type ShellLoad, type StairModel } from './types';
 import { stairContext } from '../stair/context';
+import { onLevel } from '../stair/stair';
 import { rangeFor, rangeLevels, rangesOf } from '../stair/ranges';
 import { applyStairLoads, defaultPattern, rangeSrc, stairLoadRows } from '../stair/push';
 import { shortFrameLoad, frameLoadUnit } from './loads';
@@ -464,6 +465,49 @@ export function planModel(s: AppState): Model {
   const out = { ...v, columns: v.columns.filter((c) => columnOn(v, c, l.story)), beams: v.beams.filter(on), slabs: v.slabs.filter(on) };
   planCache = { v, story: l.story, dz: l.dz, out };
   return out;
+}
+
+/** Plan levels to step through, bottom → top: each story level, and with `planes` each reference plane off a story level. */
+export function levelSteps(m: Model, planes: boolean) {
+  const el = storyElevations(m);
+  const out: { name: string; z: number; story: string; plane?: string }[] = m.stories.map((s) => ({ name: s.name, z: el[s.name].top, story: s.name }));
+  if (planes)
+    for (const r of m.refPlanes) {
+      const p = placeAt(m, r.z);
+      if (p?.dz) out.push({ name: r.name, z: r.z, story: p.story, plane: r.id }); // a plane on a story level is that story
+    }
+  return out.sort((a, b) => a.z - b.z);
+}
+
+/** Plan levels (ascending) of the model in view: story levels, and reference planes while Ref planes is on. */
+export function planLevels(s: Pick<AppState, 'refPlanesInPlan'>, m: Model): number[] {
+  const el = storyElevations(m);
+  return [...new Set([...m.stories.map((x) => el[x.name].top), ...(s.refPlanesInPlan ? m.refPlanes.map((r) => r.z) : [])])].sort((a, b) => a - b);
+}
+
+/** Elevation of the plan in view: the shown reference plane's, else the active story's level. */
+export function planZ(s: AppState): number {
+  const rp = planeLevel(s) && s.model.refPlanes.find((r) => r.id === s.activePlane);
+  return rp ? rp.z : (storyElevations(viewModel(s))[s.activeStory]?.top ?? 0);
+}
+
+let stairPlanCache: { v: Model; z: number; planes: boolean; out: StairModel } | null = null;
+/** planModel, and inside a stair only the flights, landings and spans drawn on the plan in view (see onLevel). */
+export function stairPlanModel(s: AppState): StairModel {
+  const v = planModel(s),
+    z = s.activeStair ? planZ(s) : NaN;
+  // the same object back while nothing changes (a selector); Object.is so the stair-less NaN matches itself
+  if (stairPlanCache && stairPlanCache.v === v && Object.is(stairPlanCache.z, z) &&stairPlanCache.planes === s.refPlanesInPlan) return stairPlanCache.out;
+  const out = s.activeStair ? onLevel(asStair(v), planLevels(s, v), z) : asStair(v);
+  stairPlanCache = { v, z, planes: s.refPlanesInPlan, out };
+  return out;
+}
+
+/** Story the open stair's range designs (spans are filed on it), else the active story. */
+export function designStory(s: AppState): string {
+  const r = s.model.stairs.find((x) => x.id === s.activeStair);
+  const rg = r && rangeFor(s.model, r, s.activeRange);
+  return (rg && rangeLevels(s.model, rg)?.story) ?? s.activeStory;
 }
 
 /** Level offset new elements are drawn at: the shown reference plane's, else 0. */

@@ -1,5 +1,4 @@
-import { useApp, viewModel } from '../model/store';
-import { storyElevations } from '../model/types';
+import { useApp, viewModel, planeLevel, levelSteps } from '../model/store';
 import { fmt } from '../model/geom';
 import { setTool } from '../plan/tools';
 import { deleteStair, renameStair, setTypicals } from '../stair/regions';
@@ -38,8 +37,10 @@ export function StairSide() {
   const m = useApp(viewModel);
   const active = useApp((s) => s.activeStory);
   const labels = useApp((s) => s.show.sectionLabels);
+  const withPlanes = useApp((s) => s.refPlanesInPlan);
+  const plane = useApp((s) => planeLevel(s) && s.activePlane);
   if (!r) return null;
-  const el = storyElevations(m);
+  const levels = levelSteps(m, withPlanes).reverse();
   return (
     <div className="side">
       <div className="section">
@@ -52,12 +53,21 @@ export function StairSide() {
       </div>
       <TypicalRanges r={r} />
       <div className="section">
-        <h4>Stories</h4>
+        <h4>
+          {withPlanes ? 'Stories & reference planes' : 'Stories'}{' '}
+          <label className="small" title="List reference planes too; flights and landings show on the level they start from">
+            <input type="checkbox" checked={withPlanes} onChange={st.toggleRefPlanesInPlan} /> Ref planes
+          </label>
+        </h4>
         <div className="stories">
-          {[...m.stories].reverse().map((s) => (
-            <div key={s.name} className={'story ' + (s.name === active ? 'active' : '')} onClick={() => st.setActiveStory(s.name)}>
-              {s.name}
-              <span className="elev">{fmt(el[s.name].top)}</span>
+          {levels.map((l) => (
+            <div
+              key={l.plane ?? l.name}
+              className={'story ' + ((l.plane ? l.plane === plane : !plane && l.story === active) ? 'active' : '')}
+              onClick={() => (l.plane ? st.setActivePlane(l.plane, l.story) : st.setActiveStory(l.story))}
+            >
+              {l.plane ? `⊟ ${l.name}` : l.name}
+              <span className="elev">{fmt(l.z)}</span>
             </div>
           ))}
           <div className="story muted small">

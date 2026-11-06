@@ -1,14 +1,14 @@
-import { useApp, usePreview, drawStories, drawDz, toast, planModel, type ToolName } from '../model/store';
+import { useApp, usePreview, drawStories, drawDz, toast, planModel, planZ, planLevels, stairPlanModel, designStory, type ToolName } from '../model/store';
 import type { Beam, Flight, Model, Pt, Span, StairModel } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
 import { autoSizeBeams, noFitNote, RANK_NAME } from '../model/autoBeam';
 import { addBeams, addColumns, addSlab, cachedStoryNodes, findBay, gridSegs, makeGrid, moveIds, nextGridLabel, onGridLine, panelSize, reshapeSlab, setBeamEnd, slabGrips, setGridEnd, slabsUnderBeams, splitSlabsByBeams } from '../model/ops';
-import { asStair, columnOn, placeAt, storyElevations, uid } from '../model/types';
+import { asStair, columnOn, uid } from '../model/types';
 import { add, angleDeg, dist, fmt, offsetSeg, parseRelative, polyArea, projectOnSeg, segIntersect, side, sub, distToSeg, lineIntersect } from '../model/geom';
 import { snapPoint, trackSnap, cachedIntersections, columnOutline, type Snap, type SnapKind } from './snap';
 import { viewport } from './viewport';
 import { addStair, commitStair } from '../stair/regions';
-import { dirOf, flightFrom, flightGrips, flightStory, frame, OPPOSITE, reshapeFlight, type FlightEdge, landingStory, levelGuess, nextNames, clip, landingRect, rectPts, landingSides, reshapeLanding } from '../stair/stair';
+import { levelOf, dirOf, flightFrom, flightGrips, frame, OPPOSITE, reshapeFlight, type FlightEdge, nextNames, clip, landingRect, rectPts, landingSides, reshapeLanding } from '../stair/stair';
 import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf, rectOf } from '../underlay/store';
 import { openDialog, useFramePick, useMovePick } from '../ui/dialogState';
 import { fitAll } from './PlanView';
@@ -199,7 +199,7 @@ export function doSnap(screen: Pt): Snap {
   const rub = P().rubber;
   const from = rub.length ? rub[rub.length - 1] : null;
   // region corners and reference point are raw DXF points: never snap them to model elements
-  const m = planModel(A());
+  const m = stairPlanModel(A());
   const tol = SNAP_PX / viewport.k;
   const s = snapPoint(t === 'region' ? { ...m, grids: [], columns: [], beams: [], slabs: [] } : m, w, tol, {
     story: A().activeStory,
@@ -510,8 +510,7 @@ export function onClick(pt: Pt) {
       const m = SM();
       const f = flightFrom(m, flightBox.a, flightBox.b, dirOf(a, pt), 0);
       if (!f) return toast(`A flight needs at least one tread (${m.stair.T} mm) along the UP direction and a width of 300 mm across it.`);
-      const O = frame(f).O; // bottom corner
-      f.z0 = levelGuess(m, O[0], O[1], 50) ?? storyElevations(m)[A().activeStory]?.bottom ?? 0;
+      f.z0 = planZ(A()); // starts on the plan level in view (story level or reference plane)
       commitStair((mm) => ({ ...mm, flights: [...mm.flights, f] }));
       A().setSelection([f.id]);
       flightBox = null;
@@ -522,18 +521,19 @@ export function onClick(pt: Pt) {
       const a = p.rubber[0];
       if (Math.abs(pt.x - a.x) < 100 || Math.abs(pt.y - a.y) < 100) return toast('Landing is too small.');
       const m = SM();
-      const l = { id: uid(), name: nextNames(m.landings.map((x) => x.name), 'L')(), x: Math.min(a.x, pt.x), y: Math.min(a.y, pt.y), w: Math.abs(pt.x - a.x), h: Math.abs(pt.y - a.y), t: m.stair.tl, z: storyElevations(m)[A().activeStory]?.top ?? 0 };
+      const l = { id: uid(), name: nextNames(m.landings.map((x) => x.name), 'L')(), x: Math.min(a.x, pt.x), y: Math.min(a.y, pt.y), w: Math.abs(pt.x - a.x), h: Math.abs(pt.y - a.y), t: m.stair.tl, z: planZ(A()) };
       const r = landingRect(l);
-      // level of a flight whose top ends in it: only flights topping out on this story (stacked stairs repeat the plan),
-      // and of those the one nearest the story level (a box can also swallow a short flight up to a reference plane)
-      const storyTop = l.z;
+      // level of a flight whose top ends in it: only flights topping out on this plan level (stacked stairs repeat the plan),
+      // and of those the one nearest the level (a box can also swallow a short flight up to a reference plane)
+      const storyTop = l.z,
+        levels = planLevels(A(), m);
       let best: number | null = null;
       for (const f of m.flights) {
         const F = frame(f),
           top = f.z0 + F.H,
           mx = F.O[0] + F.u[0] * F.L + (F.v[0] * F.w) / 2,
           my = F.O[1] + F.u[1] * F.L + (F.v[1] * F.w) / 2;
-        if (placeAt(m, top)?.story !== A().activeStory || mx < r.x0 - 20 || mx > r.x1 + 20 || my < r.y0 - 20 || my > r.y1 + 20) continue;
+        if (levelOf(levels, top) !== levelOf(levels, storyTop) || mx < r.x0 - 20 || mx > r.x1 + 20 || my < r.y0 - 20 || my > r.y1 + 20) continue;
         if (best === null || Math.abs(top - storyTop) < Math.abs(best - storyTop)) best = top;
       }
       l.z = best ?? storyTop;
@@ -546,7 +546,7 @@ export function onClick(pt: Pt) {
       const a = p.rubber[0];
       if (dist(a, pt) < 100) return;
       const m = SM();
-      const sp = { id: uid(), name: nextNames(m.spans.map((x) => x.name), 'S')(), story: A().activeStory, x1: a.x, y1: a.y, x2: pt.x, y2: pt.y, width: m.stair.width };
+      const sp = { id: uid(), name: nextNames(m.spans.map((x) => x.name), 'S')(), story: designStory(A()), x1: a.x, y1: a.y, x2: pt.x, y2: pt.y, width: m.stair.width };
       const f = m.flights.find((f) => clip(sp.x1, sp.y1, sp.x2, sp.y2, frame(f).r));
       if (f) sp.width = f.width;
       commitStair((mm) => ({ ...mm, spans: [...mm.spans, sp] }));
@@ -882,19 +882,20 @@ export function gripAt(screen: Pt): Grip | null {
     for (const g of model.grids) if (s.has(g.id)) for (const end of [1, 2] as const) near(end === 1 ? { x: g.x1, y: g.y1 } : { x: g.x2, y: g.y2 }, { id: g.id, end });
     for (const sl of model.slabs) if (s.has(sl.id) && sl.story === activeStory) slabGrips(sl.pts).forEach((q, vtx) => near(q, { id: sl.id, vtx }));
   }
-  for (const l of model.landings)
-    if (s.has(l.id) && landingStory(model, l) === activeStory) {
+  const onPlan = stairPlanModel(A());
+  for (const l of onPlan.landings)
+    if (s.has(l.id)) {
       rectPts(landingRect(l)).forEach((q, corner) => near(q, { id: l.id, corner }));
       landingSides(l).forEach((q, lside) => near(q, { id: l.id, lside }));
     }
-  for (const sp of model.spans) if (s.has(sp.id) && sp.story === activeStory) for (const [g, q] of spanGrips(sp)) near(q, g);
-  for (const f of model.flights) if (s.has(f.id) && flightStory(model, f) === activeStory) for (const [edge, q] of Object.entries(flightGrips(f)) as [FlightEdge, Pt][]) near(q, { id: f.id, edge });
+  for (const sp of onPlan.spans) if (s.has(sp.id)) for (const [g, q] of spanGrips(sp)) near(q, g);
+  for (const f of onPlan.flights) if (s.has(f.id)) for (const [edge, q] of Object.entries(flightGrips(f)) as [FlightEdge, Pt][]) near(q, { id: f.id, edge });
   return best;
 }
 
 /** Snapped position for a dragged grip; the element itself is left out so it can't snap to its own end or line. A grid end stays on the grid's line. */
 function gripSnap(g: Grip, screen: Pt): { s: Snap; fixed: Pt; p: Pt; poly?: Pt[] } | null {
-  const m = SM();
+  const m = stairPlanModel(A());
   const snapAt = (mm: StairModel, from: Pt, ortho = false) => snapPoint(mm, viewport.toWorld(screen), SNAP_PX / viewport.k, { story: A().activeStory, from, ortho, underlay: A().show.underlay });
   if ('vtx' in g) {
     const sl = m.slabs.find((x) => x.id === g.id);
@@ -1018,15 +1019,15 @@ export function hitTest(m: Model, screen: Pt, story: string): string | null {
     }
   if (best) return best;
   const sm = asStair(m);
-  for (const sp of sm.spans)
-    if (sp.story === story) {
+  for (const sp of sm.spans) // m is stairPlanModel: only the plan level's flights, landings and spans
+    {
       const d = distToSeg(w, { x: sp.x1, y: sp.y1 }, { x: sp.x2, y: sp.y2 });
       if (d < bd) (bd = d), (best = sp.id);
     }
   if (best) return best;
   const inR = (r: { x0: number; y0: number; x1: number; y1: number }) => w.x >= r.x0 && w.x <= r.x1 && w.y >= r.y0 && w.y <= r.y1;
-  for (const f of sm.flights) if (flightStory(sm, f) === story && inR(frame(f).r)) return f.id;
-  for (const l of sm.landings) if (landingStory(sm, l) === story && inR(landingRect(l))) return l.id;
+  for (const f of sm.flights) if (inR(frame(f).r)) return f.id;
+  for (const l of sm.landings) if (inR(landingRect(l))) return l.id;
   for (const g of m.grids) {
     const d = distToSeg(w, { x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 });
     if (d < bd) (bd = d), (best = g.id);
@@ -1076,9 +1077,9 @@ export function boxSelect(m: Model, a: Pt, b: Pt, story: string, crossing: boole
   for (const bm of m.beams) if (bm.story === story && test([{ x: bm.x1, y: bm.y1 }, { x: bm.x2, y: bm.y2 }], false)) ids.push(bm.id);
   for (const s of m.slabs) if (s.story === story && test(s.pts, true)) ids.push(s.id);
   const sm = asStair(m);
-  for (const f of sm.flights) if (flightStory(sm, f) === story && test(rectPts(frame(f).r), true)) ids.push(f.id);
-  for (const l of sm.landings) if (landingStory(sm, l) === story && test(rectPts(landingRect(l)), true)) ids.push(l.id);
-  for (const sp of sm.spans) if (sp.story === story && test([{ x: sp.x1, y: sp.y1 }, { x: sp.x2, y: sp.y2 }], false)) ids.push(sp.id);
+  for (const f of sm.flights) if (test(rectPts(frame(f).r), true)) ids.push(f.id);
+  for (const l of sm.landings) if (test(rectPts(landingRect(l)), true)) ids.push(l.id);
+  for (const sp of sm.spans) if (test([{ x: sp.x1, y: sp.y1 }, { x: sp.x2, y: sp.y2 }], false)) ids.push(sp.id);
   for (const g of m.grids) if (test([{ x: g.x1, y: g.y1 }, { x: g.x2, y: g.y2 }], false)) ids.push(g.id);
   if (A().show.nodes) for (const n of cachedStoryNodes(m, story)) if (test([n], false)) ids.push(n.id);
   return ids;

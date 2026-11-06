@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { useApp, usePreview, planModel, planeLevel, viewModel, visibleModel } from '../model/store';
+import { useApp, usePreview, planModel, planeLevel, stairPlanModel, viewModel, visibleModel } from '../model/store';
 import { cachedStoryNodes, isNodeId, slabGrips, type PanelSize } from '../model/ops';
 import { fmt } from '../model/geom';
-import { asStair, columnOn, terminatingColumns, type Beam, type Flight, type Landing, type Pt, type Slab, type Span } from '../model/types';
+import { columnOn, terminatingColumns, type Beam, type Flight, type Landing, type Pt, type Slab, type Span } from '../model/types';
 import { StairLayer } from './StairLayer';
-import { flightGrips, flightStory, landingStory, landingRect, landingSides, rectPts } from '../stair/stair';
+import { flightGrips, landingRect, landingSides, rectPts } from '../stair/stair';
 import { viewport } from './viewport';
 import { UnderlayLayer, StairBoxLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
 import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
@@ -140,11 +140,9 @@ export function PlanView() {
   const ends = useMemo(() => { const t = terminatingColumns(full); return new Set(cols.filter((c) => c.story === story && t.has(c.id)).map((c) => c.id)); }, [full, cols, story]);
   const beams = useMemo(() => model.beams.filter((b) => b.story === story), [model.beams, story]);
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
-  // inside a stair: its flights, landings and spans on this story
-  const stair = useMemo(() => {
-    const sm = asStair(model);
-    return { flights: sm.flights.filter((f) => flightStory(sm, f) === story), landings: sm.landings.filter((l) => landingStory(sm, l) === story), spans: sm.spans.filter((s) => s.story === story) };
-  }, [model, story]);
+  // inside a stair: its flights, landings and spans on the plan level in view
+  const sm = useApp(stairPlanModel);
+  const stair = useMemo(() => ({ flights: sm.flights, landings: sm.landings, spans: sm.spans }), [sm]);
   const legendItems = useMemo(() => [...cols, ...beams, ...(show.slabs ? slabs : [])], [cols, beams, slabs, show.slabs]);
   // ghosts come from the full model: planModel keeps only the level in view while Ref planes is on
   const gCols = useMemo(() => (below && show.ghostBelow ? full.columns.filter((c) => columnOn(full, c, below)) : []), [full, below, show.ghostBelow]);
@@ -257,7 +255,7 @@ export function PlanView() {
     if (d.mode === 'box') {
       usePreview.getState().set({ box: null });
       if (st.tool === 'column') return fillIntersections(d.start, p);
-      let ids = boxSelect(planModel(st), d.start, p, st.activeStory, p.x < d.start.x);
+      let ids = boxSelect(stairPlanModel(st), d.start, p, st.activeStory, p.x < d.start.x);
       // priority: elements, then nodes, then grids; Alt+drag picks nodes only
       const nodes = ids.filter(isNodeId);
       const elems = ids.filter((id) => !isNodeId(id) && !st.model.grids.some((g) => g.id === id));
@@ -269,7 +267,7 @@ export function PlanView() {
       return;
     }
     if (st.tool === 'select') {
-      const id = hitTest(planModel(st), p, st.activeStory);
+      const id = hitTest(stairPlanModel(st), p, st.activeStory);
       if (e.ctrlKey && id) st.setSelection(st.selection.includes(id) ? st.selection.filter((x) => x !== id) : [...st.selection, id]);
       else st.setSelection(id ? [id] : []);
       return;

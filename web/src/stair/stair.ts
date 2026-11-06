@@ -218,10 +218,23 @@ const spanU = (sp: Span): [number, number] => {
 const rectOfStair = (it: Flight | Landing) => ('n' in it ? frame(it).r : landingRect(it));
 /** Where the span line cuts the member in plan, for members within the span's story only (stacked flights overlap in plan). */
 const crosses = (m: Model, sp: Span, it: Flight | Landing) => {
-  const e = storyElevations(m)[sp.story],
-    [lo, hi] = 'n' in it ? [it.z0, it.z0 + it.n * it.R] : [it.z, it.z];
-  if (e && (lo < e.bottom - LEVEL_TOL || hi > e.top + LEVEL_TOL)) return null;
-  return clip(sp.x1, sp.y1, sp.x2, sp.y2, rectOfStair(it));
+  const e = storyElevations(m)[sp.story];
+  const inStory = (x: Flight | Landing) => {
+    const [lo, hi] = 'n' in x ? [x.z0, x.z0 + x.n * x.R] : [x.z, x.z];
+    return !e || (lo >= e.bottom - LEVEL_TOL && hi <= e.top + LEVEL_TOL);
+  };
+  if (!inStory(it)) return null;
+  const c = clip(sp.x1, sp.y1, sp.x2, sp.y2, rectOfStair(it));
+  if (!c) return c;
+  // a flight spans along its going: a span square to it only grazes its side (e.g. ending on a beam the flight's width overlaps)
+  if ('n' in it) {
+    const u = spanU(sp),
+      fu = frame(it).u;
+    return Math.abs(u[0] * fu[0] + u[1] * fu[1]) < 0.5 ? null : c;
+  }
+  // a landing stacked over another (the storey's bottom and top levels): only one the span's flights start or end on
+  const fl = m.flights.filter((f) => inStory(f) && clip(sp.x1, sp.y1, sp.x2, sp.y2, frame(f).r));
+  return !fl.length || fl.some((f) => Math.abs(f.z0 - it.z) <= LEVEL_TOL || Math.abs(f.z0 + f.n * f.R - it.z) <= LEVEL_TOL) ? c : null;
 };
 
 /** Simply supported beam (m, kN/m), piecewise UDL segments {a, b, w}. */
@@ -552,6 +565,7 @@ export function autoSpans(m: Model): Model {
         t = t + sg * (20 + cc[1] * 1e5);
         z = l.z;
       }
+      const edge = (sg * F.L) / 2;
       let best: number | null = null,
         bs = 1e12,
         dz = 0;
@@ -565,13 +579,12 @@ export function autoSpans(m: Model): Model {
           tol = beamWidth(m, b) / 2 / Math.hypot(d[0], d[1]);
         if (s < -tol || s > 1 + tol || sg * (tb - (sg * F.L) / 2) < -300 || sg * (tb - t) > 400) continue;
         const bz = Math.abs(beamZ(el, b, clamp(s, 0, 1) * Math.hypot(d[0], d[1])) - z),
-          sc = bz * 10 + Math.abs(tb - t);
+          sc = bz * 10 + Math.abs(tb - edge); // nearest the flight end: the first beam reached across a landing carries the flight
         if (sc < bs) (bs = sc), (best = tb), (dz = bz);
       }
       // IS 456 cl 33.1(b): no beam at the landing's level ahead, so the flight bears on the landing slab
       // spanning across it; take the span half the landing width (or 1 m, if less) past the flight end
-      const edge = (sg * F.L) / 2,
-        deep = sg * (t - edge);
+      const deep = sg * (t - edge);
       if (deep > 0 && (best == null || dz > 300)) return edge + sg * Math.min(deep / 2, 1000);
       return best ?? t;
     };
@@ -603,6 +616,18 @@ export function spanKey(m: Model, sp: Span): number[] {
   const f = z(m.flights),
     l = z(m.landings);
   return [isFinite(f) ? f : isFinite(l) ? l : storyElevations(m)[sp.story]?.bottom ?? 0, Math.min(sp.x1, sp.x2), Math.min(sp.y1, sp.y2)];
+}
+
+/** Where a flight, landing or span starts: the flight's bottom, the landing's level, the lowest member a span covers. */
+export const startZ = (m: Model, it: Flight | Landing | Span) => ('n' in it ? it.z0 : 'z' in it ? it.z : spanKey(m, it)[0]);
+
+/** Of the plan levels (ascending), the one an element starting at `z` is drawn on: the highest at or below it, else the lowest. */
+export const levelOf = (levels: number[], z: number) => levels.reduce((a, l) => (l <= z + LEVEL_TOL ? l : a), levels[0]);
+
+/** `m` with only the flights, landings and spans drawn on the plan at level `z` (one of `levels`). */
+export function onLevel<M extends Model>(m: M, levels: number[], z: number): M {
+  const on = (it: Flight | Landing | Span) => Math.abs(levelOf(levels, startZ(m, it)) - z) < LEVEL_TOL;
+  return { ...m, flights: m.flights.filter(on), landings: m.landings.filter(on), spans: m.spans.filter(on) };
 }
 
 /** UP direction of a pointer move from `a` to `b`: its dominant axis and sign. */

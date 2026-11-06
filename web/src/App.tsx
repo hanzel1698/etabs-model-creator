@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useMemo, useRef } from 'react';
-import { useApp, usePreview, planeLevel, visibleModel, viewModel } from './model/store';
+import { useApp, usePreview, planeLevel, levelSteps, visibleModel, viewModel } from './model/store';
 import { PlanView, fitAll } from './plan/PlanView';
 import { setTool, onCancel, onInput, finishPolygon, resetTool } from './plan/tools';
 import { LeftPanel } from './ui/LeftPanel';
@@ -10,7 +10,7 @@ import { deleteIds } from './model/ops';
 import { deleteStairIds } from './stair/regions';
 import { restoreModel, startAutosave, downloadProject, saveProjectAs, forgetSaveTarget, openProject } from './model/persist';
 import { loadDxfFile, loadPdfFile, restoreUnderlay } from './underlay/store';
-import { columnOn, emptyModel, placeAt, storyElevations } from './model/types';
+import { columnOn, emptyModel } from './model/types';
 import { fmt } from './model/geom';
 import { startSessionLog, log, toggleLog, useLog } from './log/sessionLog';
 import { LogPanel } from './ui/LogPanel';
@@ -189,16 +189,7 @@ function StoryStepper() {
   const withPlanes = useApp((s) => s.refPlanesInPlan);
   const below = useApp((s) => s.underlayBelow);
   const inStair = useApp((s) => !!s.activeStair);
-  const levels = useMemo(() => {
-    const el = storyElevations(model);
-    const out: { name: string; z: number; story: string; plane?: string }[] = model.stories.map((s) => ({ name: s.name, z: el[s.name].top, story: s.name }));
-    if (withPlanes)
-      for (const r of model.refPlanes) {
-        const p = placeAt(model, r.z);
-        if (p?.dz) out.push({ name: r.name, z: r.z, story: p.story, plane: r.id }); // a plane on a story level is that story
-      }
-    return out.sort((a, b) => a.z - b.z);
-  }, [model, withPlanes]);
+  const levels = useMemo(() => levelSteps(model, withPlanes), [model, withPlanes]);
   const i = levels.findIndex((l) => (plane ? l.plane === plane : !l.plane && l.story === active));
   const up = levels[i + 1],
     down = i > 0 ? levels[i - 1] : undefined;

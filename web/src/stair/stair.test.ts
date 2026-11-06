@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyStairModel as emptyModel, type StairModel as Model } from '../model/types';
-import { analyze, autoSpans, beamLoads, beamName, flightGrips, kSlab, renumber, reshapeFlight, reshapeLanding, spanKey, ssBeam, suggestWaist, tauC, template, withWaist } from './stair';
+import { analyze, autoSpans, beamLoads, beamName, flightGrips, kSlab, onLevel, renumber, reshapeFlight, reshapeLanding, spanKey, ssBeam, suggestWaist, tauC, template, withWaist } from './stair';
 
 describe('stair statics and IS 456 tables', () => {
   it('simply supported UDL and partial load', () => {
@@ -63,6 +63,19 @@ describe('templates', () => {
       l = m.landings[0];
     const up = { ...m, landings: [...m.landings, { ...l, id: 'up', name: 'Lup', x: -5000, y: -5000, w: 20000, h: 20000, z: l.z + 10000 }] };
     expect(analyze(up, sp)!.segs.map((s) => [s.a, s.b])).toEqual(before);
+  });
+  it('a beam across the landing at its level stops the span there, not at the landing far edge', () => {
+    const t = template(emptyModel(), 'dog', 'Story1', 'B300x500', 'C400x400');
+    const far = t.beams.find((b) => b.x1 === b.x2 && b.x1 > 0)!,
+      x = t.landings[0].x + 100;
+    const m = autoSpans({ ...t, beams: [...t.beams, { ...far, id: 'mid', x1: x, x2: x }] });
+    expect(m.spans.map((s) => Math.max(s.x1, s.x2))).toEqual([x, x]);
+  });
+  it('a span square to a flight only grazes its side: the flight is not part of it', () => {
+    const t = template(emptyModel(), 'L', 'Story1', 'B300x500', 'C400x400');
+    const f1 = t.flights[0]; // goes +x
+    const sp = { ...t.spans[0], id: 'x', name: 'Sx', x1: f1.x + 500, y1: f1.y - 500, x2: f1.x + 500, y2: f1.y + f1.width + 500 };
+    expect(analyze({ ...t, spans: [...t.spans, sp] }, sp)?.segs.some((g) => g.it === f1) ?? false).toBe(false);
   });
   it('quarter-turn without a beam past the landing: the first flight rests on the second span', () => {
     const t = template(emptyModel(), 'L', 'Story1', 'B300x500', 'C400x400');
@@ -130,5 +143,27 @@ describe('beam loads', () => {
     const rev = { ...m, beams: m.beams.map((b) => ({ ...b, x1: b.x2, y1: b.y2, x2: b.x1, y2: b.y1 })) };
     const ab = (x: Model) => [...beamLoads(x).out.values()].map((rs) => rs.map((r) => [r.a, r.b]));
     expect(ab(rev)).toEqual(ab(m));
+  });
+});
+
+describe('plan levels inside a stair', () => {
+  const F = (id: string, z0: number) => ({ id, name: id, dir: '+x' as const, n: 4, T: 300, R: 150, t: 200, width: 1200, z0, x: 0, y: 0 });
+  const L = (id: string, z: number) => ({ id, name: id, x: 0, y: 0, w: 1200, h: 1200, z, t: 200 });
+  const m: Model = { ...emptyModel(), flights: [F('f1', 1400), F('f2', 2000), F('f3', 3650)], landings: [L('l1', 1400), L('l2', 2000), L('l4', 5300)] };
+  const ids = (x: Model) => [...x.flights, ...x.landings].map((i) => i.id);
+  it('puts each flight and landing on the level it starts from', () => {
+    const lv = [1400, 2000, 3650, 5300];
+    expect(ids(onLevel(m, lv, 1400))).toEqual(['f1', 'l1']);
+    expect(ids(onLevel(m, lv, 2000))).toEqual(['f2', 'l2']);
+    expect(ids(onLevel(m, lv, 3650))).toEqual(['f3']);
+    expect(ids(onLevel(m, lv, 5300))).toEqual(['l4']);
+  });
+  it('a span over a landing and its flight leaves out the landing stacked above in plan', () => {
+    const sp = { id: 's', name: 'S1', story: '', x1: 600, y1: -500, x2: 600, y2: 1500, width: 1200 };
+    const one = { ...m, flights: [{ ...F('f1', 1400), dir: '+y' as const, y: 0 }], landings: [L('l1', 1400), L('l4', 5300)].map((l) => ({ ...l, y: -1200 })), spans: [sp] };
+    expect(analyze(one, sp)!.segs.map((g) => g.it.id)).toEqual(['l1', 'f1']);
+  });
+  it('without reference planes, everything below the next story level is on the lower one', () => {
+    expect(ids(onLevel(m, [1400, 5300], 1400))).toEqual(['f1', 'f2', 'f3', 'l1', 'l2']);
   });
 });

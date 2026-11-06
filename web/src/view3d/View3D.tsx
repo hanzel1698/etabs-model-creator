@@ -4,7 +4,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useApp, sectionColor, visibleModel } from '../model/store';
 import { asStair, columnOn, columnSpan, levelZ, placeAt, storyElevations, type Column, type FrameLoad, type LoadDir, type Model } from '../model/types';
-import { flightStory, frame as flightFrame, landingStory, profile } from '../stair/stair';
+import { analyze, flightLevel, flightStory, frame as flightFrame, landingStory, profile } from '../stair/stair';
+
+const SPAN_COLOR = '#ff9e3b';
 import { addBeams, addColumns, gridIntersections } from '../model/ops';
 import { commitBeams } from '../plan/tools';
 import { pointInPoly } from '../model/geom';
@@ -215,6 +217,40 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     return fills.get(key)!;
   };
   stairMeshes(m, sel, vis, ghost, ghost('__selStair', '#39ff9a')).forEach((x) => g.add(x));
+  // design spans: centreline over the slab pieces they cover, ticked at each end, so where a span stops reads against the beams
+  const st = asStair(m);
+  for (const sp of st.spans) {
+    const A = vis(sp.story) ? analyze(st, sp) : null;
+    if (!A?.segs.length) continue;
+    const L = A.L * 1000,
+      u = [(sp.x2 - sp.x1) / L, (sp.y2 - sp.y1) / L],
+      at = (d: number) => [sp.x1 + u[0] * d, sp.y1 + u[1] * d],
+      pts: THREE.Vector3[] = [];
+    for (const s of A.segs)
+      for (const d of [s.a * 1000, s.b * 1000]) {
+        const [x, y] = at(d);
+        pts.push(new THREE.Vector3(x * S, ('n' in s.it ? flightLevel(s.it, x, y) : s.it.z) * S, -y * S));
+      }
+    // each end at its supporting beam's level (else the slab's)
+    const P = (d: number, z: number, off = 0) => {
+      const [x, y] = at(d);
+      return new THREE.Vector3((x + u[1] * off) * S, z * S, -(y - u[0] * off) * S);
+    };
+    const z0 = A.sup[0].bz ?? pts[0].y / S,
+      z1 = A.sup[1].bz ?? pts[pts.length - 1].y / S;
+    pts.unshift(P(0, z0));
+    pts.push(P(L, z1));
+    if (!mats.has('__span')) mats.set('__span', new THREE.LineBasicMaterial({ color: new THREE.Color(SPAN_COLOR), clippingPlanes: clip, depthTest: false, transparent: true }));
+    const mt = sel.has(sp.id) ? selMat : mats.get('__span')!,
+      h = sp.width / 2,
+      n0 = g.children.length;
+    line(pts, mt, sp.id);
+    line([P(0, z0, -h), P(0, z0, h)], mt, sp.id);
+    line([P(L, z1, -h), P(L, z1, h)], mt, sp.id);
+    g.children.slice(n0).forEach((o) => (o.renderOrder = 10)); // over the translucent flights and landings they run through
+    const mid = pts[Math.floor(pts.length / 2)];
+    g.add(label(sp.name, SPAN_COLOR, mid.clone().add(new THREE.Vector3(0, 0.15, 0)), new THREE.Vector3(u[0], 0, -u[1]), false));
+  }
   return g;
 }
 

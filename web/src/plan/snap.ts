@@ -1,5 +1,5 @@
 import { asStair, columnOn, type Model, type Pt, type Grid, type FrameSection } from '../model/types';
-import { flightStory, frame, landingRect, landingStory, rectPts } from '../stair/stair';
+import { frame, landingRect, rectPts } from '../stair/stair';
 import { dist, distToSeg, mid, projectOnSeg, projectOnLine, rot, segIntersect, sub, add } from '../model/geom';
 import { gridIntersections } from '../model/ops';
 import { underlayGeom } from '../underlay/store';
@@ -86,12 +86,9 @@ export function snapPoint(m: Model, w: Pt, tol: number, o: SnapOpts): Snap {
     tryPt(mid(a, e), 'mid');
   }
   for (const s of m.slabs) if (s.story === o.story) for (const p of s.pts) tryPt(p, 'end');
-  // flight and landing outlines (inside a stair): corners and edge midpoints
+  // flight and landing outlines (inside a stair, already cut to the plan level): corners and edge midpoints
   const sm = asStair(m);
-  const stairs = [
-    ...sm.flights.filter((f) => flightStory(sm, f) === o.story).map((f) => rectPts(frame(f).r)),
-    ...sm.landings.filter((l) => landingStory(sm, l) === o.story).map((l) => rectPts(landingRect(l))),
-  ];
+  const stairs = [...sm.flights.map((f) => rectPts(frame(f).r)), ...sm.landings.map((l) => rectPts(landingRect(l)))];
   for (const ol of stairs)
     ol.forEach((p, i) => {
       tryPt(p, 'end');

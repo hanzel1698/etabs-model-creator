@@ -62,14 +62,14 @@ describe('stairContext for a typical range', () => {
   const beams = ['Story1', 'Story2', 'Story3'].map((s, i) => B(`b${i + 1}`, s, 0, 2000 + i, 3000, 2000 + i));
   const L = (id: string, z: number) => ({ id, name: id, x: 0, y: 0, w: 1200, h: 1200, z, t: 200 });
   const mm: Model = { ...m, beams, refPlanes: [] };
-  const rr = { ...region, landings: [L('l1', 3000), L('l2', 6000)] };
+  const rr = { ...region, landings: [L('l1', 3000), L('l2', 6000), L('l3', 9000)] };
   const c = stairContext(mm, rr, false, { id: 'a', from: 'Story1', to: 'Story3' });
   it('keeps beams from the bottom to the top level of its first storey, numbered from B1', () => {
     expect(c.beams.map((b) => b.id)).toEqual(['b1', 'b2']);
     expect(c.beams.map((b) => beamName(c, b))).toEqual(['B1', 'B2']);
   });
-  it('keeps only that storey: stories up to it and the landing on its top level', () => {
+  it('keeps only that storey: stories up to it and the landings on its bottom and top levels', () => {
     expect(c.stories.map((s) => s.name)).toEqual(['Story1', 'Story2']);
-    expect(c.landings.map((l) => l.id)).toEqual(['l2']);
+    expect(c.landings.map((l) => l.id)).toEqual(['l1', 'l2']);
   });
 });
