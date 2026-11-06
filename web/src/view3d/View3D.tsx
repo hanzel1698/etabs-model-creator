@@ -166,8 +166,7 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     const mid = new THREE.Vector3(((b.x1 + b.x2) / 2) * S, y, (-(b.y1 + b.y2) / 2) * S),
       ax = new THREE.Vector3(b.x2 - b.x1, 0, -(b.y2 - b.y1));
     if (labels.has('beam')) g.add(label(b.section, sectionColor(b.section), mid, ax.clone(), false));
-    const bl = frameLoads(b.loads);
-    if (bl.length) loadTag(frameTag(bl), 'beam', mid, ax);
+    // beam loads are tagged one by one over their own diagrams (buildLoadPlots)
   }
   for (const sl of m.slabs) {
     const z = levelZ(el, sl);
@@ -211,7 +210,7 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     if (z === null || !lf.joint(j) || !vis(j.story)) continue;
     g.add(label(named(j.pattern, `↓ ${describeJointLoad(j.f)}`), LOAD_COLOR, new THREE.Vector3(j.x * S, z * S, -j.y * S), null, false));
   }
-  if (loads) g.add(...buildLoadPlots(m, lf, vis, colVis, clip));
+  if (loads) g.add(...buildLoadPlots(m, lf, vis, colVis, clip, (l, at, ax) => g.add(label(named(l.pattern, shortFrameLoad(l)), LOAD_COLOR, at, ax, false))));
   const ghost = (key: string, color: string) => {
     if (!fills.has(key)) fills.set(key, new THREE.MeshBasicMaterial({ color: new THREE.Color(color), transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: clip }));
     return fills.get(key)!;
@@ -290,10 +289,11 @@ function frameAxes(a: THREE.Vector3, b: THREE.Vector3, angle: number | null): TH
 // load's plot filled between the member and its arrow tails, so where it acts and how it varies reads at a
 // glance. Each kind (frame distributed, frame point, slab, joint force, joint moment) is scaled on its own,
 // its largest value drawn `H` long. Moments are arrows with a double head (right-hand rule).
-function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolean, colVis: (c: Column) => boolean, clip: THREE.Plane[]): THREE.Object3D[] {
+/** `beamTag`: called with each beam load and the top middle of its diagram, to label it there. */
+function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolean, colVis: (c: Column) => boolean, clip: THREE.Plane[], beamTag?: (l: FrameLoad, at: THREE.Vector3, axis: THREE.Vector3) => void): THREE.Object3D[] {
   const el = storyElevations(m);
   const P = (x: number, y: number, z: number) => new THREE.Vector3(x * S, z * S, -y * S);
-  const frames: { a: THREE.Vector3; b: THREE.Vector3; ax: THREE.Vector3[]; ls: FrameLoad[] }[] = [];
+  const frames: { a: THREE.Vector3; b: THREE.Vector3; ax: THREE.Vector3[]; ls: FrameLoad[]; beam?: boolean }[] = [];
   const box = new THREE.Box3();
   for (const c of m.columns) {
     const e = columnSpan(el, c);
@@ -311,7 +311,7 @@ function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolea
       b = P(bm.x2, bm.y2, z);
     box.expandByPoint(a).expandByPoint(b);
     const ls = (bm.loads ?? []).filter(lf.frame);
-    if (ls.length) frames.push({ a, b, ax: frameAxes(a, b, null), ls });
+    if (ls.length) frames.push({ a, b, ax: frameAxes(a, b, null), ls, beam: true });
   }
   const slabs = m.slabs.flatMap((sl) => {
     const z = levelZ(el, sl);
@@ -359,7 +359,8 @@ function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolea
     }
   };
 
-  for (const { a, b, ax, ls } of frames) {
+  for (const { a, b, ax, ls, beam } of frames) {
+    const tag = (l: FrameLoad, at: THREE.Vector3) => beam && beamTag?.(l, at, b.clone().sub(a));
     const Lm = a.distanceTo(b); // m
     const at = (t: number) => a.clone().lerp(b, t);
     const frac = (l: FrameLoad, d: number) => THREE.MathUtils.clamp(l.rel ? d : (d * S) / (Lm || 1), 0, 1);
@@ -368,7 +369,9 @@ function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolea
         moment = l.force === 'M';
       if (l.kind === 'point') {
         const tip = at(frac(l, l.d1));
-        arrow(tip, tip.clone().addScaledVector(d, -l.v1 * kPoint), moment);
+        const tl = tip.clone().addScaledVector(d, -l.v1 * kPoint);
+        arrow(tip, tl, moment);
+        tag(l, tl);
         continue;
       }
       const t1 = frac(l, l.d1),
@@ -382,6 +385,7 @@ function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolea
       tri(p1, p2, q2);
       tri(p1, q2, q1);
       seg(q1, q2);
+      tag(l, q1.clone().lerp(q2, 0.5));
       const n = Math.min(16, Math.max(2, Math.ceil(((t2 - t1) * Lm) / (H * 0.9)) + 1));
       for (let i = 0; i < n; i++) {
         const t = t1 + ((t2 - t1) * i) / (n - 1);

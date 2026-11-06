@@ -291,7 +291,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
         { label: 'Beam loads CSV', run: () => downloadCsv(designModel(st())!, reportRange(st())) },
         'sep',
         { label: 'Set stair loads…', disabled: !sel.length, title: 'Type the stair dead/live load on the selected beams (plan or 3D wireframe); it replaces the calculated value on the stretches the stair bears on', run: () => openDialog({ kind: 'stairSetLoads' }) },
-        { label: 'Push loads to model…', title: "Put this stair's dead and live beam loads on the model's beams, under patterns you pick", run: () => openDialog({ kind: 'stairPush' }) },
+        { label: 'Apply loads to app beams…', title: "Put this stair's dead and live beam loads on the app's beams, under patterns you pick. Send them to ETABS with ETABS… → Push.", run: () => openDialog({ kind: 'stairPush' }) },
       ],
     });
   return <MenuBar menus={menus} />;

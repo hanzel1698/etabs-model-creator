@@ -4,6 +4,7 @@ import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
 import type { Pt } from '../model/types';
 import { parseDxf, readInsUnits, unitScaleFromInsunits, type DxfData } from './dxf';
 import { toast, useApp } from '../model/store';
+import { BASE, rangeFor, rangeLevels } from '../stair/ranges';
 import { pdfPageCount, renderPdfPage, type RenderedPage } from './pdf';
 
 export interface Region {
@@ -236,11 +237,15 @@ export function withStories(regions: Region[], stories: string[], reg: Region): 
 }
 
 /**
- * Story whose drawing underlays `story`'s plan: the one below it while "Underlay below" is on, and always inside a stair
- * (a storey is designed from the plan of its bottom level, a typical range's From level). The lowest keeps its own.
+ * Story whose drawing underlays `story`'s plan: inside a stair, the open range's From level on every level of it (Base
+ * has no drawing, so its designed storey's own); else the one below it while "Underlay below" is on. The lowest keeps its own.
  */
 export function underlayStory(story: string): string {
   const a = useApp.getState();
+  const r = a.activeStair && a.model.stairs.find((x) => x.id === a.activeStair);
+  const rg = r && rangeFor(a.model, r, a.activeRange),
+    lv = rg && rangeLevels(a.model, rg);
+  if (rg && lv) return rg.from === BASE ? lv.story : rg.from;
   if (!a.activeStair && !a.underlayBelow) return story;
   const i = a.model.stories.findIndex((s) => s.name === story);
   return i > 0 ? a.model.stories[i - 1].name : story;

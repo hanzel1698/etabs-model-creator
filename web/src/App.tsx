@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useMemo, useRef } from 'react';
-import { useApp, usePreview, planeLevel, levelSteps, visibleModel, viewModel } from './model/store';
+import { useApp, usePreview, planeLevel, stairLevelSteps, visibleModel, viewModel } from './model/store';
 import { PlanView, fitAll } from './plan/PlanView';
 import { setTool, onCancel, onInput, finishPolygon, resetTool } from './plan/tools';
 import { LeftPanel } from './ui/LeftPanel';
@@ -189,7 +189,11 @@ function StoryStepper() {
   const withPlanes = useApp((s) => s.refPlanesInPlan);
   const below = useApp((s) => s.underlayBelow);
   const inStair = useApp((s) => !!s.activeStair);
-  const levels = useMemo(() => levelSteps(model, withPlanes), [model, withPlanes]);
+  const stair = useApp((s) => s.activeStair),
+    range = useApp((s) => s.activeRange),
+    full = useApp((s) => s.model);
+  // inside a stair: only the open range's designed storey, as in the side list
+  const levels = useMemo(() => stairLevelSteps({ model: full, activeStair: stair, activeRange: range }, model, withPlanes), [full, stair, range, model, withPlanes]);
   const i = levels.findIndex((l) => (plane ? l.plane === plane : !l.plane && l.story === active));
   const up = levels[i + 1],
     down = i > 0 ? levels[i - 1] : undefined;

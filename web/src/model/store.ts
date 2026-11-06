@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { asStair, columnOn, emptyModel, placeAt, storyElevations, type FrameLoad, type Model, type Pt, type ShellLoad, type StairModel } from './types';
+import { LEVEL_TOL, asStair, columnOn, emptyModel, placeAt, storyElevations, type FrameLoad, type Model, type Pt, type ShellLoad, type StairModel } from './types';
 import { stairContext } from '../stair/context';
 import { onLevel } from '../stair/stair';
 import { rangeFor, rangeLevels, rangesOf } from '../stair/ranges';
@@ -468,6 +468,15 @@ export function planModel(s: AppState): Model {
 }
 
 /** Plan levels to step through, bottom → top: each story level, and with `planes` each reference plane off a story level. */
+/** levelSteps of the open stair: only its range's designed storey, From level up to its top with the planes between. */
+export function stairLevelSteps(s: StairSel, m: Model, planes: boolean) {
+  const r = s.activeStair ? s.model.stairs.find((x) => x.id === s.activeStair) : undefined,
+    rg = r && rangeFor(s.model, r, s.activeRange),
+    lv = rg && rangeLevels(s.model, rg),
+    all = levelSteps(m, planes);
+  return lv ? all.filter((l) => l.z >= lv.z0 - LEVEL_TOL && l.z <= lv.z1 + LEVEL_TOL) : all;
+}
+
 export function levelSteps(m: Model, planes: boolean) {
   const el = storyElevations(m);
   const out: { name: string; z: number; story: string; plane?: string }[] = m.stories.map((s) => ({ name: s.name, z: el[s.name].top, story: s.name }));

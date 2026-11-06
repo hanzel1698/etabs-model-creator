@@ -42,6 +42,7 @@ export function stairContext(m: Model, r: StairRegion, clipBeams = false, rg?: T
       // the storey's bottom level too: a landing there is where its first flight starts (drawn on the From level's plan)
       landings: r.landings.filter((l) => l.z >= lv.z0 - LEVEL_TOL && l.z <= lv.z1 + LEVEL_TOL),
       spans: r.spans.filter((sp) => sp.story === lv.story),
+      stair: { ...r.params, ...r.rangeT?.[rg!.id] },
     };
   }
   const R = regionRect(r);

@@ -210,7 +210,18 @@ export function doSnap(screen: Pt): Snap {
   });
   // a real point snap wins; otherwise line up with points hovered earlier
   if (t === 'region' || (s.kind !== 'none' && s.kind !== 'near' && s.kind !== 'ortho')) return s;
-  return trackSnap(w, P().tracks, tol) ?? s;
+  const tr = trackSnap(w, P().tracks, tol);
+  // on a line (beam, grid, edge) with one guide: take where the guide crosses that line, not the raw cursor
+  if (tr && s.kind === 'near' && s.seg && tr.guides!.length === 1) {
+    const g = tr.guides![0],
+      big = 1e7,
+      vertical = tr.p.x === g.x && tr.p.y === w.y;
+    const x = vertical
+      ? segIntersect(s.seg[0], s.seg[1], { x: g.x, y: w.y - big }, { x: g.x, y: w.y + big })
+      : segIntersect(s.seg[0], s.seg[1], { x: w.x - big, y: g.y }, { x: w.x + big, y: g.y });
+    return x && dist(x.p, w) < 2 * tol ? { p: x.p, kind: 'track', guides: tr.guides } : s;
+  }
+  return tr ?? s;
 }
 
 const MAX_TRACKS = 4;

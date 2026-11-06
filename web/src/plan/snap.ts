@@ -9,6 +9,7 @@ export interface Snap {
   p: Pt;
   kind: SnapKind;
   guides?: Pt[]; // tracked points the snapped point lines up with (horizontal / vertical)
+  seg?: [Pt, Pt]; // for 'near': the line the point lies on
 }
 
 /**
@@ -149,8 +150,14 @@ export function snapPoint(m: Model, w: Pt, tol: number, o: SnapOpts): Snap {
   }
   if (best) return best;
   // intersections of beam/grid segments with each other near the cursor
-  for (const [a, b] of segs) tryPt(projectOnSeg(w, a, b).p, 'near');
-  if (best) return best;
+  let near1: Snap | null = null;
+  if (allow('near'))
+    for (const [a, b] of segs) {
+      const p = projectOnSeg(w, a, b).p,
+        d = dist(p, w);
+      if (d < bestD) [bestD, near1] = [d, { p, kind: 'near', seg: [a, b] }];
+    }
+  if (near1) return near1;
 
   if (o.ortho && o.from) {
     const d = sub(w, o.from);

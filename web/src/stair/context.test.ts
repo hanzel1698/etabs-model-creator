@@ -72,4 +72,9 @@ describe('stairContext for a typical range', () => {
     expect(c.stories.map((s) => s.name)).toEqual(['Story1', 'Story2']);
     expect(c.landings.map((l) => l.id)).toEqual(['l1', 'l2']);
   });
+  it('takes default waist / landing thickness from its own range, else the stair defaults', () => {
+    const r2 = { ...rr, rangeT: { a: { t: 175, tl: 160 } } };
+    expect(stairContext(mm, r2, false, { id: 'a', from: 'Story1', to: 'Story3' }).stair).toMatchObject({ t: 175, tl: 160 });
+    expect(stairContext(mm, r2, false, { id: 'b', from: 'Base', to: 'Story1' }).stair).toMatchObject({ t: 200, tl: 200 });
+  });
 });

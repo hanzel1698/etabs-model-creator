@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useApp } from '../model/store';
+import { useApp, viewModel } from '../model/store';
 import { ACTIVE_PATTERN, ALL_PATTERNS, LOAD_KINDS, defaultLoadFilter, loadPeaks, type LoadKind } from '../model/loadFilter';
 import { activePattern } from './LoadDialogs';
 
@@ -18,7 +18,7 @@ function Bound({ value, onSet }: { value: number; onSet: (v: number) => void }) 
 /** Filter for the loads the 3D wireframe draws: pattern, kind and a min–max range on each load's peak value. */
 export function LoadFilterSection() {
   const on = useApp((s) => s.loads3d);
-  const model = useApp((s) => s.model);
+  const model = useApp(viewModel); // inside a stair: with its stair loads, as the 3D view draws them
   const active = useApp(activePattern);
   const f = useApp((s) => s.loadFilter);
   const set = useApp((s) => s.setLoadFilter);

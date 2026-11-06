@@ -1,8 +1,8 @@
-import { useApp, viewModel, planeLevel, levelSteps } from '../model/store';
+import { useApp, viewModel, planeLevel, stairLevelSteps } from '../model/store';
 import { fmt } from '../model/geom';
 import { setTool } from '../plan/tools';
 import { deleteStair, renameStair, setTypicals } from '../stair/regions';
-import { levelNames, rangeLevels, rangesOf, validateRanges } from '../stair/ranges';
+import { BASE, levelNames, rangeFor, rangeLevels, rangesOf, validateRanges } from '../stair/ranges';
 import { uid, type StairRegion } from '../model/types';
 
 /** Left panel list of stair boxes: draw one, open one to design it, rename, delete. */
@@ -39,8 +39,13 @@ export function StairSide() {
   const labels = useApp((s) => s.show.sectionLabels);
   const withPlanes = useApp((s) => s.refPlanesInPlan);
   const plane = useApp((s) => planeLevel(s) && s.activePlane);
+  const model = useApp((s) => s.model);
+  const activeRange = useApp((s) => s.activeRange);
   if (!r) return null;
-  const levels = levelSteps(m, withPlanes).reverse();
+  // the Base row only when the range starts there
+  const rg = rangeFor(model, r, activeRange),
+    lv = rg && rangeLevels(model, rg);
+  const levels = stairLevelSteps({ model, activeStair: r.id, activeRange }, m, withPlanes).reverse();
   return (
     <div className="side">
       <div className="section">
@@ -70,9 +75,11 @@ export function StairSide() {
               <span className="elev">{fmt(l.z)}</span>
             </div>
           ))}
-          <div className="story muted small">
-            Base <span className="elev">{fmt(m.baseElevation)}</span>
-          </div>
+          {(!lv || rg.from === BASE) && (
+            <div className="story muted small">
+              Base <span className="elev">{fmt(m.baseElevation)}</span>
+            </div>
+          )}
         </div>
       </div>
       <div className="section">

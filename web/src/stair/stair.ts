@@ -418,10 +418,10 @@ function finish(m: Model, sp: Span, G: NonNullable<ReturnType<typeof spanGeom>>,
   return { ...G, tr, D, LL, U, t, des: design(m, U, t, L) };
 }
 
-/** One slab thickness throughout the stair: every flight waist, every landing and both defaults set to `t`. */
-export function withWaist(m: Model, t: number): Model {
-  const set = <T extends { t: number }>(xs: T[]) => xs.map((x) => ({ ...x, t }));
-  return { ...m, flights: set(m.flights), landings: set(m.landings), stair: { ...m.stair, t, tl: t } };
+/** Every flight waist and the default waist set to `t`; every landing and the default landing thickness to `tl` (= t unless given). */
+export function withWaist(m: Model, t: number, tl = t): Model {
+  const set = <T extends { t: number }>(xs: T[], t: number) => xs.map((x) => ({ ...x, t }));
+  return { ...m, flights: set(m.flights, t), landings: set(m.landings, tl), stair: { ...m.stair, t, tl } };
 }
 
 /** Least uniform slab thickness (10 mm steps, from 100) that passes every check on every span, with its own self weight; `thumb` = L/20 of the longest span, for reference. */

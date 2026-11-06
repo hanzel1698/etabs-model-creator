@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../model/store';
-import { useUnderlay, regionFor } from '../underlay/store';
+import { useUnderlay, regionFor, underlayStory } from '../underlay/store';
 import { lineDy } from '../underlay/dxf';
 import { viewport } from './viewport';
 
@@ -14,7 +14,7 @@ export function UnderlayCanvas({ w, h }: { w: number; h: number }) {
   const u = useUnderlay();
   const story = useApp((s) => s.activeStory);
   const show = useApp((s) => s.show.underlay);
-  const stair = useApp((s) => !!s.activeStair || s.underlayBelow); // the underlay shifts a story down
+  const uStory = useApp((s) => underlayStory(s.activeStory)); // redraw when the drawing shown changes (stair range, Underlay below)
 
   const paths = useMemo(() => (u.dxf ? u.dxf.layers.map((l) => ({ name: l.name, visible: l.visible, p: new Path2D(l.d) })) : []), [u.dxf]);
 
@@ -75,7 +75,7 @@ export function UnderlayCanvas({ w, h }: { w: number; h: number }) {
     };
     draw();
     return viewport.subscribe(draw);
-  }, [w, h, u, paths, story, show, stair]);
+  }, [w, h, u, paths, story, show, uStory]);
 
   return <canvas ref={ref} className="underlay-canvas" style={{ width: w, height: h }} />;
 }

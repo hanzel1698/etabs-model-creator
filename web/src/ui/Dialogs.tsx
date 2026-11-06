@@ -821,7 +821,7 @@ function EtabsDialog() {
       const p = toPayload(sent, push);
       add(`→ Pushing ${p.frames.length} frames, ${p.areas.length} slabs, ${p.deleteGuids.length} deletions${p.loads ? `, ${p.patterns.length} load patterns, loads` : ''}…`);
       const r = await bridge.push(p);
-      useApp.getState().commit((m) => ({ ...m, pushedIds: r.pushedGuids, ...(p.loads ? { pushedJointKeys: jointKeys(sent) } : {}) }));
+      useApp.getState().commit((m) => ({ ...m, pushedIds: r.pushedGuids, ...(p.loads ? { pushedJointKeys: jointKeys(sent) } : {}) }), { main: true }); // bookkeeping, must land even inside a stair
       const ld = r.loads ? `; loads rewritten on ${r.loads.frames} frames, ${r.loads.areas} slabs, ${r.loads.joints} joints (${r.loads.unchanged} unchanged)` : '';
       add(`✔ added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}, deleted ${r.deleted}, failed ${r.failed}` + (r.restrained !== undefined ? `, ${r.restrained} base joints ${p.supports}` : '') + ld, ...r.log);
     });

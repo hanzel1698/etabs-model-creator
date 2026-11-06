@@ -42,7 +42,7 @@ export function deleteStair(id: string) {
   const st = useApp.getState();
   const r = st.model.stairs.find((s) => s.id === id);
   if (!r || !confirm(`Delete ${r.name} and everything drawn in it?`)) return;
-  const loads = hasStairLoads(st.model, id) && confirm(`${r.name} pushed loads onto the model's beams. Remove those loads too? (Cancel keeps them as ordinary loads.)`);
+  const loads = hasStairLoads(st.model, id) && confirm(`${r.name} applied loads onto the app's beams. Remove those loads too? (Cancel keeps them as ordinary loads.)`);
   if (st.activeStair === id) st.exitStair();
   st.commit((m) => {
     const out = { ...m, stairs: m.stairs.filter((s) => s.id !== id) };
@@ -61,7 +61,8 @@ export function commitStair(fn: (m: StairModel) => StairModel) {
   useApp.getState().commit((m) => {
     const r = m.stairs.find((x) => x.id === id);
     if (!r) return m;
-    const prev = stairContext(m, r, true, rangeFor(m, r, useApp.getState().activeRange));
+    const rg = rangeFor(m, r, useApp.getState().activeRange);
+    const prev = stairContext(m, r, true, rg);
     let next = fn(prev);
     if (next.flights === prev.flights && next.landings === prev.landings && next.spans === prev.spans && next.stair === prev.stair) return m;
     // the context shows one range's storey: put the edited parts back among the stair's other ones
@@ -71,7 +72,10 @@ export function commitStair(fn: (m: StairModel) => StairModel) {
     if (next.flights !== r.flights) next = { ...next, flights: renumber(next.flights, 'F', (f) => [f.z0, f.x, f.y]) };
     const n = next;
     next = { ...n, spans: renumber(n.spans, 'S', (sp) => spanKey(n, sp)) };
-    const out = { ...r, flights: next.flights, landings: next.landings, spans: next.spans, params: next.stair };
+    // default thicknesses belong to the range; params.t / tl stay the fallback, so other ranges don't follow this one
+    const rangeT = rg && next.stair !== prev.stair ? { ...r.rangeT, [rg.id]: { t: next.stair.t, tl: next.stair.tl } } : r.rangeT;
+    const params = rg ? { ...next.stair, t: r.params.t, tl: r.params.tl } : next.stair;
+    const out = { ...r, flights: next.flights, landings: next.landings, spans: next.spans, params, ...(rangeT ? { rangeT } : {}) };
     return { ...m, stairs: m.stairs.map((x) => (x.id === id ? out : x)) };
   });
 }

@@ -134,6 +134,8 @@ export interface StairRegion {
   llPattern?: string;
   /** typical story ranges designed separately; empty or missing = all stories same (see stair/ranges.ts) */
   typicals?: TypicalRange[];
+  /** default waist / landing thickness per typical range id; a range without one uses params.t / params.tl */
+  rangeT?: Record<string, { t: number; tl: number }>;
 }
 
 /** Stair levels `from` → `to` (story names, or 'Base') built alike; designed on its first storey and repeated up to `to`. */

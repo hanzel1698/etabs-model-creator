@@ -273,7 +273,7 @@ const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   jointLoad: 'Joint load',
   stairParams: 'Stair design parameters',
   stairResults: 'Stair results',
-  stairPush: 'Push stair loads',
+  stairPush: 'Apply stair loads to app beams',
   stairSetLoads: 'Set stair loads',
 };
 const SHOW_NAMES: Record<keyof ShowFlags, string> = {

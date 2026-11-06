@@ -55,8 +55,8 @@ export const PARAMS: Field<StairParams>[] = [
   ['T', 'Default tread (mm)'],
   ['R', 'Target riser (mm)'],
   ['width', 'Default flight width (mm)'],
-  ['t', 'Default waist (mm)'],
-  ['tl', 'Default landing t (mm) — kept = waist'],
+  ['t', 'Default waist (mm) — this typical range'],
+  ['tl', 'Default landing t (mm) — this typical range'],
 ];
 
 function Form<T extends object>({ obj, fields, onSet }: { obj: T; fields: Field<T>[]; onSet: (k: keyof T, v: string | number) => void }) {
@@ -150,9 +150,9 @@ export function StairParamsDialog() {
   if (!p) return null;
   return (
     <Modal title="Stair design parameters">
-      <Form obj={p} fields={PARAMS} onSet={(k, v) => commitStair((m) => ({ ...m, stair: { ...m.stair, ...(k === 't' || k === 'tl' ? { t: +v, tl: +v } : { [k]: +v }) } }))} />
-      <button onClick={() => commitStair((m) => withWaist(m, m.stair.t))} title="Set every flight waist and landing thickness in the model to the default waist">
-        Apply {p.t} mm to all flights &amp; landings
+      <Form obj={p} fields={PARAMS} onSet={(k, v) => commitStair((m) => ({ ...m, stair: { ...m.stair, [k]: +v } }))} />
+      <button onClick={() => commitStair((m) => withWaist(m, m.stair.t, m.stair.tl))} title="Set the waist of every flight and the thickness of every landing in this typical range to the defaults">
+        Apply waist {p.t} mm to flights, {p.tl} mm to landings (this range)
       </button>
     </Modal>
   );
@@ -223,7 +223,7 @@ function suggestHtml(m: Model, act: boolean) {
   const s = suggestWaist(m);
   if (!s) return '';
   const same = [...m.flights, ...m.landings].every((x) => x.t === s.t);
-  return `<div class="info">Suggested slab thickness: <b>${s.t} mm</b> — the least that passes flexure, shear and deflection on every span (thumb rule L/20 of the longest span = ${s.thumb} mm). ${act && !same ? `<button data-t="${s.t}">Use ${s.t} mm for all flights &amp; landings</button>` : ''}</div>`;
+  return `<div class="info">Suggested slab thickness: <b>${s.t} mm</b> — the least that passes flexure, shear and deflection on every span (thumb rule L/20 of the longest span = ${s.thumb} mm). ${act && !same ? `<button data-t="${s.t}">Use ${s.t} mm for all flights &amp; landings of this range</button>` : ''}</div>`;
 }
 
 /** In-app only: deflection failures up front. */
@@ -539,7 +539,7 @@ function overridesOf(rows: PushRow[], v: Record<string, { dl: number; ll: number
   return out;
 }
 
-/** Stair › Push loads to model: one editable row per beam stretch, then one commit into the main model. */
+/** Stair › Apply loads to app beams: one editable row per beam stretch, then one commit into the main model. */
 export function StairPushDialog() {
   const m = useApp(designModel);
   const region = useApp(openRegion);
@@ -562,13 +562,13 @@ export function StairPushDialog() {
     const vals = Object.fromEntries(rows.map((r) => [r.key, val(r)]));
     const out = rep.rows.map((r) => ({ ...r, ...vals[r.key] }));
     useApp.getState().commit((mm) => applyStairLoads({ ...mm, stairs: mm.stairs.map((x) => (x.id === region.id ? { ...x, overrides: overridesOf(rows, vals), dlPattern: dlp, llPattern: llp } : x)) }, src, out, dlp, llp), { main: true });
-    log('Stair', `${region.name}${rg ? ` ${rg.from} → ${rg.to}` : ''}: pushed ${out.length} stair load stretch(es) to ${new Set(out.map((r) => r.beam.id)).size} beam(s), DL on ${dlp}, LL on ${llp}${rep.misses.length ? `; no matching beam for ${rep.misses.join(', ')}` : ''}`);
-    toast(`${region.name}: loads pushed to the model's beams.`);
+    log('Stair', `${region.name}${rg ? ` ${rg.from} → ${rg.to}` : ''}: applied ${out.length} stair load stretch(es) to ${new Set(out.map((r) => r.beam.id)).size} beam(s), DL on ${dlp}, LL on ${llp}${rep.misses.length ? `; no matching beam for ${rep.misses.join(', ')}` : ''}`);
+    toast(`${region.name}: loads added to the app's beams. Send them to ETABS with ETABS… → Push (Loads ticked).`);
     closeDialog();
   };
   const remove = () => {
     useApp.getState().commit((mm) => applyStairLoads(mm, src, [], dlp, llp), { main: true });
-    log('Stair', `${region.name}${rg ? ` ${rg.from} → ${rg.to}` : ''}: removed its pushed loads from the model`);
+    log('Stair', `${region.name}${rg ? ` ${rg.from} → ${rg.to}` : ''}: removed its applied loads from the app beams`);
     closeDialog();
   };
   const num = (r: PushRow, k: 'dl' | 'll') => {
@@ -593,16 +593,16 @@ export function StairPushDialog() {
   return (
     <Modal
       wide
-      title={`Push ${region.name}${rg ? ` (${rg.from} → ${rg.to})` : ''} loads to the model`}
+      title={`Apply ${region.name}${rg ? ` (${rg.from} → ${rg.to})` : ''} loads to the app beams (not ETABS)`}
       footer={
         <>
-          {pushed && <button onClick={remove} title="Take this stair's pushed loads off the model's beams">Remove pushed loads</button>}
+          {pushed && <button onClick={remove} title="Take this stair's applied loads off the app's beams">Remove applied loads</button>}
           <button onClick={closeDialog}>Cancel</button>
-          <button className="primary" disabled={!rows.length || !dlp || !llp} onClick={push}>{pushed ? 'Push again (replaces)' : 'Push'}{storeys > 1 ? ` × ${storeys} storeys` : ''}</button>
+          <button className="primary" disabled={!rows.length || !dlp || !llp} onClick={push}>{pushed ? 'Apply again (replaces)' : 'Apply'}{storeys > 1 ? ` × ${storeys} storeys` : ''}</button>
         </>
       }
     >
-      <p className="hint">Unfactored stair reactions as uniform gravity loads (kN/m) on the stretch of each beam the span bears on. Edited values are kept for this stair; pushing again replaces this range's earlier loads.{storeys > 1 ? ` The rows below are the design storey; each is copied onto the beam at the same place on every storey up to ${rg!.to}.` : ''}</p>
+      <p className="hint">Unfactored stair reactions as uniform gravity loads (kN/m) on the stretch of each beam the span bears on. Edited values are kept for this stair; applying again replaces this range's earlier loads. These go on the app's beams only; send them to ETABS with ETABS… → Push.{storeys > 1 ? ` The rows below are the design storey; each is copied onto the beam at the same place on every storey up to ${rg!.to}.` : ''}</p>
       {rep.misses.length > 0 && <p className="hint" style={{ color: 'var(--danger)' }}>No matching beam (skipped): {rep.misses.join(', ')}</p>}
       {pick(dlp, setDlp, 'Stair dead →')}
       {pick(llp, setLlp, 'Stair live →')}
@@ -674,7 +674,7 @@ export function StairSetLoadsDialog() {
         </>
       }
     >
-      <p className="hint">{rows.length} calculated stretch(es) on {beams.length - skipped.length} beam(s). Each keeps its extent; only the value changes. Blank keeps the calculated value. Use Push loads to model to send them.</p>
+      <p className="hint">{rows.length} calculated stretch(es) on {beams.length - skipped.length} beam(s). Each keeps its extent; only the value changes. Blank keeps the calculated value. Use Apply loads to app beams to put them on the beams.</p>
       {skipped.length > 0 && <p className="hint">Skipped, no stair span bears on them: {skipped.map((b) => beamName(m, b)).join(', ')}</p>}
       <label className="row">
         <span>Stair dead (kN/m)</span>
