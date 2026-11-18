@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp, sectionColor, colorKey, visibleModel, toast } from '../model/store';
-import { useViewPatterns } from '../ui/LoadDialogs';
+import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
+import { shortFrameLoad } from '../model/loads';
 import { ColorLegend } from '../plan/layers';
 import { fmt } from '../model/geom';
-import { elevationAt, type Elevation } from './elevation';
+import { elevationAt, elevationsFromBeams, type Elevation } from './elevation';
 import { addBeams, addColumns } from '../model/ops';
 import { asStair, placeAt, storyElevations, uid, type Flight, type FlightDir, type Grid, type Landing, type StairModel } from '../model/types';
 import { commitBeams } from '../plan/tools';
@@ -85,12 +86,18 @@ export function ElevView() {
   const model = useApp((s) => visibleModel(s));
   const grids = model.grids; // inside a stair: only the grids crossing its box, cut to it
   const gridId = useApp((s) => s.elevGrid);
+  const customs = useApp((s) => s.model.elevations) ?? [];
   const selection = useApp((s) => s.selection);
   const colorBy = useApp((s) => s.colorBy);
   const patterns = useViewPatterns();
+  const showLoads = useApp((s) => s.show.loads);
+  const pattern = useApp(activePattern);
+  // as in the plan: View by load values labels its pattern chips, else the active pattern
+  const loadPats = colorBy === 'value' ? patterns : [pattern];
   const [tol, setTol] = useState(300);
   const [names, setNames] = useState(true);
   const [wire, setWire] = useState(true);
+  const [ffDims, setFfDims] = useState(true); // floor-to-floor height dimensions beside the levels
   const host = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [view, setView] = useState({ k: 0.05, tx: 0, ty: 0 }); // screen = (k·s + tx, −k·z + ty)
@@ -105,7 +112,20 @@ export function ElevView() {
   const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null); // px in the view
   const [start, setStart] = useState<{ s: number; z: number; z0: number; story: string; dz: number } | null>(null); // beam chain's last point
 
-  const grid = grids.find((g) => g.id === gridId) ?? grids[0];
+  const custom = customs.find((g) => g.id === gridId);
+  const grid = custom ?? grids.find((g) => g.id === gridId) ?? grids[0];
+  const selBeams = useApp((s) => s.model.beams).filter((b) => selection.includes(b.id));
+  const fromBeams = () => {
+    const made = elevationsFromBeams(selBeams, useApp.getState().model.grids, customs.map((g) => g.label));
+    if (!made.length) return;
+    useApp.getState().commit((m) => ({ ...m, elevations: [...(m.elevations ?? []), ...made] }), { main: true }); // a view, not building data
+    useApp.getState().setElevGrid(made[0].id);
+    toast(`Elevation ${made.map((g) => g.label).join(', ')} made along the selected beams.`);
+  };
+  const removeCustom = () => {
+    useApp.getState().commit((m) => ({ ...m, elevations: (m.elevations ?? []).filter((g) => g.id !== custom!.id) }), { main: true });
+    useApp.getState().setElevGrid('');
+  };
   const e = useMemo(() => (grid ? elevationAt(model, grid, tol) : null), [model, grid, tol]);
   const sel = useMemo(() => new Set(selection), [selection]);
 
@@ -127,7 +147,7 @@ export function ElevView() {
     if (!x) return;
     // room on the left for level names, on the right for reference plane names and on top for grid bubbles
     const left = PAD + 110,
-      right = PAD + (e?.refPlanes.length ? 100 : 0),
+      right = PAD + (e?.refPlanes.length ? 100 : 0) + (ffDims ? 40 : 0),
       top = PAD + 50;
     const k = Math.min((size.w - left - right) / Math.max(x.s1 - x.s0, 1), (size.h - top - PAD) / Math.max(x.z1 - x.z0, 1));
     setView({ k, tx: left + ((size.w - left - right) - k * (x.s1 - x.s0)) / 2 - k * x.s0, ty: top + ((size.h - top - PAD) + k * (x.z1 - x.z0)) / 2 + k * x.z0 });
@@ -206,6 +226,8 @@ export function ElevView() {
   const sl = x ? X(x.s0) - 30 : 0,
     sr = x ? X(x.s1) + 30 : 0;
   const bubbleY = x ? Y(x.z1) - 34 : 0;
+  const dimX = sr + (e?.refPlanes.length ? 110 : 24); // clear of the reference plane names
+  const lvls = e ? [...e.levels].sort((a, b) => a.z - b.z) : [];
 
   return (
     <div
@@ -260,7 +282,7 @@ export function ElevView() {
       }}
     >
       <div className="bar">
-        <label title="Grid line to look along">
+        <label title="Grid line or custom elevation to look along">
           Grid{' '}
           <select value={grid?.id ?? ''} onChange={(ev) => useApp.getState().setElevGrid(ev.target.value)}>
             {grids.map((g) => (
@@ -268,8 +290,25 @@ export function ElevView() {
                 {g.label}
               </option>
             ))}
+            {customs.length > 0 && (
+              <optgroup label="Custom elevations">
+                {customs.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.label}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </label>
+        <button disabled={!selBeams.length} title="New elevation along each line of selected beams (collinear beams share one)" onClick={fromBeams}>
+          + From selected beams
+        </button>
+        {custom && (
+          <button className="danger" title={`Delete custom elevation ${custom.label}`} onClick={removeCustom}>
+            Delete {custom.label}
+          </button>
+        )}
         <label title="Show members whose centreline is within this distance of the grid line">
           Within ±{' '}
           <input type="number" min={0} step={50} value={tol} style={{ width: 64 }} onChange={(ev) => setTol(Math.max(0, +ev.target.value || 0))} /> mm
@@ -277,6 +316,9 @@ export function ElevView() {
         <button onClick={fit}>Fit</button>
         <button className={names ? 'on' : ''} title="Show section names" onClick={() => setNames(!names)}>
           Names
+        </button>
+        <button className={ffDims ? 'on' : ''} title="Show floor-to-floor heights as dimension lines" onClick={() => setFfDims(!ffDims)}>
+          Floor heights
         </button>
         <button className={wire ? '' : 'on'} title="Show members with their section sizes instead of centrelines" onClick={() => setWire(!wire)}>
           3D view
@@ -349,6 +391,22 @@ export function ElevView() {
                 </text>
               </g>
             ))}
+            {ffDims &&
+              lvls.slice(1).map((l, i) => {
+                const y0 = Y(lvls[i].z),
+                  y1 = Y(l.z);
+                return (
+                  <g key={'ff' + l.name} stroke="var(--dim)">
+                    <line x1={dimX} x2={dimX} y1={y0} y2={y1} />
+                    {[y0, y1].map((y, j) => (
+                      <line key={j} x1={dimX - 4} x2={dimX + 4} y1={y + 4} y2={y - 4} />
+                    ))}
+                    <text transform={`translate(${dimX + 4} ${(y0 + y1) / 2}) rotate(-90)`} dy={10} textAnchor="middle" fill="var(--dim)" stroke="none" fontSize={11}>
+                      {fmt(l.z - lvls[i].z)}
+                    </text>
+                  </g>
+                );
+              })}
             {e.grids.slice(1).map((g, i) => {
               const a = e.grids[i].s,
                 y = Y(x.z0) + 34;
@@ -440,6 +498,27 @@ export function ElevView() {
                   {c.section}
                 </text>
               ))}
+            </g>
+          )}
+          {(showLoads || colorBy === 'value') && (
+            <g className="nosel" fontSize={11} fill="var(--load)" pointerEvents="none">
+              {[...e.beams, ...e.columns, ...e.slabs].map((x, i) => {
+                const ls = ((byId.get(x.id) as { loads?: { pattern: string; value: number }[] } | undefined)?.loads ?? []).filter((l) => loadPats.includes(l.pattern));
+                if (!ls.length) return null;
+                // slabs carry shell loads (kN/m²), beams and columns frame loads
+                const txt = 't' in x ? ls.map((l) => Math.round(l.value * 1000) / 1000).join(' + ') + ' kN/m²' : ls.map((l) => shortFrameLoad(l as never)).join(' + ');
+                if ('z0' in x)
+                  return (
+                    <text key={x.id} transform={`translate(${X(x.s0) - 4} ${Y((x.z0 + x.z1) / 2)}) rotate(-90)`} textAnchor="middle" className="halo">
+                      {txt}
+                    </text>
+                  );
+                return (
+                  <text key={x.id + i} x={X((x.s0 + x.s1) / 2)} y={Y(x.z)} dy={'t' in x ? -16 : 14} textAnchor="middle" className="halo">
+                    {txt}
+                  </text>
+                );
+              })}
             </g>
           )}
           {snap && (

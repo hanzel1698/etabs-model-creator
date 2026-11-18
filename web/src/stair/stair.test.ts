@@ -71,6 +71,12 @@ describe('templates', () => {
     const m = autoSpans({ ...t, beams: [...t.beams, { ...far, id: 'mid', x1: x, x2: x }] });
     expect(m.spans.map((s) => Math.max(s.x1, s.x2))).toEqual([x, x]);
   });
+  it('a landing on a lower level at the same plan spot does not set where an auto span ends', () => {
+    const t = autoSpans(template(emptyModel(), 'dog', 'Story1', 'B300x500', 'C400x400'));
+    const l = t.landings[0],
+      m = autoSpans({ ...t, landings: [{ ...l, id: 'low', name: 'Llow', z: l.z - 3000 }, ...t.landings] });
+    expect(m.spans.map((s) => [s.x1, s.y1, s.x2, s.y2])).toEqual(t.spans.map((s) => [s.x1, s.y1, s.x2, s.y2]));
+  });
   it('a span square to a flight only grazes its side: the flight is not part of it', () => {
     const t = template(emptyModel(), 'L', 'Story1', 'B300x500', 'C400x400');
     const f1 = t.flights[0]; // goes +x

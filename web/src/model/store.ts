@@ -38,6 +38,10 @@ export interface ColAlign {
 
 export interface ShowFlags {
   sectionLabels: boolean;
+  /** which element kinds get section labels; only matter while `sectionLabels` is on */
+  labelColumns: boolean;
+  labelBeams: boolean;
+  labelSlabs: boolean;
   grids: boolean;
   gridLabels: boolean;
   gridDims: boolean;
@@ -191,7 +195,7 @@ function readNum(key: string, fallback: number) {
 }
 
 const VIEW_DEFAULTS = {
-  show: { sectionLabels: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false } as ShowFlags,
+  show: { sectionLabels: true, labelColumns: true, labelBeams: true, labelSlabs: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false } as ShowFlags,
   hidden: [] as string[],
   viewRotation: 0,
   textScale: 1,

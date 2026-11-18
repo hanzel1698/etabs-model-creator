@@ -175,6 +175,52 @@ export function importElements(m: Model, r: Pick<ImportResult, 'frames' | 'areas
   return { model, columns: columns.length, beams: beams.length, slabs: slabs.length, skipped };
 }
 
+/** Give columns, beams and slabs the app already has (matched by ETABS GUID) the section ETABS assigns them. */
+export function importAssignments(m: Model, r: Pick<ImportResult, 'frames' | 'areas'>) {
+  const sec = new Map([...(r.frames ?? []), ...(r.areas ?? [])].map((o) => [o.guid, o.section]));
+  let updated = 0;
+  const upd = <T extends { id: string; section: string }>(xs: T[]) =>
+    xs.map((x) => {
+      const s = sec.get(x.id);
+      if (s === undefined || s === x.section) return x;
+      updated++;
+      return { ...x, section: s };
+    });
+  const model: Model = { ...m, columns: upd(m.columns), beams: upd(m.beams), slabs: upd(m.slabs) };
+  return { model, updated };
+}
+
+// order-insensitive, and blind to the float noise of the kN-mm round trip
+const loadSig = (ls: object[]) =>
+  ls
+    .map((l) => JSON.stringify(Object.entries(l).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, typeof v === 'number' ? +v.toPrecision(9) : v])))
+    .sort()
+    .join();
+
+/**
+ * Give columns, beams and slabs the app already has (matched by ETABS GUID) the loads ETABS has on them. Only the
+ * patterns the model has are touched (the ones a push with loads rewrites): in those, ETABS' loads replace the app's.
+ */
+export function importLoads(m: Model, r: Pick<ImportResult, 'frames' | 'areas'>) {
+  const pats = new Set(m.loadPatterns.map((p) => p.name));
+  let updated = 0;
+  const upd = <L extends { pattern: string }, I extends { pattern: string }, T extends { id: string; loads?: L[] }>(xs: T[], src: { guid: string; loads: I[] }[] | undefined, conv: (l: I) => L | null) => {
+    const by = new Map((src ?? []).map((o) => [o.guid, o.loads]));
+    return xs.map((x) => {
+      const got = by.get(x.id);
+      if (!got) return x;
+      const mine = x.loads ?? [];
+      const loads = [...mine.filter((l) => !pats.has(l.pattern)), ...got.filter((l) => pats.has(l.pattern)).map(conv).filter((l): l is L => !!l)];
+      if (loadSig(loads) === loadSig(mine)) return x;
+      updated++;
+      const { loads: _, ...rest } = x;
+      return (loads.length ? { ...x, loads } : rest) as T;
+    });
+  };
+  const model: Model = { ...m, columns: upd(m.columns, r.frames, frameLoadIn), beams: upd(m.beams, r.frames, frameLoadIn), slabs: upd(m.slabs, r.areas, areaLoadIn) };
+  return { model, updated };
+}
+
 /** `story|x|y` (mm, rounded; `|dz` added for a joint off the story level) of every joint that carries a joint load. */
 export const jointKeys = (m: Model) => [...new Set(m.jointLoads.map((j) => `${j.story}|${Math.round(j.x)}|${Math.round(j.y)}` + (j.dz ? `|${Math.round(j.dz)}` : '')))];
 

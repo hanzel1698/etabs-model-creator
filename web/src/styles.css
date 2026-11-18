@@ -390,6 +390,18 @@ label {
   background: rgba(74, 163, 255, 0.35);
   border-color: rgba(74, 163, 255, 0.7);
 }
+.beam-dirs.wrap {
+  flex-wrap: wrap;
+  padding-left: 18px;
+}
+.beam-dirs.wrap > label {
+  flex-basis: 100%;
+  margin-left: -18px;
+}
+.beam-dirs .dir.wide {
+  width: auto;
+  padding: 0 5px;
+}
 .beam-dirs .dir:disabled {
   opacity: 0.35;
 }

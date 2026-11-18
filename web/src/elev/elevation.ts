@@ -1,4 +1,4 @@
-import { asStair, columnSpan, levelZ, storyElevations, type Grid, type Model, type Pt } from '../model/types';
+import { asStair, columnSpan, levelZ, storyElevations, uid, type Beam, type Grid, type Model, type Pt } from '../model/types';
 import { frame as flightFrame, landingRect, profile } from '../stair/stair';
 import { cross, dot, len, sub } from '../model/geom';
 import { columnOutline } from '../plan/snap';
@@ -186,4 +186,45 @@ function mergeSpans(sp: [number, number][]): [number, number][] {
     else out.push([a, b]);
   }
   return out;
+}
+
+/**
+ * Custom elevation lines along beams: collinear beams (any story) share one line spanning them all and every
+ * grid it crosses (so the crossing grids get bubbles). Named E1, E2… after the highest `E<n>` in `taken`.
+ */
+export function elevationsFromBeams(beams: Beam[], grids: Grid[], taken: string[]): Grid[] {
+  const lines: { o: Pt; u: Pt; s0: number; s1: number }[] = [];
+  for (const b of beams) {
+    const L = Math.hypot(b.x2 - b.x1, b.y2 - b.y1);
+    if (L < 1) continue;
+    let u: Pt = { x: (b.x2 - b.x1) / L, y: (b.y2 - b.y1) / L };
+    if (u.x < -1e-9 || (Math.abs(u.x) <= 1e-9 && u.y < 0)) u = { x: -u.x, y: -u.y }; // left → right, bottom → top
+    const ends = [{ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }];
+    const ln = lines.find((l) => Math.abs(cross(l.u, u)) < 1e-3 && ends.every((p) => Math.abs(cross(l.u, sub(p, l.o))) < 10));
+    const ss = ln ? ends.map((p) => dot(sub(p, ln.o), ln.u)) : [];
+    if (ln) (ln.s0 = Math.min(ln.s0, ...ss)), (ln.s1 = Math.max(ln.s1, ...ss));
+    else lines.push({ o: ends[0], u, s0: Math.min(0, dot(sub(ends[1], ends[0]), u)), s1: Math.max(0, dot(sub(ends[1], ends[0]), u)) });
+  }
+  for (const l of lines)
+    for (const h of grids) {
+      const a: Pt = { x: h.x1, y: h.y1 },
+        d = sub({ x: h.x2, y: h.y2 }, a),
+        den = cross(l.u, d);
+      if (Math.abs(den) < 1e-9) continue; // parallel
+      const t = cross(l.u, sub(l.o, a)) / den; // where the line meets the grid, along the grid
+      if (t < -1e-6 || t > 1 + 1e-6) continue;
+      const s = dot(sub({ x: a.x + d.x * t, y: a.y + d.y * t }, l.o), l.u);
+      (l.s0 = Math.min(l.s0, s)), (l.s1 = Math.max(l.s1, s));
+    }
+  let n = Math.max(0, ...taken.map((t) => +(/^E(\d+)$/.exec(t)?.[1] ?? 0)));
+  return lines.map((l) => ({
+    id: uid(),
+    label: `E${++n}`,
+    dir: Math.abs(l.u.y) < 1e-9 ? 'Y' : Math.abs(l.u.x) < 1e-9 ? 'X' : 'G',
+    x1: l.o.x + l.u.x * l.s0,
+    y1: l.o.y + l.u.y * l.s0,
+    x2: l.o.x + l.u.x * l.s1,
+    y2: l.o.y + l.u.y * l.s1,
+    bubble: 'start',
+  }));
 }

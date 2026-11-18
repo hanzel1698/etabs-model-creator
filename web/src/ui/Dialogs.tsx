@@ -14,7 +14,7 @@ import { useUnderlay, saveUnderlayMeta, rescaleDxf, rectOf, withStories } from '
 import type { DxfLayer } from '../underlay/dxf';
 import { setTool, redrawRegion, startMovePick, endMovePick, movePicking } from '../plan/tools';
 import { bridge, bridgeUrl, DEFAULT_BRIDGE, type BridgeStatus, type Supports, type Unowned } from '../etabs/bridgeClient';
-import { toPayload, applyImport, importElements, jointKeys } from '../etabs/mapping';
+import { toPayload, applyImport, importAssignments, importElements, importLoads, jointKeys } from '../etabs/mapping';
 import { fitAll } from '../plan/PlanView';
 import { log as sessionLog } from '../log/sessionLog';
 import { modelIssues } from '../model/checks';
@@ -200,8 +200,9 @@ function ReplicateDialog() {
   const sel = useApp((s) => s.selection);
   const active = useApp((s) => s.activeStory);
   const [mode, setMode] = useState<'linear' | 'stories'>('stories');
-  const [dx, setDx] = useState(0);
-  const [dy, setDy] = useState(0);
+  const [dxs, setDx] = useState('0');
+  const [dys, setDy] = useState('0');
+  const dx = +dxs || 0, dy = +dys || 0;
   const [n, setN] = useState(1);
   const [stories, setStories] = useState<string[]>([]);
   const [planes, setPlanes] = useState<string[]>([]);
@@ -225,8 +226,8 @@ function ReplicateDialog() {
         <button className={mode === 'stories' ? 'on' : ''} onClick={() => setMode('stories')}>To levels (Z)</button>
         <button className={mode === 'linear' ? 'on' : ''} onClick={() => setMode('linear')}>Linear (X / Y)</button>
       </div>
-      <div className="row"><span>dx (mm)</span><input type="number" value={dx} onChange={(e) => setDx(+e.target.value)} /></div>
-      <div className="row"><span>dy (mm)</span><input type="number" value={dy} onChange={(e) => setDy(+e.target.value)} /></div>
+      <div className="row"><span>dx (mm)</span><input type="number" value={dxs} onChange={(e) => setDx(e.target.value)} /></div>
+      <div className="row"><span>dy (mm)</span><input type="number" value={dys} onChange={(e) => setDy(e.target.value)} /></div>
       {mode === 'linear' ? (
         <div className="row"><span>Copies</span><input type="number" min={1} value={n} onChange={(e) => setN(Math.max(1, +e.target.value))} /></div>
       ) : (
@@ -254,8 +255,9 @@ function ReplicateDialog() {
 
 function MoveDialog() {
   const sel = useApp((s) => s.selection);
-  const [dx, setDx] = useState(0);
-  const [dy, setDy] = useState(0);
+  const [dxs, setDx] = useState('0');
+  const [dys, setDy] = useState('0');
+  const dx = +dxs || 0, dy = +dys || 0;
   const [to, setTo] = useState('');
   const model = useApp((s) => s.model);
   const el = storyElevations(model);
@@ -288,12 +290,12 @@ function MoveDialog() {
   const pick = () => {
     const panel = useApp.getState().panel;
     if (panel !== 'plan' && panel !== 'split') return toast('Switch to the plan view to pick the move.');
-    startMovePick((x, y) => (setDx(+x.toFixed(3)), setDy(+y.toFixed(3))));
+    startMovePick((x, y) => (setDx(String(+x.toFixed(3))), setDy(String(+y.toFixed(3)))));
   };
   return (
     <Modal hidden={hidden} title={`Move ${sel.length} selected`} footer={<><button onClick={closeDialog}>Cancel</button><button className="primary" onClick={run}>Move</button></>}>
-      <div className="row"><span>dx (mm)</span><input type="number" value={dx} onChange={(e) => setDx(+e.target.value)} /></div>
-      <div className="row"><span>dy (mm)</span><input type="number" value={dy} onChange={(e) => setDy(+e.target.value)} /></div>
+      <div className="row"><span>dx (mm)</span><input type="number" value={dxs} onChange={(e) => setDx(e.target.value)} /></div>
+      <div className="row"><span>dy (mm)</span><input type="number" value={dys} onChange={(e) => setDy(e.target.value)} /></div>
       <div className="row"><button onClick={pick} title="Click a base point, then its destination; dx and dy fill from the two points (snaps to grids, columns, beam ends...)">⌖ Pick dx, dy on plan</button></div>
       {zs.length > 0 && (
         <>
@@ -752,7 +754,7 @@ function EtabsDialog() {
   const [busy, setBusy] = useState('');
   const [log, setLog] = useState<string[]>([]);
   const [url, setUrl] = useState(bridgeUrl());
-  const [imp, setImp] = useState({ sections: true, stories: true, grids: true, refPlanes: true, patterns: true, elements: true });
+  const [imp, setImp] = useState({ sections: true, assignments: true, stories: true, grids: true, refPlanes: true, patterns: true, loads: false, elements: true });
   const [push, setPush] = useState<{ updateStories: boolean; pushGrids: boolean; pushRefPlanes: boolean; supports: Supports; loads: boolean }>({ updateStories: false, pushGrids: false, pushRefPlanes: false, supports: 'none', loads: true });
   const [unowned, setUnowned] = useState<Unowned[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -786,8 +788,12 @@ function EtabsDialog() {
     run('Importing…', async () => {
       const r = await bridge.import();
       let el: ReturnType<typeof importElements> | null = null;
+      let reassigned = 0;
+      let reloaded = 0;
       useApp.getState().commit((m) => {
-        const out = applyImport(m, r, imp);
+        let out = applyImport(m, r, imp);
+        if (imp.assignments) ({ model: out, updated: reassigned } = importAssignments(out, r));
+        if (imp.loads) ({ model: out, updated: reloaded } = importLoads(out, r)); // after the patterns, so new ones count
         if (!imp.elements) return out;
         el = importElements(out, r);
         return el.model;
@@ -803,13 +809,15 @@ function EtabsDialog() {
         imp.refPlanes && `${r.refPlanes?.length ?? 0} reference planes`,
         imp.sections && `${r.materials.length} materials, ${r.frameSections.length} frame + ${r.slabSections.length} slab sections`,
         imp.patterns && `${r.patterns?.length ?? 0} load patterns`,
+        imp.assignments && `${reassigned} section assignments changed`,
+        imp.loads && `loads changed on ${reloaded} elements`,
         e && `${e.columns} columns, ${e.beams} beams, ${e.slabs} slabs`,
       ].filter(Boolean);
       add(
         parts.length ? `✔ Imported ${parts.join(', ')}` : '⚠ Nothing ticked to import',
         ...skipped,
         ...(imp.refPlanes && !r.refPlanes ? ['⚠ The bridge is an older version that does not send reference planes. Restart python bridge/bridge.py and import again.'] : []),
-        ...(imp.elements && !r.frames ? ['⚠ The bridge is an older version that does not send columns, beams or slabs. Restart python bridge/bridge.py and import again.'] : []),
+        ...((imp.elements || imp.loads) && !r.frames ? ['⚠ The bridge is an older version that does not send columns, beams or slabs. Restart python bridge/bridge.py and import again.'] : []),
         ...r.warnings.map((w) => '⚠ ' + w),
       );
       requestAnimationFrame(() => fitAll());
@@ -883,14 +891,14 @@ function EtabsDialog() {
       <div className="section">
         <h4>Import from ETABS</h4>
         <div className="chips">
-          {(['sections', 'stories', 'grids', 'refPlanes', 'patterns', 'elements'] as const).map((k) => (
+          {(['sections', 'assignments', 'stories', 'grids', 'refPlanes', 'patterns', 'loads', 'elements'] as const).map((k) => (
             <label
               key={k}
               className="small"
-              title={k === 'elements' ? 'Columns, beams and slabs on the story levels, with their frame and slab loads in the app’s patterns. They are then managed by the app: pushes update them and deleting them here deletes them in ETABS.' : undefined}
+              title={k === 'assignments' ? 'Columns, beams and slabs already in the app (matched by ETABS GUID) take the section ETABS assigns them.' : k === 'loads' ? 'Columns, beams and slabs already in the app (matched by ETABS GUID) take the frame and slab loads ETABS has on them. In the app’s patterns, ETABS’ loads replace the app’s, including loads not pushed yet. Joint loads are not read.' : k === 'elements' ? 'Columns, beams and slabs on the story levels, with their frame and slab loads in the app’s patterns. They are then managed by the app: pushes update them and deleting them here deletes them in ETABS.' : undefined}
             >
               <input type="checkbox" checked={imp[k]} onChange={() => setImp({ ...imp, [k]: !imp[k] })} />{' '}
-              {k === 'sections' ? 'Materials + sections' : k === 'refPlanes' ? 'Reference planes' : k === 'patterns' ? 'Load patterns' : k === 'elements' ? 'Columns, beams, slabs' : k[0].toUpperCase() + k.slice(1)}
+              {k === 'sections' ? 'Materials + sections' : k === 'assignments' ? 'Section assignments' : k === 'refPlanes' ? 'Reference planes' : k === 'patterns' ? 'Load patterns' : k === 'loads' ? 'Load assignments' : k === 'elements' ? 'Columns, beams, slabs' : k[0].toUpperCase() + k.slice(1)}
             </label>
           ))}
           <button onClick={doImport} disabled={!!busy}>Import</button>

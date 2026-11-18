@@ -234,14 +234,14 @@ export const ColumnLayer = memo(function ColumnLayer({ cols, secs, sel, ghost, c
 
 // ---------------- labels ----------------
 
-export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, showSlabs }: { m: Model; story: string; viewRot: number; ts: number; showSlabs: boolean }) {
+export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, cols, beams, slabs }: { m: Model; story: string; viewRot: number; ts: number; cols: boolean; beams: boolean; slabs: boolean }) {
   const h = 160 * ts;
   const secs = useMemo(() => new Map(m.frameSections.map((s) => [s.name, s])), [m.frameSections]);
   // elements on a reference plane name it (or their offset) after the section
   const tag = (x: { story: string; dz?: number }) => (x.dz ? ` @ ${levelTag(m, x)}` : '');
   return (
     <g className="labels nosel" fontSize={h}>
-      {m.beams.map((b) => {
+      {beams && m.beams.map((b) => {
         if (b.story !== story) return null;
         const a = readableAngle(angleDeg({ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }), viewRot);
         return (
@@ -251,7 +251,7 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, show
           </text>
         );
       })}
-      {m.columns.map((c) => {
+      {cols && m.columns.map((c) => {
         if (!columnOn(m, c, story)) return null;
         const sec = secs.get(c.section);
         const off = Math.max(sec?.t3 || 400, sec?.t2 || 400) / 2 + h * 0.3;
@@ -262,7 +262,7 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, show
           </text>
         );
       })}
-      {showSlabs &&
+      {slabs &&
         m.slabs.map((s) => {
           if (s.story !== story) return null;
           const c = centroid(s.pts);

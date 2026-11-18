@@ -335,7 +335,7 @@ export function PlanView() {
             <BeamLayer beams={beams} sel={sel} colorBy={colorBy} patterns={viewPats} />
             <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} ends={ends} />
             <StairLayer flights={stair.flights} landings={stair.landings} spans={stair.spans} sel={sel} viewRot={viewRot} ts={ts} />
-            {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} showSlabs={show.slabs} />}
+            {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} cols={show.labelColumns} beams={show.labelBeams} slabs={show.slabs && show.labelSlabs} />}
             {(show.loads || colorBy === 'value') && <LoadLayer m={model} story={story} patterns={loadPats} viewRot={viewRot} ts={ts} />}
           </g>
         </g>

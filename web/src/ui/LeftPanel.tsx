@@ -286,7 +286,18 @@ function ViewControls() {
   return (
     <>
       {toggles.map(([k, l]) =>
-        k === 'beams' ? (
+        k === 'sectionLabels' ? (
+          <div key={k} className="beam-dirs wrap">
+            <label className="small">
+              <input type="checkbox" checked={show.sectionLabels} onChange={() => st.toggleShow('sectionLabels')} /> {l}
+            </label>
+            {([['labelColumns', 'Columns'], ['labelBeams', 'Beams'], ['labelSlabs', 'Slabs']] as const).map(([d, t]) => (
+              <button key={d} className={show[d] ? 'dir wide on' : 'dir wide'} aria-pressed={show[d]} title={`Show section labels on ${t.toLowerCase()}`} disabled={!show.sectionLabels} onClick={() => st.toggleShow(d)}>
+                {t}
+              </button>
+            ))}
+          </div>
+        ) : k === 'beams' ? (
           <div key={k} className="beam-dirs">
             <label className="small">
               <input type="checkbox" checked={show.beams} onChange={() => st.toggleShow('beams')} /> {l}

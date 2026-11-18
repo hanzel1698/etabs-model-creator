@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultStairParams, emptyModel, type Model } from '../model/types';
-import { applyImport, importElements, toPayload } from './mapping';
+import { applyImport, importAssignments, importElements, importLoads, toPayload } from './mapping';
 import type { ImportResult } from './bridgeClient';
 
 const g = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -112,5 +112,36 @@ describe('stairs stay out of ETABS', () => {
     const plain = { ...src, beams: src.beams.map((b) => ({ ...b, loads: [load] })) };
     const opts = { updateStories: false, pushGrids: false };
     expect(toPayload(withSrc, opts)).toEqual(toPayload(plain, opts));
+  });
+});
+
+describe('importAssignments', () => {
+  it('gives elements matched by GUID the section ETABS assigns, leaving the rest alone', () => {
+    const imp = asImport(src);
+    imp.frames.find((f) => f.guid === g(3))!.section = 'B300x750';
+    imp.areas[0].section = 'S200';
+    const r = importAssignments(src, imp);
+    expect(r.updated).toBe(2);
+    expect(r.model.beams[0].section).toBe('B300x750');
+    expect(r.model.slabs[0].section).toBe('S200');
+    expect(r.model.columns.map((c) => c.section)).toEqual(['C400x400', 'C400x400']);
+    expect(importAssignments(src, { frames: [], areas: [] }).updated).toBe(0);
+  });
+});
+
+describe('importLoads', () => {
+  it('replaces the loads of elements matched by GUID, in the model’s patterns only', () => {
+    const pat = src.loadPatterns[0].name;
+    const m: Model = { ...src, beams: src.beams.map((b) => ({ ...b, loads: [{ pattern: pat, kind: 'dist' as const, force: 'F' as const, dir: 'Gravity' as const, rel: true, d1: 0, d2: 1, v1: 7.3, v2: 7.3 }] })) };
+    const imp = asImport(m);
+    expect(importLoads(m, imp).updated).toBe(0); // what a push wrote reads back as no change
+    imp.frames.find((f) => f.guid === m.beams[0].id)!.loads[0].v1 *= 2;
+    imp.areas[0].loads = [{ pattern: pat, dir: 10, value: 3e-6 }, { pattern: 'not in the app', dir: 10, value: 1e-6 }];
+    const r = importLoads(m, imp);
+    expect(r.updated).toBe(2);
+    expect(r.model.beams[0].loads![0].v1).toBeCloseTo(14.6);
+    expect(r.model.slabs[0].loads).toEqual([{ pattern: pat, dir: 'Gravity', value: 3 }]);
+    imp.frames.forEach((f) => (f.loads = []));
+    expect(importLoads(m, imp).model.beams[0].loads).toBeUndefined();
   });
 });

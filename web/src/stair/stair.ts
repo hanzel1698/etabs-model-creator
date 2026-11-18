@@ -556,6 +556,7 @@ export function autoSpans(m: Model): Model {
       for (let k = 0; k < 6; k++) {
         const q = pt(t + sg * 20);
         const l = m.landings.find((l) => {
+          if (Math.abs(l.z - z) > LEVEL_TOL) return false; // a landing on another level at the same plan spot is not this one
           const r = landingRect(l);
           return q[0] > r.x0 && q[0] < r.x1 && q[1] > r.y0 && q[1] < r.y1;
         });

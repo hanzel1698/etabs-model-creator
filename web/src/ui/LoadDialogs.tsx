@@ -25,8 +25,8 @@ import {
   usedLoadValues,
   type AssignMode,
 } from '../model/loads';
-import { PATTERN_TYPES, type Beam, type FrameLoad, type LoadDir, type LoadPattern, type Model, type Pt, type Slab, type Vec6 } from '../model/types';
-import { dist, fmt, polyArea } from '../model/geom';
+import { LEVEL_TOL, levelZ, PATTERN_TYPES, storyElevations, type Beam, type FrameLoad, type LoadDir, type LoadPattern, type Model, type Pt, type Slab, type Vec6 } from '../model/types';
+import { dist, distToSeg, fmt, polyArea } from '../model/geom';
 import { HDPE_TANKS, hdpeTankLoad, rccTankLoad, type TankRoof } from '../model/waterTank';
 import { recentValues, rememberValues } from './recentValues';
 import { Is875Table } from './Is875';
@@ -234,16 +234,53 @@ const FRAME_DIRS: LoadDir[] = ['Gravity', 'X', 'Y', 'Z', '1', '2', '3', 'PX', 'P
 const WALL_PRESETS = [200, 100];
 const wallCalc = { t: 200, beamDepth: 450, gamma: 21 };
 
-/** Line load of a wall on the beams: thickness × height × unit weight. The height starts at the
- *  story above the beams' floor less a beam depth (the top story, a parapet, uses its own height). */
-function WallCalculator({ story, onUse }: { story: string; onUse: (v: number) => void }) {
-  const stories = useApp((s) => s.model.stories);
-  const i = stories.findIndex((s) => s.name === story);
-  const above = stories[i + 1] ?? stories[i];
-  const clear = above?.height ?? 3000;
+/** Elevation of the lowest other beam above `b` (higher than z0) that runs along b's line over b's midpoint, or null. */
+export function beamAboveZ(m: Model, el: ReturnType<typeof storyElevations>, b: Beam, z0: number): number | null {
+  const mid = { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 };
+  const L = Math.hypot(b.x2 - b.x1, b.y2 - b.y1) || 1;
+  let best: number | null = null;
+  for (const o of m.beams) {
+    const z = o.id === b.id ? null : levelZ(el, o);
+    if (z === null || z <= z0 + LEVEL_TOL || (best !== null && z >= best)) continue;
+    const Lo = Math.hypot(o.x2 - o.x1, o.y2 - o.y1) || 1;
+    const sin = Math.abs((b.x2 - b.x1) * (o.y2 - o.y1) - (b.y2 - b.y1) * (o.x2 - o.x1)) / (L * Lo);
+    if (sin < 0.01 && distToSeg(mid, { x: o.x1, y: o.y1 }, { x: o.x2, y: o.y2 }) <= 10) best = z;
+  }
+  return best;
+}
+
+/** Line load of a wall on the beams: thickness × height × unit weight. The height runs from the beams'
+ *  level up to the next story level, or a reference plane below it, less a beam depth (above the top story,
+ *  a parapet, the top story's own height is used). A beam already on the same line above starts as the top. */
+function WallCalculator({ level, onUse }: { level: { story: string; dz?: number } | Beam; onUse: (v: number) => void }) {
+  const m = useApp((s) => s.model);
+  const tops = useMemo(() => {
+    const el = storyElevations(m);
+    const z0 = levelZ(el, level) ?? m.baseElevation;
+    const next = m.stories.find((s) => el[s.name].top > z0 + LEVEL_TOL);
+    const top = next ? { name: `${next.name} level`, z: el[next.name].top } : { name: `${level.story} height (parapet)`, z: z0 + (m.stories.find((s) => s.name === level.story)?.height ?? 3000) };
+    const planes = m.refPlanes.filter((r) => r.z > z0 + LEVEL_TOL && r.z < top.z - LEVEL_TOL).sort((a, b) => a.z - b.z);
+    const list: { name: string; z: number; beam?: boolean }[] = [...planes.map((r) => ({ name: r.name, z: r.z })), top];
+    const zb = 'x1' in level ? beamAboveZ(m, el, level, z0) : null;
+    if (zb !== null) {
+      const hit = list.find((x) => Math.abs(x.z - zb) <= LEVEL_TOL);
+      if (hit) Object.assign(hit, { name: `${hit.name} · beam above`, beam: true });
+      else list.push({ name: 'Beam above', z: zb, beam: true });
+      list.sort((a, b) => a.z - b.z);
+    }
+    return list.map((x) => ({ ...x, h: Math.round(x.z - z0) }));
+  }, [m, level]);
+  // the beam above when there is one, else the nearest reference plane above the beams
+  const [to, setTo] = useState(() => Math.max(0, tops.findIndex((x) => x.beam)));
+  const target = tops[to] ?? tops[tops.length - 1];
+  const clear = target.h;
   const [t, setT] = useState(wallCalc.t);
   const [beamDepth, setBeamDepth] = useState(wallCalc.beamDepth);
   const [h, setH] = useState(Math.max(0, clear - wallCalc.beamDepth));
+  const changeTo = (k: number) => {
+    setTo(k);
+    setH(Math.max(0, tops[k].h - beamDepth));
+  };
   const [gamma, setGamma] = useState(wallCalc.gamma);
   useEffect(() => void Object.assign(wallCalc, { t, beamDepth, gamma }), [t, beamDepth, gamma]);
   const load = +((t / 1000) * (h / 1000) * gamma).toFixed(3);
@@ -263,10 +300,18 @@ function WallCalculator({ story, onUse }: { story: string; onUse: (v: number) =>
           <button key={p} className={t === p ? 'primary' : ''} onClick={() => setT(p)}>{p} mm</button>
         ))}
       </div>
+      {tops.length > 1 && (
+        <div className="row">
+          <span>Up to</span>
+          <select value={to} onChange={(e) => changeTo(+e.target.value)} title="Wall top: a reference plane above the beams, or the next story level">
+            {tops.map((x, k) => <option key={k} value={k}>{x.name} (+{x.h} mm)</option>)}
+          </select>
+        </div>
+      )}
       <Num label="Beam" value={beamDepth} onChange={changeDepth} unit="mm" step={25} />
-      <Num label="Height" value={h} onChange={setH} unit="mm" step={50} extra={<button title={`Reset to ${above?.name ?? 'story'} height ${clear} mm less the beam depth`} onClick={() => setH(Math.max(0, clear - beamDepth))}>↺</button>} />
+      <Num label="Height" value={h} onChange={setH} unit="mm" step={50} extra={<button title={`Reset to ${target.name} ${clear} mm less the beam depth`} onClick={() => setH(Math.max(0, clear - beamDepth))}>↺</button>} />
       <div className="small muted" style={{ marginBottom: 5 }}>
-        {above ? `${above.name} height ${clear} mm − beam ${beamDepth} mm` : 'No story height found'}
+        {`${target.name} ${clear} mm − beam ${beamDepth} mm`}
       </div>
       <Num label="Unit wt" value={gamma} onChange={setGamma} unit="kN/m³" step={0.5} />
       <div className="row">
@@ -399,7 +444,7 @@ export function FrameLoadDialog({ edit }: { edit?: LoadEdit }) {
           )}
           {kind === 'uniform' && force === 'F' && calc && (
             <WallCalculator
-              story={frames.find((f): f is Beam => 'x1' in f)?.story ?? frames[0]?.story ?? activeStory}
+              level={frames.find((f): f is Beam => 'x1' in f) ?? frames[0] ?? { story: activeStory }}
               onUse={(v) => {
                 setValue(v);
                 setCalc(false);

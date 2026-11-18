@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { elevationAt } from './elevation';
+import { elevationAt, elevationsFromBeams } from './elevation';
 import { asStair, emptyModel, type Grid, type Model } from '../model/types';
 
 const grid = (id: string, label: string, x1: number, y1: number, x2: number, y2: number): Grid => ({ id, label, dir: x1 === x2 ? 'X' : 'Y', x1, y1, x2, y2, bubble: 'start' });
@@ -50,5 +50,17 @@ describe('stair in elevation', () => {
     const st = elevationAt({ ...asStair(m), flights: [f] } as Model, A, 300).stair[0];
     expect(st).toMatchObject({ id: 'f', kind: 'flight', near: true });
     expect(st.keys).toEqual([[2000, 0], [2900, 600]]); // station from grid start at x -1000; going 3 × 300, rise 4 × 150
+  });
+});
+
+describe('elevations from beams', () => {
+  const b = (id: string, x1: number, y1: number, x2: number, y2: number) => ({ id, story: 'Story1', x1, y1, x2, y2, section: 'B' });
+  const gs = [grid('1', '1', 0, -1000, 0, 6000), grid('2', '2', 6000, -1000, 6000, 6000), grid('3', '3', 12000, -1000, 12000, 6000)];
+  it('merges collinear beams into one line, extended across the grids it crosses', () => {
+    const out = elevationsFromBeams([b('a', 3000, 2500, 6000, 2500), b('b', 9000, 2500, 6000, 2500), b('c', 3000, 0, 3000, 4000)], gs, ['E2', 'A']);
+    expect(out.map((e) => [e.label, e.dir, e.x1, e.y1, e.x2, e.y2])).toEqual([
+      ['E3', 'Y', 0, 2500, 12000, 2500],
+      ['E4', 'X', 3000, 0, 3000, 4000],
+    ]);
   });
 });

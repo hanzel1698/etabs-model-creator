@@ -250,6 +250,8 @@ export interface Model {
   pushedJointKeys: string[];
   /** inputs the bottom story (footing top → ground floor level) was computed from (height = foundingDepth - footingThickness + plinthHeight) */
   foundation?: { foundingDepth: number; footingThickness: number; plinthHeight: number };
+  /** custom elevation lines (made from selected beams); app-only, not pushed to ETABS */
+  elevations?: Grid[];
 }
 
 export type ElementKind = 'column' | 'beam' | 'slab' | 'grid';
