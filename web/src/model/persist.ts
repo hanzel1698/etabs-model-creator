@@ -63,10 +63,26 @@ export async function pickExportFolder(): Promise<FileSystemDirectoryHandle | nu
   }
 }
 
-export async function writeToFolder(dir: FileSystemDirectoryHandle, name: string, data: Blob) {
-  const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
-  await w.write(data);
-  await w.close();
+/**
+ * Write `data` as `name` in `dir`; returns the name actually used. If the file can't be replaced (on Windows usually
+ * because it is open in another program, e.g. a PDF viewer), it is saved as "name (2).ext", "name (3).ext"… instead.
+ */
+export async function writeToFolder(dir: FileSystemDirectoryHandle, name: string, data: Blob): Promise<string> {
+  const dot = name.lastIndexOf('.');
+  const [base, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+  for (let n = 1; ; n++) {
+    const as = n === 1 ? name : `${base} (${n})${ext}`;
+    try {
+      const w = await (await dir.getFileHandle(as, { create: true })).createWritable();
+      await w.write(data);
+      await w.close();
+      if (n > 1) log('file', `${name} could not be replaced (open in another program?); saved as ${as}`);
+      return as;
+    } catch (e) {
+      const locked = ['InvalidStateError', 'NoModificationAllowedError'].includes((e as Error).name);
+      if (!locked || n >= 9) throw e;
+    }
+  }
 }
 
 const projectBlob = () => {

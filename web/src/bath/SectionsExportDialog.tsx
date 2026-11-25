@@ -24,11 +24,10 @@ export function SectionsExportDialog() {
       if (dir === undefined) return;
       const { doc, paper, pages } = await sectionsPdf(chosen.map((c) => sheetFor(model, c, ex)));
       const name = 'bathroom-sections.pdf';
-      if (dir) await writeToFolder(dir, name, doc.output('blob'));
-      else doc.save(name);
+      const saved = dir ? await writeToFolder(dir, name, doc.output('blob')) : (doc.save(name), name);
       const what = `${chosen.length} section${chosen.length === 1 ? '' : 's'} on ${pages} ${paper} page${pages === 1 ? '' : 's'}`;
-      log('file', `Exported ${name}${dir ? ` to ${dir.name}` : ''} (${what})`);
-      toast(`Saved ${name}: ${what}`);
+      log('file', `Exported ${saved}${dir ? ` to ${dir.name}` : ''} (${what})`);
+      toast(`Saved ${saved}: ${what}${saved !== name ? ` (${name} is open elsewhere)` : ''}`);
       closeDialog();
     } catch (e) {
       toast(`PDF export failed: ${(e as Error).message}`);

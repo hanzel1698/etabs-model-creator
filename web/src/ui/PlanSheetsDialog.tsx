@@ -33,9 +33,9 @@ export function PlanSheetsDialog() {
       const dir = await pickExportFolder();
       if (dir === undefined) return;
       const doc = await plansPdf(items, paper);
-      if (dir) await writeToFolder(dir, 'plan-sheets.pdf', doc.output('blob'));
-      else doc.save('plan-sheets.pdf');
-      log('file', `Exported plan-sheets.pdf${dir ? ` to ${dir.name}` : ''} (${items.length} drawings on ${pages} ${paper} pages)`);
+      const saved = dir ? await writeToFolder(dir, 'plan-sheets.pdf', doc.output('blob')) : (doc.save('plan-sheets.pdf'), 'plan-sheets.pdf');
+      log('file', `Exported ${saved}${dir ? ` to ${dir.name}` : ''} (${items.length} drawings on ${pages} ${paper} pages)`);
+      if (saved !== 'plan-sheets.pdf') toast(`Saved as ${saved} (plan-sheets.pdf is open elsewhere)`);
       closeDialog();
     } catch (e) {
       toast(`PDF export failed: ${(e as Error).message}`);

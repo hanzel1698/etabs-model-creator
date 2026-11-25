@@ -70,10 +70,9 @@ export function SectionPane() {
       if (dir === undefined) return;
       const doc = await sectionPdf({ plan: sp.plan, run, checks, label: cut.label, story: cut.story, exaggeration: ex });
       const name = `section-${cut.label}-${cut.story}.pdf`.replace(/[\/:*?"<>|\s]+/g, '_');
-      if (dir) await writeToFolder(dir, name, doc.output('blob'));
-      else doc.save(name);
-      log('file', `Exported ${name}${dir ? ` to ${dir.name}` : ''}`);
-      toast(`Saved ${name}${dir ? ` in ${dir.name}` : ''}`);
+      const saved = dir ? await writeToFolder(dir, name, doc.output('blob')) : (doc.save(name), name);
+      log('file', `Exported ${saved}${dir ? ` to ${dir.name}` : ''}`);
+      toast(`Saved ${saved}${dir ? ` in ${dir.name}` : ''}${saved !== name ? ` (${name} is open elsewhere)` : ''}`);
     } catch (e) {
       toast(`PDF export failed: ${(e as Error).message}`);
     } finally {
