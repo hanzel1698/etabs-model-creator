@@ -285,6 +285,7 @@ function ViewControls() {
     ['sinks', 'Sink Tags'],
     ['catchFlags', 'Catch Markers'],
     ['bathSections', 'Bath Sections'],
+    ['bathZones', 'Bath Zones'],
   ];
   return (
     <>

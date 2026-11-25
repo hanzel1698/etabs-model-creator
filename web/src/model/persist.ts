@@ -33,7 +33,7 @@ export const forgetSaveTarget = () => ((target = null), (fileName = 'model.emc.j
 export const workingFolderName = () => folder?.name;
 
 type Picker = { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle>; showDirectoryPicker?: (o: object) => Promise<FileSystemDirectoryHandle> };
-const fsApi = window as unknown as Picker;
+const fsApi = globalThis as unknown as Picker;
 
 // a handle restored after reload needs the user's OK again; must run inside a click/keypress
 async function canWrite(h: FileSystemHandle) {

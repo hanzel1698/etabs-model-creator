@@ -69,6 +69,8 @@ export interface ShowFlags {
   catchFlags: boolean;
   /** bathroom section lines (the ticked ones in the right panel's list) */
   bathSections: boolean;
+  /** bathroom / wash / toilet zone outlines */
+  bathZones: boolean;
 }
 
 interface AppState {
@@ -208,7 +210,7 @@ function readNum(key: string, fallback: number) {
 }
 
 const VIEW_DEFAULTS = {
-  show: { sectionLabels: true, labelColumns: true, labelBeams: true, labelSlabs: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false, sinks: true, sinkBeams: true, sinkSlabs: true, catchFlags: true, bathSections: true } as ShowFlags,
+  show: { sectionLabels: true, labelColumns: true, labelBeams: true, labelSlabs: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false, sinks: true, sinkBeams: true, sinkSlabs: true, catchFlags: true, bathSections: true, bathZones: false } as ShowFlags,
   hidden: [] as string[],
   viewRotation: 0,
   textScale: 1,
@@ -546,13 +548,14 @@ export const drawStories = () => {
   return [s.activeStory, ...s.alsoStories.filter((x) => x !== s.activeStory && s.model.stories.some((st) => st.name === x))];
 };
 
-export type ColorBy = 'none' | 'section' | 'pattern' | 'value' | 'sink';
+export type ColorBy = 'none' | 'section' | 'pattern' | 'value' | 'sink' | 'zone';
 export const COLOR_BY: [ColorBy, string][] = [
   ['none', 'None'],
   ['section', 'Section'],
   ['pattern', 'Assigned load patterns'],
   ['value', 'Load values'],
   ['sink', 'Sink level (bathroom)'],
+  ['zone', 'Bath zones'],
 ];
 
 // sink-level colour keys: beams and slabs only (a column has no sink)

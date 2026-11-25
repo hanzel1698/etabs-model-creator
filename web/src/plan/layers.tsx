@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo } from 'react';
 import { useApp, sectionColor, colorKey, bySinkLevel, type ColorBy } from '../model/store';
-import { MIN_SINK, ZONE_LABEL, labelAt } from '../bath/zones';
+import { MIN_SINK, ZONE_COLOR, ZONE_KINDS, ZONE_LABEL, labelAt } from '../bath/zones';
 import { columnOn, levelTag, type BathZone, type Beam, type Column, type FrameLoad, type FrameSection, type Grid, type Model, type Slab, type StairRegion } from '../model/types';
 import { angleDeg, fmt, polyArea } from '../model/geom';
 import { gridDimensions } from '../model/ops';
@@ -136,14 +136,15 @@ export const StairBoxLayer = memo(function StairBoxLayer({ stairs, viewRot, size
   );
 });
 
-/** Bathroom zones as dashed boxes named at their top-left corner (wash/toilet zones with their minimum sink). */
+/** Bathroom zones shaded in their kind's colour (bathrooms under wash/toilet areas), named at their top-left corner with their minimum sink. */
 export const BathZoneLayer = memo(function BathZoneLayer({ zones, viewRot, size }: { zones: BathZone[]; viewRot: number; size: number }) {
-  const col = { room: '#3fa7d6', wash: '#2bb59a', wc: '#b06ad9' };
+  const col = ZONE_COLOR;
+  const sorted = [...zones].sort((a, b) => ZONE_KINDS.indexOf(a.kind) - ZONE_KINDS.indexOf(b.kind));
   return (
     <g className="bath-zones">
-      {zones.map((z) => (
+      {sorted.map((z) => (
         <g key={z.id}>
-          <polygon points={z.pts.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke={col[z.kind]} strokeWidth={z.kind === 'room' ? 2 : 1.5} strokeDasharray={z.kind === 'room' ? undefined : '6 4'} style={NS} />
+          <polygon points={z.pts.map((p) => `${p.x},${p.y}`).join(' ')} fill={col[z.kind]} fillOpacity={z.kind === 'room' ? 0.15 : 0.3} stroke={col[z.kind]} strokeWidth={z.kind === 'room' ? 2 : 1.5} strokeDasharray={z.kind === 'room' ? undefined : '6 4'} style={NS} />
           <text transform={textTransform(labelAt(z).x, labelAt(z).y, viewRot)} dx={size * 0.15} dy={z.kind === 'room' ? -size * 0.2 : size * 0.55} fontSize={size * 0.4} fill={col[z.kind]} fontWeight={700} className="nosel">
             {ZONE_LABEL[z.kind]}{MIN_SINK[z.kind] ? ` ≥${MIN_SINK[z.kind]}` : ''}
           </text>
@@ -162,9 +163,20 @@ const SINK_FILL = 0.35;
 const asSlabTint = (c: string) => `color-mix(in srgb, ${c} ${SINK_FILL * 100}%, var(--bg))`;
 
 /** Key of the colours in use: one swatch per section / pattern set / load value among `items`. */
-export function ColorLegend({ items, colorBy, patterns, short = 0 }: { items: Parameters<typeof colorKey>[0][]; colorBy: ColorBy; patterns: string[]; short?: number }) {
+export function ColorLegend({ items, colorBy, patterns, short = 0, zones = false }: { items: Parameters<typeof colorKey>[0][]; colorBy: ColorBy; patterns: string[]; short?: number; zones?: boolean }) {
   const keys = useMemo(() => [...new Set(items.map((x) => colorKey(x, colorBy, patterns)).filter((k): k is string => k !== null))].sort(colorBy === 'sink' ? bySinkLevel : undefined), [items, colorBy, patterns]);
-  if (colorBy === 'none') return null;
+  if (colorBy === 'none' || (colorBy === 'zone' && !zones)) return null;
+  if (colorBy === 'zone')
+    return (
+      <div className="color-legend nosel" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
+        {ZONE_KINDS.map((k) => (
+          <div key={k}>
+            <span className="swatch" style={{ background: ZONE_COLOR[k] }} />
+            {k === 'room' ? 'Bathroom' : k === 'wash' ? `Wash / urinal (≥${MIN_SINK.wash} sink)` : `Toilet (≥${MIN_SINK.wc} sink)`}
+          </div>
+        ))}
+      </div>
+    );
   return (
     <div className="color-legend nosel" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
       {keys.length ? keys.map((k) => (

@@ -337,13 +337,13 @@ export function PlanView() {
           <g transform={setupRef ? `translate(${setupRef.x} ${setupRef.y})` : undefined}>
             {show.slabs && <SlabLayer slabs={slabs} sel={sel} colorBy={colorBy} patterns={viewPats} short={short} />}
             <StairBoxLayer stairs={stairBoxes} viewRot={viewRot} size={bubble} />
-            {!activeStair && <BathZoneLayer zones={zones} viewRot={viewRot} size={bubble} />}
             {show.grids && <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} bubble={bubble} />}
             {show.gridDims && <GridDimLayer grids={model.grids} viewRot={viewRot} bubble={bubble} />}
             {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy="none" />}
             {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy="none" />}
             <BeamLayer beams={beams} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} short={short} />
             <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} ends={ends} />
+            {(show.bathZones || colorBy === 'zone') && !activeStair && <BathZoneLayer zones={zones} viewRot={viewRot} size={bubble} />}
             <StairLayer flights={stair.flights} landings={stair.landings} spans={stair.spans} sel={sel} viewRot={viewRot} ts={ts} />
             <SectionLayer cuts={cuts} active={activeCut} beams={beams} slabs={slabs} viewRot={viewRot} ts={ts} slabNames={show.sectionLabels && show.slabs && show.labelSlabs} sinkBeams={show.sinks && show.sinkBeams} sinkSlabs={show.sinks && show.sinkSlabs} />
             {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} cols={show.labelColumns} beams={show.labelBeams} slabs={show.slabs && show.labelSlabs} sinks={show.sinks && show.sinkSlabs} />}
@@ -371,7 +371,7 @@ export function PlanView() {
       )}
       {tool === 'beamOffset' && <OffsetField />}
       <Compass rot={viewRot} />
-      <ColorLegend items={legendItems} colorBy={colorBy} patterns={viewPats} short={short?.size} />
+      <ColorLegend items={legendItems} colorBy={colorBy} patterns={viewPats} short={short?.size} zones />
       {show.underlay && hasRegion && (
         <div className="story-banner nosel">
           {story}

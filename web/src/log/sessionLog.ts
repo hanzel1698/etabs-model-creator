@@ -304,6 +304,7 @@ const SHOW_NAMES: Record<keyof ShowFlags, string> = {
   sinkBeams: 'sink tags on beams',
   sinkSlabs: 'sink tags on slabs',
   bathSections: 'bath section lines',
+  bathZones: 'bath zones',
   catchFlags: 'catch markers',
 };
 const PANEL_NAMES = { plan: 'plan view only', '3d': '3D view only', split: 'plan and 3D side by side', elev: 'elevation view', section: 'the bathroom section' };

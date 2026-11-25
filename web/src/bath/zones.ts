@@ -5,6 +5,8 @@ import { distToSeg, pointInPoly } from '../model/geom';
 /** Minimum sink (mm, down-positive) of the beams and slabs a zone contains. */
 export const MIN_SINK: Record<BathZone['kind'], number> = { room: 0, wash: 150, wc: 300 };
 export const ZONE_LABEL: Record<BathZone['kind'], string> = { room: 'BATH', wash: 'WASH/URINAL', wc: 'WC' };
+export const ZONE_COLOR: Record<BathZone['kind'], string> = { room: '#3fa7d6', wash: '#2bb59a', wc: '#b06ad9' };
+export const ZONE_KINDS: BathZone['kind'][] = ['room', 'wash', 'wc'];
 
 const TOL = 1; // mm: an element on the zone's edge is inside it
 
