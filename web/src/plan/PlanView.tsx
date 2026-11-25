@@ -7,7 +7,7 @@ import { StairLayer } from './StairLayer';
 import { SectionLayer } from '../bath/SectionLayer';
 import { CatchFlags } from '../bath/CatchFlags';
 import { setDuct, useBath } from '../bath/sections';
-import { underSunk, zonesOn } from '../bath/zones';
+import { addArea, underSunk, zonesOn } from '../bath/zones';
 import { flightGrips, landingRect, landingSides, rectPts } from '../stair/stair';
 import { viewport } from './viewport';
 import { UnderlayLayer, StairBoxLayer, BathZoneLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
@@ -146,7 +146,7 @@ export function PlanView() {
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
   const cuts = useMemo(() => (show.bathSections ? (full.sectionLines ?? []).filter((c) => c.story === story && !c.hidden) : []), [full.sectionLines, story, show.bathSections]);
   const activeCut = useBath((s) => s.active);
-  const zones = useMemo(() => zonesOn(full, story), [full.bathZones, story]);
+  const zones = useMemo(() => zonesOn(full, story), [full.bathZones, full.slabs, story]);
   // View by sink level: beams / slabs in a wash or toilet zone sunk less than it needs
   const short = useMemo(() => (colorBy === 'sink' && zones.length ? underSunk(full, story) : undefined), [colorBy, zones, full, story]);
   // inside a stair: its flights, landings and spans on the plan level in view
@@ -441,6 +441,7 @@ function BathItems({ item }: { item: (label: string, run: () => void) => React.R
   if (!beams.length && !slabs.length) return null;
   const ducts = slabs.filter((x) => x.duct).length;
   const sIds = slabs.map((x) => x.id);
+  const here = slabs.filter((x) => x.story === st.activeStory).map((x) => x.id); // an area is made of panels on the story in view
   return (
     <>
       <div className="menu-sep" role="separator" />
@@ -448,6 +449,8 @@ function BathItems({ item }: { item: (label: string, run: () => void) => React.R
       {beams.length === 1 && item('Upstand…', () => openDialog({ kind: 'bathUpstand', beamId: beams[0] }))}
       {slabs.length > 0 && item(`Slab sink… (${slabs.length})`, () => openDialog({ kind: 'bathSink', target: 'slab', ids: sIds }))}
       {slabs.length > 0 && item(ducts === slabs.length ? 'Fill duct (slab again)' : 'Mark as duct', () => st.commit((m) => setDuct(m, sIds, ducts !== slabs.length)))}
+      {here.length > 0 && item(`Make toilet WC ≥300 (${here.length} panel${here.length > 1 ? 's' : ''})`, () => st.commit((m) => addArea(m, st.activeStory, 'wc', here)))}
+      {here.length > 0 && item(`Make wash / urinal ≥150 (${here.length} panel${here.length > 1 ? 's' : ''})`, () => st.commit((m) => addArea(m, st.activeStory, 'wash', here)))}
     </>
   );
 }

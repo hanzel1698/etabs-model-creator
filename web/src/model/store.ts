@@ -8,6 +8,7 @@ import { shortFrameLoad, frameLoadUnit } from './loads';
 import type { PanelSize } from './ops';
 import { defaultLoadFilter, type LoadFilterState } from './loadFilter';
 import { firstSection } from '../ui/sectionGroups';
+import { nameBaths } from '../bath/zones';
 
 export type ToolName =
   | 'select'
@@ -29,9 +30,7 @@ export type ToolName =
   | 'flight'
   | 'landing'
   | 'span'
-  | 'bathRoom'
-  | 'bathWash'
-  | 'bathWc';
+  | 'bathRoom';
 
 export interface ColAlign {
   mode: 'off' | 'x' | 'y'; // x: vertical line (column X fixed), y: horizontal line (column Y fixed)
@@ -234,7 +233,7 @@ export const useApp = create<AppState>((set, get) => ({
   setModel: (m, resetHistory = true) =>
     set((s) => ({
       activeStair: m.stairs.some((r) => r.id === s.activeStair) ? s.activeStair : null,
-      model: m,
+      model: nameBaths(m),
       active: validActive(s.active, m),
       past: resetHistory ? [] : [...s.past, s.model],
       future: [],

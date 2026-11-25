@@ -184,12 +184,17 @@ export interface SectionCut {
   hidden?: true;
 }
 
-/** Bathroom zone on one story's plan (polygon); app-only. Wash/urinal and toilet zones set a minimum sink on what they contain. */
+/** Bathroom zone on one story's plan; app-only. A bathroom is a drawn polygon; a wash/urinal or toilet area is a group of slab panels and sets a minimum sink on them. */
 export interface BathZone {
   id: string;
   story: string;
   kind: 'room' | 'wash' | 'wc';
-  pts: Pt[];
+  /** bathroom outline */
+  pts?: Pt[];
+  /** wash/urinal or toilet area: its slab panels */
+  slabIds?: string[];
+  /** BATH-01, WASH-01, WC-01 … (unique in the model) */
+  name?: string;
 }
 
 // ---------- loads (values in kN, kN/m, kN/m², kN·m; absolute distances in mm) ----------

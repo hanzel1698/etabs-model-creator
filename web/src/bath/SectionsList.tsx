@@ -1,8 +1,8 @@
 // Right panel: which bathroom section lines are shown on the plan (and offered in the Section view).
 import { useApp } from '../model/store';
 import { setSectionsHidden, useBath } from './sections';
-import { MIN_SINK, ZONE_LABEL, removeZone, underSunk, zonesOn } from './zones';
-import { fmt, polyArea } from '../model/geom';
+import { MIN_SINK, removeZone, underSunk, zoneArea, zoneGroups, zoneName, type Zone } from './zones';
+import { fmt } from '../model/geom';
 
 export function BathSectionsList() {
   const on = useApp((s) => s.show.bathSections);
@@ -40,21 +40,27 @@ export function BathSectionsList() {
 export function BathZonesList() {
   const story = useApp((s) => s.activeStory);
   const model = useApp((s) => s.model);
-  const zones = zonesOn(model, story);
-  if (!zones.length) return null;
+  const groups = zoneGroups(model, story);
+  if (!groups.length) return null;
+  const row = (z: Zone, sub: boolean) => (
+    <div key={z.id} className="small" style={sub ? { paddingLeft: 16 } : { fontWeight: 600 }}>
+      {zoneName(z)}
+      {MIN_SINK[z.kind] ? ` ≥${MIN_SINK[z.kind]}` : ''} <span className="muted">· {z.slabIds ? `${z.slabIds.length} panel${z.slabIds.length > 1 ? 's' : ''} · ` : ''}{fmt(zoneArea(z) / 1e6, 2)} m²</span>{' '}
+      <button title={z.kind === 'room' ? 'Remove this bathroom (its WC and wash areas stay)' : 'Remove this zone'} onClick={() => useApp.getState().commit((m) => removeZone(m, z.id))}>
+        ✕
+      </button>
+    </div>
+  );
   const low = underSunk(model, story).size;
   return (
     <div className="section bath-zones-list">
       <h4>
         <span>Bath zones · {story}</span>
       </h4>
-      {zones.map((z) => (
-        <div key={z.id} className="small">
-          {ZONE_LABEL[z.kind]}
-          {MIN_SINK[z.kind] ? ` ≥${MIN_SINK[z.kind]}` : ''} <span className="muted">· {fmt(Math.abs(polyArea(z.pts)) / 1e6, 2)} m²</span>{' '}
-          <button title="Remove this zone" onClick={() => useApp.getState().commit((m) => removeZone(m, z.id))}>
-            ✕
-          </button>
+      {groups.map((g) => (
+        <div key={g.room?.id ?? 'loose'}>
+          {g.room ? row(g.room, false) : <div className="small muted">Not in a bathroom</div>}
+          {g.parts.map((z) => row(z, true))}
         </div>
       ))}
       <div className={'small' + (low ? '' : ' muted')} style={low ? { color: 'var(--danger)' } : undefined}>

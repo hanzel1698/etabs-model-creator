@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useApp, COLOR_BY, type ToolName } from '../model/store';
 import { setTool } from '../plan/tools';
+import { addArea } from '../bath/zones';
 import { fitAll } from '../plan/PlanView';
 import { downloadProject, saveProjectAs, setWorkingFolder, workingFolderName } from '../model/persist';
 import { deleteIds } from '../model/ops';
@@ -186,6 +187,8 @@ export function MainMenu({ onNew, onOpen, onUnderlay, onLinkedUnderlay }: { onNe
   const { frames, slabs, joints } = useLoadTargets();
   const st = useApp.getState;
   const none = !sel.length;
+  // slab panels selected on the story in view: what a WC / wash area is made of
+  const selSlabs = useApp((s) => s.model.slabs).filter((x) => x.story === st().activeStory && sel.includes(x.id)).map((x) => x.id);
   const si = stories.findIndex((s) => s.name === active);
   const up = stories[si + 1]?.name,
     down = si > 0 ? stories[si - 1].name : undefined;
@@ -246,8 +249,12 @@ export function MainMenu({ onNew, onOpen, onUnderlay, onLinkedUnderlay }: { onNe
         'sep',
         {
           label: 'Bathroom zone',
-          title: 'Box a bathroom, its wash/urinal areas (min sink 150) and toilet areas (min sink 300); View by Sink level flags beams and slabs sunk less',
-          sub: ([['bathRoom', 'Bathroom'], ['bathWash', 'Wash / urinal area (≥150 sink)'], ['bathWc', 'Toilet area (≥300 sink)']] as const).map(([t, l]) => ({ label: l, checked: tool === t, run: () => setTool(t) })),
+          title: 'Draw a bathroom; group selected slab panels (Ctrl+click) into a WC (min sink 300) or wash/urinal area (min sink 150). View by Sink level flags what is sunk less',
+          sub: [
+            { label: 'Bathroom (draw)', checked: tool === 'bathRoom', run: () => setTool('bathRoom') },
+            { label: `Toilet WC ≥300 from selected panels (${selSlabs.length})`, disabled: !selSlabs.length, run: () => st().commit((m) => addArea(m, st().activeStory, 'wc', selSlabs)) },
+            { label: `Wash / urinal ≥150 from selected panels (${selSlabs.length})`, disabled: !selSlabs.length, run: () => st().commit((m) => addArea(m, st().activeStory, 'wash', selSlabs)) },
+          ],
         },
         'sep',
         { label: 'Stories…', run: () => openDialog({ kind: 'stories' }) },
