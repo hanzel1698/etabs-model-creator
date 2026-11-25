@@ -12,6 +12,7 @@ import { levelOf, dirOf, flightFrom, flightGrips, frame, OPPOSITE, reshapeFlight
 import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf, rectOf } from '../underlay/store';
 import { openDialog, useFramePick, useMovePick } from '../ui/dialogState';
 import { fitAll } from './PlanView';
+import { addSection, useBath } from '../bath/sections';
 
 const SNAP_PX = 12;
 const P = () => usePreview.getState();
@@ -26,6 +27,7 @@ const hints: Record<ToolName, string> = {
   slab: 'Click inside a bay bounded by beams (or grids) to create a slab.',
   slabDraw: 'Click polygon corners; Enter or click the first point to close.',
   measure: 'Click points to measure distance (chained). Esc clears.',
+  section: 'Bathroom section: click the two ends of the cut. It opens in the Section view with the sink catch check.',
   angle: 'Click 3 points: start, vertex, end.',
   area: 'Click polygon corners; Enter closes and shows the area.',
   panel: 'Click inside a panel bounded by beams to show Lx, Ly (c/c of beams) and whether it is one-way or two-way.',
@@ -257,7 +259,7 @@ export function onMove(screen: Pt) {
   }
   if (s.kind !== 'none' && s.kind !== 'near' && s.kind !== 'ortho' && s.kind !== 'track') upd.track = s.p;
   const last = p.rubber[p.rubber.length - 1];
-  if (last && (t === 'beam' || t === 'grid' || t === 'slabDraw' || t === 'area' || t === 'measure' || t === 'angle' || t === 'calibrate')) upd.hint = liveText(last, s.p);
+  if (last && (t === 'beam' || t === 'grid' || t === 'slabDraw' || t === 'area' || t === 'measure' || t === 'angle' || t === 'calibrate' || t === 'section')) upd.hint = liveText(last, s.p);
   if ((t === 'region' && !regionRect) || t === 'stairBox' || t === 'landing' || (t === 'flight' && !flightBox)) if (p.rubber.length === 1) upd.box = { a: p.rubber[0], b: s.p };
   if (last && t === 'flight') upd.hint = flightBox ? flightHint(flightBox, last, s.p) : liveText(last, s.p);
   if (last && t === 'span') upd.hint = liveText(last, s.p);
@@ -475,6 +477,20 @@ export function onClick(pt: Pt) {
     case 'area': {
       if (p.rubber.length >= 3 && dist(pt, p.rubber[0]) < SNAP_PX / viewport.k) return finishPolygon();
       return p.set({ rubber: [...p.rubber, pt] });
+    }
+    case 'section': {
+      if (!p.rubber.length) return p.set({ rubber: [pt] });
+      if (dist(p.rubber[0], pt) < 1) return;
+      const a = p.rubber[0];
+      let id = '';
+      commit((m) => {
+        const r = addSection(m, A().activeStory, a, pt);
+        id = r.id;
+        return r.m;
+      });
+      useBath.getState().setActive(id);
+      resetTool();
+      return A().setPanel('section');
     }
     case 'measure': {
       const pts = [...p.rubber, pt];

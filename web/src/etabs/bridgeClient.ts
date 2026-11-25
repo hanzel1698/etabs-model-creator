@@ -16,8 +16,8 @@ async function call<T>(path: string, body?: unknown, timeoutMs = 600000): Promis
   try {
     const r = await fetch(bridgeUrl() + path, {
       method: body === undefined ? 'GET' : 'POST',
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined || body instanceof Blob ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined || body instanceof Blob ? body : JSON.stringify(body),
       signal: ctl.signal,
     });
     const j = await r.json();
@@ -147,6 +147,10 @@ export const bridge = {
   attach: () => call<BridgeStatus>('/attach', {}, 30000),
   import: () => call<ImportResult>('/import'),
   push: (p: PushPayload) => call<PushResult>('/push', p),
+  /** AutoCAD on the bridge PC converts a DWG to DXF text */
+  dwg2dxf: (f: Blob) => call<{ dxf: string }>('/dwg2dxf', f, 300000),
+  /** read a DWG/DXF by path (DWG converted as above); no path: the bridge PC shows a file dialog */
+  underlay: (path?: string) => call<{ cancelled?: boolean; path: string; name: string; dxf: string }>('/underlay', { path }, 900000),
   verify: (p: PushPayload) => call<VerifyResult>('/verify', p),
   /** keepGuids: ids the app owns; the bridge skips any named object that has one of them */
   remove: (b: { frames: string[]; areas: string[]; keepGuids: string[] }) => call<{ deleted: number; log: string[] }>('/delete', b),

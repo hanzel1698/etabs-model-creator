@@ -33,6 +33,7 @@ export const MEASURE: { t: ToolName; label: string; key: string }[] = [
   { t: 'angle', label: 'Angle', key: 'A' },
   { t: 'area', label: 'Area', key: 'R' },
   { t: 'panel', label: 'Panel Size & Type', key: 'T' },
+  { t: 'section', label: 'Bath section', key: 'X' },
 ];
 
 type Entry = { label: string; kbd?: string; run?: () => void; disabled?: boolean; checked?: boolean; title?: string; sub?: Item[] };
@@ -167,7 +168,7 @@ function MenuBar({ menus }: { menus: Menu[] }) {
 }
 
 /** The app's main menu. File actions that need the hidden file inputs come in from App. */
-export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onOpen: () => void; onUnderlay: () => void }) {
+export function MainMenu({ onNew, onOpen, onUnderlay, onLinkedUnderlay }: { onNew: () => void; onOpen: () => void; onUnderlay: () => void; onLinkedUnderlay: () => void }) {
   const tool = useApp((s) => s.tool);
   const panel = useApp((s) => s.panel);
   const ortho = useApp((s) => s.ortho);
@@ -203,6 +204,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay }: { onNew: () => void; onO
         { label: 'Set working folder…', run: setWorkingFolder, title: `Folder Save as opens in (now: ${workingFolderName() ?? 'not set'}). Remembered in this browser.` },
         'sep',
         { label: 'Load underlay…', run: onUnderlay, title: 'Load a DXF (all stories in model space) or a PDF (one page per story)' },
+        { label: 'Load linked DWG/DXF…', run: onLinkedUnderlay, title: 'Pick the drawing through the bridge; its path is saved in the project and the drawing is re-read (DWG converted) whenever the project is opened' },
         { label: 'Underlay setup…', run: () => openDialog({ kind: 'underlay' }) },
         'sep',
         { label: 'Export plan sheets (PDF)…', title: 'Framing, column layout, line-load and shell-load plans of every story region on A2 sheets', run: () => openDialog({ kind: 'planSheets' }) },

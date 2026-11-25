@@ -251,8 +251,11 @@ const TOOL_NAMES: Record<ToolName, string> = {
   flight: 'Draw flight',
   landing: 'Draw landing',
   span: 'Draw design span',
+  section: 'Bathroom section cut',
 };
 const DIALOG_NAMES: Record<Dialog['kind'], string> = {
+  bathSink: 'Bathroom sink',
+  bathUpstand: 'Upstand',
   region: 'Story region',
   regionStories: 'Region stories',
   grids: 'Grids',
@@ -294,7 +297,7 @@ const SHOW_NAMES: Record<keyof ShowFlags, string> = {
   nodes: 'nodes',
   loads: 'loads',
 };
-const PANEL_NAMES = { plan: 'plan view only', '3d': '3D view only', split: 'plan and 3D side by side', elev: 'elevation view' };
+const PANEL_NAMES = { plan: 'plan view only', '3d': '3D view only', split: 'plan and 3D side by side', elev: 'elevation view', section: 'the bathroom section' };
 
 /** The elements `ids` picks out: one in full, several as "3 beams on Story2 (B300x500), 1 column on Story2". */
 function describeIds(m: Model, ids: string[]) {

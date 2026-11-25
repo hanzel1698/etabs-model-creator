@@ -4,6 +4,8 @@ import { cachedStoryNodes, isNodeId, slabGrips, type PanelSize } from '../model/
 import { fmt } from '../model/geom';
 import { columnOn, terminatingColumns, type Beam, type Flight, type Landing, type Pt, type Slab, type Span } from '../model/types';
 import { StairLayer } from './StairLayer';
+import { SectionLayer } from '../bath/SectionLayer';
+import { setDuct, useBath } from '../bath/sections';
 import { flightGrips, landingRect, landingSides, rectPts } from '../stair/stair';
 import { viewport } from './viewport';
 import { UnderlayLayer, StairBoxLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
@@ -14,7 +16,7 @@ import { pasteLoads, type LoadClip } from '../model/loads';
 import { useUnderlay, regionFor, underlayStory } from '../underlay/store';
 import { UnderlayCanvas } from './UnderlayCanvas';
 import { useIssues } from '../ui/Checks';
-import { useFramePick, useMovePick } from '../ui/dialogState';
+import { openDialog, useFramePick, useMovePick } from '../ui/dialogState';
 
 export function fitAll(w?: number, h?: number) {
   const el = document.getElementById('plan-host');
@@ -140,6 +142,8 @@ export function PlanView() {
   const ends = useMemo(() => { const t = terminatingColumns(full); return new Set(cols.filter((c) => c.story === story && t.has(c.id)).map((c) => c.id)); }, [full, cols, story]);
   const beams = useMemo(() => model.beams.filter((b) => b.story === story), [model.beams, story]);
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
+  const cuts = useMemo(() => (full.sectionLines ?? []).filter((c) => c.story === story), [full.sectionLines, story]);
+  const activeCut = useBath((s) => s.active);
   // inside a stair: its flights, landings and spans on the plan level in view
   const sm = useApp(stairPlanModel);
   const stair = useMemo(() => ({ flights: sm.flights, landings: sm.landings, spans: sm.spans }), [sm]);
@@ -335,6 +339,7 @@ export function PlanView() {
             <BeamLayer beams={beams} sel={sel} colorBy={colorBy} patterns={viewPats} />
             <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} ends={ends} />
             <StairLayer flights={stair.flights} landings={stair.landings} spans={stair.spans} sel={sel} viewRot={viewRot} ts={ts} />
+            <SectionLayer cuts={cuts} active={activeCut} beams={beams} slabs={slabs} viewRot={viewRot} ts={ts} />
             {show.sectionLabels && <LabelLayer m={model} story={story} viewRot={viewRot} ts={ts} cols={show.labelColumns} beams={show.labelBeams} slabs={show.slabs && show.labelSlabs} />}
             {(show.loads || colorBy === 'value') && <LoadLayer m={model} story={story} patterns={loadPats} viewRot={viewRot} ts={ts} />}
           </g>
@@ -413,8 +418,29 @@ function LoadClipItems({ item }: { item: (label: string, run: () => void) => Rea
       {targets.length > 0 && item(`Paste ${what}: add`, paste(false))}
       {targets.length > 0 && item(`Paste ${what}: replace`, paste(true))}
       {!one && !targets.length && <div className="menu-item" aria-disabled style={{ opacity: 0.5, pointerEvents: 'none' }}><span /><span>{clip ? `Copied ${what} need ${clip.frame ? 'frames' : 'slabs'} selected` : 'Select one element to copy its loads'}</span><span /></div>}
+      <BathItems item={item} />
       <div className="menu-sep" role="separator" />
       {item('Clear selection', () => useApp.getState().setSelection([]))}
+    </>
+  );
+}
+
+/** Bathroom section check tags (app-only, never pushed to ETABS) for the selected beams / slabs. */
+function BathItems({ item }: { item: (label: string, run: () => void) => React.ReactNode }) {
+  const st = useApp.getState();
+  const ids = new Set(st.selection);
+  const beams = st.model.beams.filter((b) => ids.has(b.id)).map((b) => b.id);
+  const slabs = st.model.slabs.filter((x) => ids.has(x.id));
+  if (!beams.length && !slabs.length) return null;
+  const ducts = slabs.filter((x) => x.duct).length;
+  const sIds = slabs.map((x) => x.id);
+  return (
+    <>
+      <div className="menu-sep" role="separator" />
+      {beams.length > 0 && item(`Beam sink… (${beams.length})`, () => openDialog({ kind: 'bathSink', target: 'beam', ids: beams }))}
+      {beams.length === 1 && item('Upstand…', () => openDialog({ kind: 'bathUpstand', beamId: beams[0] }))}
+      {slabs.length > 0 && item(`Slab sink… (${slabs.length})`, () => openDialog({ kind: 'bathSink', target: 'slab', ids: sIds }))}
+      {slabs.length > 0 && item(ducts === slabs.length ? 'Fill duct (slab again)' : 'Mark as duct', () => st.commit((m) => setDuct(m, sIds, ducts !== slabs.length)))}
     </>
   );
 }

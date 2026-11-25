@@ -227,13 +227,24 @@ function drawFrame(doc: jsPDF, d: Drawing, o: Orient, fx: number, fy: number) {
   if (d.underlay.length) text(doc, 'DXF underlay', fx + 4, fy + 5, 1.9, { color: '#9097a1', left: true });
 }
 
+export type Paper = 'A2' | 'A3';
+
 /**
- * A2 PDF of the drawings: A3 landscape frames go two to an A2 portrait page (stacked), A3 portrait
- * frames two to an A2 landscape page (side by side).
+ * PDF of the drawings. A2: A3 landscape frames go two to an A2 portrait page (stacked), A3 portrait
+ * frames two to an A2 landscape page (side by side). A3: one drawing per A3 page.
  */
-export async function plansPdf(items: { item: Drawing; o: Orient }[]): Promise<jsPDF> {
+export async function plansPdf(items: { item: Drawing; o: Orient }[], paper: Paper = 'A2'): Promise<jsPDF> {
   const { jsPDF } = await import('jspdf');
   let doc: jsPDF | null = null;
+  if (paper === 'A3') {
+    for (const { item, o } of items) {
+      const a3 = o === 'L' ? 'l' : 'p';
+      if (!doc) doc = new jsPDF({ unit: 'mm', format: 'a3', orientation: a3 });
+      else doc.addPage('a3', a3);
+      drawFrame(doc, item, o, 10, 10);
+    }
+    return doc ?? new jsPDF({ unit: 'mm', format: 'a3' });
+  }
   for (const pg of paginate(items)) {
     const a2 = pg.o === 'L' ? 'p' : 'l';
     if (!doc) doc = new jsPDF({ unit: 'mm', format: 'a2', orientation: a2 });

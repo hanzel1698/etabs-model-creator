@@ -51,6 +51,8 @@ export interface Beam {
   y2: number;
   section: string;
   loads?: FrameLoad[];
+  /** bathroom section check only (never pushed to ETABS): top sunk this many mm below the story level; absent = flush, negative = upstand */
+  sink?: number;
 }
 
 // ---------- stair (absolute elevations in mm, like the rest of the model) ----------
@@ -155,6 +157,29 @@ export interface Slab {
   pts: Pt[];
   section: string;
   loads?: ShellLoad[];
+  /** bathroom section check only (never pushed to ETABS): top sunk this many mm below the story level */
+  sink?: number;
+  /** bathroom section check only: an opening (shaft/duct), no concrete cast here */
+  duct?: true;
+}
+
+/** Raised nib on top of a beam over t0..t1 (fractions from its start); bathroom section check only, never pushed to ETABS. */
+export interface Upstand {
+  id: string;
+  beamId: string;
+  t0: number;
+  t1: number;
+  depth: number;
+}
+
+/** Bathroom section cut on one story's plan, a → b; app-only. */
+export interface SectionCut {
+  id: string;
+  story: string;
+  label: string;
+  a: Pt;
+  b: Pt;
+  reversed?: boolean;
 }
 
 // ---------- loads (values in kN, kN/m, kN/m², kN·m; absolute distances in mm) ----------
@@ -252,6 +277,9 @@ export interface Model {
   foundation?: { foundingDepth: number; footingThickness: number; plinthHeight: number };
   /** custom elevation lines (made from selected beams); app-only, not pushed to ETABS */
   elevations?: Grid[];
+  /** bathroom section check (app-only, not pushed to ETABS) */
+  upstands?: Upstand[];
+  sectionLines?: SectionCut[];
 }
 
 export type ElementKind = 'column' | 'beam' | 'slab' | 'grid';

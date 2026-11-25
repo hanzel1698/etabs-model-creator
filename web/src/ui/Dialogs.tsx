@@ -7,6 +7,7 @@ import { Is875Dialog } from './Is875';
 import { FrameLoadDialog, JointLoadDialog, LoadPatternsDialog, ShellLoadDialog } from './LoadDialogs';
 import { StairParamsDialog, StairPushDialog, StairResultsDialog, StairSetLoadsDialog } from './StairPanel';
 import { useApp, toast } from '../model/store';
+import { SinkDialog, UpstandDialog } from '../bath/BathDialogs';
 import { generateGrids, lift, moveIds, oppositeLabelStart, replicate } from '../model/ops';
 import { parseSpacing, fmt } from '../model/geom';
 import { columnStories, levelZ, uid, storyElevations, type Column, type FrameSection, type Model, type RefPlane, type SlabSection, type Story } from '../model/types';
@@ -61,6 +62,10 @@ export function Dialogs() {
       return <UnderlayDialog />;
     case 'etabs':
       return <EtabsDialog />;
+    case 'bathSink':
+      return <SinkDialog target={d.target} ids={d.ids} />;
+    case 'bathUpstand':
+      return <UpstandDialog beamId={d.beamId} />;
     case 'planSheets':
       return <PlanSheetsDialog />;
     case 'loadPatterns':

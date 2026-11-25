@@ -5,30 +5,37 @@ import { useApp, toast } from '../model/store';
 import { useUnderlay } from '../underlay/store';
 import { log } from '../log/sessionLog';
 import { buildDrawings, paginate, suggestOrient, type Orient } from '../export/sheets';
-import { plansPdf } from '../export/pdf';
+import { plansPdf, type Paper } from '../export/pdf';
+import { pickExportFolder, writeToFolder } from '../model/persist';
 
-/** Export framing, column layout, line-load and shell-load plans of every story region as an A2 PDF. */
+/** Export framing, column layout, line-load and shell-load plans of every story region as an A2 (or A3) PDF. */
 export function PlanSheetsDialog() {
   const model = useApp((s) => s.model);
   const u = useUnderlay();
   const drawings = useMemo(() => buildDrawings(model, { dxf: u.kind === 'dxf' ? u.dxf : null, regions: u.regions, showText: u.showText }), [model, u.dxf, u.kind, u.regions, u.showText]);
   // '' = per-drawing suggestion (the orientation that gives the larger plan)
   const [orient, setOrient] = useState<'' | Orient>('');
+  // A2 = two A3 drawings per A2 page, A3 = one drawing per A3 page
+  const [paper, setPaper] = useState<Paper>('A2');
   const [picked, setPicked] = useState<boolean[]>(() => drawings.map(() => true));
   const [busy, setBusy] = useState(false);
   const items = drawings.map((item) => ({ item, o: orient || suggestOrient(item) })).filter((_, i) => picked[i] ?? true);
   const titles = [...new Set(drawings.map((d) => d.title))];
   const regions = [...new Set(drawings.map((d) => d.region))];
-  const pages = paginate(items).length;
+  const pages = paper === 'A3' ? items.length : paginate(items).length;
   // apply f to every drawing, or only to drawings with title t
   const pick = (f: (v: boolean) => boolean, t?: string) => setPicked(drawings.map((d, i) => (t === undefined || d.title === t ? f(picked[i] ?? true) : picked[i] ?? true)));
 
   const run = async () => {
     setBusy(true);
     try {
-      const doc = await plansPdf(items);
-      doc.save('plan-sheets.pdf');
-      log('file', `Exported plan-sheets.pdf (${items.length} drawings on ${pages} A2 pages)`);
+      // pick before building the PDF: the picker needs the click's user activation
+      const dir = await pickExportFolder();
+      if (dir === undefined) return;
+      const doc = await plansPdf(items, paper);
+      if (dir) await writeToFolder(dir, 'plan-sheets.pdf', doc.output('blob'));
+      else doc.save('plan-sheets.pdf');
+      log('file', `Exported plan-sheets.pdf${dir ? ` to ${dir.name}` : ''} (${items.length} drawings on ${pages} ${paper} pages)`);
       closeDialog();
     } catch (e) {
       toast(`PDF export failed: ${(e as Error).message}`);
@@ -39,7 +46,7 @@ export function PlanSheetsDialog() {
 
   return (
     <Modal
-      title="Export plan sheets (A2 PDF)"
+      title={`Export plan sheets (${paper} PDF)`}
       wide
       footer={
         <>
@@ -51,7 +58,7 @@ export function PlanSheetsDialog() {
       }
     >
       <div className="small muted">
-        Two A3 drawings per A2 page: landscape A3s stacked on a portrait A2, portrait A3s side by side on a landscape A2. Auto picks, per drawing, the orientation that gives the larger plan.
+        {paper === 'A2' ? 'Two A3 drawings per A2 page: landscape A3s stacked on a portrait A2, portrait A3s side by side on a landscape A2.' : 'One drawing per A3 page.'} Auto picks, per drawing, the orientation that gives the larger plan.
         {u.kind === 'pdf' && ' The PDF underlay is not exported; only a DXF underlay is drawn.'}
       </div>
       {drawings.length ? (
@@ -96,6 +103,13 @@ export function PlanSheetsDialog() {
               ))}
             </tbody>
           </table>
+          <label className="sheet-orient">
+            Paper
+            <select value={paper} onChange={(e) => setPaper(e.target.value as Paper)}>
+              <option value="A2">2 A3 on one A2</option>
+              <option value="A3">Single A3 sheets</option>
+            </select>
+          </label>
           <label className="sheet-orient">
             A3 orientation
             <select value={orient} onChange={(e) => setOrient(e.target.value as '' | Orient)}>

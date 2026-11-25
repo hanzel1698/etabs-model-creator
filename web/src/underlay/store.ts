@@ -6,6 +6,7 @@ import { parseDxf, readInsUnits, unitScaleFromInsunits, type DxfData } from './d
 import { toast, useApp } from '../model/store';
 import { BASE, rangeFor, rangeLevels } from '../stair/ranges';
 import { pdfPageCount, renderPdfPage, type RenderedPage } from './pdf';
+import { bridge } from '../etabs/bridgeClient';
 
 export interface Region {
   id: string;
@@ -24,6 +25,8 @@ export interface PdfSheet {
 export interface UnderlayMeta {
   kind: 'none' | 'dxf' | 'pdf';
   fileName: string;
+  /** DWG/DXF on disk, linked through the bridge; saved in the project and re-read when it opens */
+  filePath?: string;
   dxfScale: number;
   regions: Region[];
   sheets: PdfSheet[];
@@ -55,6 +58,7 @@ interface UState extends UnderlayMeta {
 const defaultMeta: UnderlayMeta = {
   kind: 'none',
   fileName: '',
+  filePath: undefined,
   dxfScale: 1,
   regions: [],
   sheets: [],
@@ -78,6 +82,7 @@ export const useUnderlay = create<UState>((set) => ({
 export const metaOf = (s: UnderlayMeta): UnderlayMeta => ({
   kind: s.kind,
   fileName: s.fileName,
+  filePath: s.filePath,
   dxfScale: s.dxfScale,
   regions: s.regions,
   sheets: s.sheets,
@@ -118,12 +123,20 @@ function parseDxfWith(text: string, scale: number, hiddenLayers: string[]) {
   return dxf;
 }
 
-export async function loadDxfFile(file: File) {
+/** Load a DWG/DXF through the bridge and link its path; no path asks for one. Returns the path, or undefined if cancelled. */
+export async function loadDxfPath(path?: string) {
+  const r = await bridge.underlay(path);
+  if (r.cancelled) return;
+  await loadDxfFile(new File([r.dxf], r.name), r.path);
+  return r.path;
+}
+
+export async function loadDxfFile(file: File, filePath?: string) {
   const text = await file.text();
   const prev = useUnderlay.getState();
   if (prev.kind === 'dxf' && prev.fileName === file.name) {
     // same drawing again (e.g. an updated revision): keep its units, regions and layer settings
-    prev.set({ dxf: parseDxfWith(text, prev.dxfScale, prev.hiddenLayers), dxfText: text });
+    prev.set({ dxf: parseDxfWith(text, prev.dxfScale, prev.hiddenLayers), dxfText: text, filePath });
     await idbSet('underlayFile', text);
     await saveUnderlayMeta();
     toast(`Reloaded ${file.name}, keeping its scale and story regions.`);
@@ -150,7 +163,7 @@ export async function loadDxfFile(file: File) {
   if (hiddenLayers.length) dxf.layers.forEach((l) => (l.visible = !hiddenLayers.includes(l.name)));
   if (regions.length) toast(`Restored the story regions last defined for ${file.name}.`);
   clearPdf();
-  useUnderlay.getState().set({ ...defaultMeta, kind: 'dxf', fileName: file.name, dxfScale: scale, dxf, dxfText: text, regions, hiddenLayers, setupMode: !regions.length });
+  useUnderlay.getState().set({ ...defaultMeta, kind: 'dxf', fileName: file.name, filePath, dxfScale: scale, dxf, dxfText: text, regions, hiddenLayers, setupMode: !regions.length });
   await idbSet('underlayFile', text);
   await saveUnderlayMeta();
 }

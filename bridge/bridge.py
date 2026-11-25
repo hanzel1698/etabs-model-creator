@@ -14,7 +14,9 @@ import argparse
 import glob
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import traceback
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -1277,6 +1279,54 @@ def do_status():
         return {"ok": True, "attached": False, "message": str(e)}
 
 
+def do_dwg2dxf(data):
+    """DWG bytes -> DXF text through AutoCAD's headless accoreconsole (no AutoCAD window opens)."""
+    exes = sorted(glob.glob(r"C:\Program Files\Autodesk\AutoCAD *\accoreconsole.exe"))
+    if not exes:
+        raise EtabsError("DWG needs AutoCAD (accoreconsole.exe) on this PC. Save the drawing as DXF instead.")
+    with tempfile.TemporaryDirectory() as d:
+        dwg, dxf, scr = (os.path.join(d, n) for n in ("in.dwg", "out.dxf", "conv.scr"))
+        with open(dwg, "wb") as f:
+            f.write(data)
+        with open(scr, "w") as f:
+            f.write(f'FILEDIA\n0\n_.DXFOUT\n"{dxf}"\n16\n')
+        r = subprocess.run([exes[-1], "/i", dwg, "/s", scr, "/l", "en-US"], capture_output=True,
+                           stdin=subprocess.DEVNULL, timeout=300, creationflags=subprocess.CREATE_NO_WINDOW)
+        if not os.path.exists(dxf):
+            raise EtabsError("DWG conversion failed: " + r.stdout.decode("utf-16-le", "replace").replace("\0", "")[-500:])
+        with open(dxf, encoding="utf-8", errors="replace") as f:
+            return {"dxf": f.read()}
+
+
+def do_underlay(body):
+    """A DWG/DXF on disk -> {path, name, dxf}. With no path the user picks one in a Windows file dialog."""
+    path = body.get("path")
+    if not path:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)  # else the dialog opens behind the browser
+        path = filedialog.askopenfilename(parent=root, title="Linked underlay drawing", filetypes=[("Drawings", "*.dwg *.dxf")])
+        root.destroy()
+        if not path:
+            return {"cancelled": True}
+    path = os.path.abspath(path)
+    ext = os.path.splitext(path)[1].lower()
+    # any web page can call the bridge, so it reads drawings only, never other files
+    if ext not in (".dwg", ".dxf"):
+        raise EtabsError("Only a .dwg or .dxf file can be a linked underlay")
+    if not os.path.isfile(path):
+        raise EtabsError(f"Linked drawing not found: {path}")
+    if ext == ".dwg":
+        with open(path, "rb") as f:
+            dxf = do_dwg2dxf(f.read())["dxf"]
+    else:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            dxf = f.read()
+    return {"path": path, "name": os.path.basename(path), "dxf": dxf}
+
+
 # ---------------------------------------------------------------- http
 
 class Handler(BaseHTTPRequestHandler):
@@ -1323,8 +1373,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         n = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(n) or b"{}")
+        raw = self.rfile.read(n)
         u = urlparse(self.path)
+        if u.path == "/dwg2dxf":
+            return self._run(do_dwg2dxf, raw)
+        body = json.loads(raw or b"{}")
         if u.path == "/attach":
             self._run(lambda: (attach(), do_status())[1])
         elif u.path == "/push":
@@ -1333,6 +1386,8 @@ class Handler(BaseHTTPRequestHandler):
             self._run(do_delete, body)
         elif u.path == "/verify":
             self._run(do_verify, body)
+        elif u.path == "/underlay":
+            self._run(do_underlay, body)
         else:
             self._send(404, {"error": "not found"})
 

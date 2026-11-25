@@ -23,7 +23,9 @@ export type Dialog =
   | { kind: 'stairParams' }
   | { kind: 'stairResults' }
   | { kind: 'stairPush' }
-  | { kind: 'stairSetLoads' };
+  | { kind: 'stairSetLoads' }
+  | { kind: 'bathSink'; target: 'beam' | 'slab'; ids: string[] }
+  | { kind: 'bathUpstand'; beamId: string };
 
 /** An assigned load being edited: its key (see *LoadKey; a joint load's id) and the elements that carry it. */
 export type LoadEdit = { key: string; ids: string[] };

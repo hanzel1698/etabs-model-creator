@@ -18,6 +18,7 @@ export type ToolName =
   | 'slab'
   | 'slabDraw'
   | 'measure'
+  | 'section'
   | 'angle'
   | 'area'
   | 'panel'
@@ -130,8 +131,8 @@ interface AppState {
 
   viewRotation: number; // degrees, view only
   setViewRotation: (r: number) => void;
-  panel: 'plan' | '3d' | 'split' | 'elev';
-  setPanel: (p: 'plan' | '3d' | 'split' | 'elev') => void;
+  panel: 'plan' | '3d' | 'split' | 'elev' | 'section';
+  setPanel: (p: 'plan' | '3d' | 'split' | 'elev' | 'section') => void;
   /** id of the grid the elevation view looks at */
   elevGrid: string;
   setElevGrid: (id: string) => void;

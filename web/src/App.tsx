@@ -9,13 +9,15 @@ import { openDialog } from './ui/dialogState';
 import { deleteIds } from './model/ops';
 import { deleteStairIds } from './stair/regions';
 import { restoreModel, startAutosave, downloadProject, saveProjectAs, forgetSaveTarget, openProject } from './model/persist';
-import { loadDxfFile, loadPdfFile, restoreUnderlay } from './underlay/store';
+import { loadDxfFile, loadDxfPath, loadPdfFile, restoreUnderlay } from './underlay/store';
+import { bridge } from './etabs/bridgeClient';
 import { columnOn, emptyModel } from './model/types';
 import { fmt } from './model/geom';
 import { startSessionLog, log, toggleLog, useLog } from './log/sessionLog';
 import { LogPanel } from './ui/LogPanel';
 import { IssueBadge, watchIssues } from './ui/Checks';
 import { ElevView } from './elev/ElevView';
+import { SectionPane } from './bath/SectionPane';
 import { PatternPicker } from './ui/LoadDialogs';
 import { MainMenu, TOOLS, MEASURE, STAIR_TOOLS } from './ui/MenuBar';
 
@@ -26,6 +28,7 @@ const VIEWS = [
   { p: 'split', label: 'Split' },
   { p: '3d', label: '3D' },
   { p: 'elev', label: 'Elev', title: 'Elevation along a grid line' },
+  { p: 'section', label: 'Section', title: 'Bathroom section: sink catch check' },
 ] as const;
 
 export function App() {
@@ -98,13 +101,22 @@ export function App() {
     return () => window.removeEventListener('keydown', kd);
   }, []);
 
-  const loadUnderlay = async (f: File) => {
-    log('file', `Underlay ${f.name}`);
+  // no file: pick a DWG/DXF through the bridge and link its path in the project
+  const loadUnderlay = async (f?: File) => {
+    if (f) log('file', `Underlay ${f.name}`);
     try {
-      if (/\.dxf$/i.test(f.name)) await loadDxfFile(f);
+      if (!f) {
+        useApp.getState().setToast('Pick the drawing in the file dialog the bridge opens…');
+        const path = await loadDxfPath();
+        if (!path) return useApp.getState().setToast('Linked underlay cancelled.');
+        log('file', `Linked underlay ${path}`);
+      } else if (/\.dwg$/i.test(f.name)) {
+        useApp.getState().setToast(`Converting ${f.name} to DXF…`);
+        await loadDxfFile(new File([(await bridge.dwg2dxf(f)).dxf], f.name));
+      } else if (/\.dxf$/i.test(f.name)) await loadDxfFile(f);
       else if (/\.pdf$/i.test(f.name)) await loadPdfFile(f, useApp.getState().model.stories.map((s) => s.name));
-      else throw new Error('Choose a .dxf or .pdf file');
-      useApp.getState().setToast(/\.dxf$/i.test(f.name) ? 'DXF loaded. Use “Define story region” to box each story plan.' : 'PDF loaded. Assign pages to stories, then calibrate each page.');
+      else throw new Error('Choose a .dwg, .dxf or .pdf file');
+      useApp.getState().setToast(!f || /\.d(xf|wg)$/i.test(f.name) ? 'Drawing loaded. Use “Define story region” to box each story plan.' : 'PDF loaded. Assign pages to stories, then calibrate each page.');
       openDialog({ kind: 'underlay' });
       requestAnimationFrame(() => fitAll());
     } catch (e: any) {
@@ -119,6 +131,7 @@ export function App() {
           onNew={() => confirm('Start a new model? Unsaved work is lost.') && (log('file', 'New model'), useApp.getState().setModel(emptyModel()), useApp.getState().setTextScale(1), forgetSaveTarget(), resetTool())}
           onOpen={() => fileRef.current?.click()}
           onUnderlay={() => ulRef.current?.click()}
+          onLinkedUnderlay={() => loadUnderlay()}
         />
         <div className="toolbar">
           {(stairName ? STAIR_TOOLS : TOOLS).map((x) => (
@@ -152,13 +165,14 @@ export function App() {
             e.target.value = '';
             if (f) log('file', `Open ${f.name}`), openProject(f).then(() => fitAll()).catch((er) => useApp.getState().setToast(er.message));
           }} />
-        <input ref={ulRef} type="file" accept=".dxf,.pdf" hidden onChange={(e) => (e.target.files?.[0] && loadUnderlay(e.target.files[0]), (e.target.value = ''))} />
+        <input ref={ulRef} type="file" accept=".dwg,.dxf,.pdf" hidden onChange={(e) => (e.target.files?.[0] && loadUnderlay(e.target.files[0]), (e.target.value = ''))} />
       </div>
 
       <LeftPanel />
       <div className="main">
         {(panel === 'plan' || panel === 'split') && <PlanView />}
         {panel === 'elev' && <ElevView />}
+        {panel === 'section' && <SectionPane />}
         {(panel === '3d' || panel === 'split') && (
           <Suspense fallback={<div className="view3d muted" style={{ padding: 20 }}>Loading 3D…</div>}>
             <View3D />

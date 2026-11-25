@@ -1,8 +1,8 @@
 import { get as idbGet, set as idbSet } from 'idb-keyval';
-import { useApp } from './store';
+import { toast, useApp } from './store';
 import { emptyModel, type Model } from './types';
 import { log } from '../log/sessionLog';
-import { applySavedMeta, metaOf, useUnderlay } from '../underlay/store';
+import { applySavedMeta, loadDxfPath, metaOf, useUnderlay } from '../underlay/store';
 
 const KEY = 'emc-model';
 
@@ -51,6 +51,22 @@ export async function setWorkingFolder() {
   } catch (e) {
     if ((e as Error).name !== 'AbortError') alert(`Could not set folder: ${(e as Error).message}`);
   }
+}
+
+/** Folder picker for an export; null if the browser has none (caller downloads), undefined if cancelled. Must run inside a click. */
+export async function pickExportFolder(): Promise<FileSystemDirectoryHandle | null | undefined> {
+  if (!fsApi.showDirectoryPicker) return null;
+  try {
+    return await fsApi.showDirectoryPicker({ id: 'emc-export', mode: 'readwrite', startIn: folder ?? 'documents' });
+  } catch (e) {
+    if ((e as Error).name !== 'AbortError') throw e;
+  }
+}
+
+export async function writeToFolder(dir: FileSystemDirectoryHandle, name: string, data: Blob) {
+  const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+  await w.write(data);
+  await w.close();
 }
 
 const projectBlob = () => {
@@ -118,6 +134,11 @@ export async function openProject(file: File) {
   useApp.getState().setModel({ ...emptyModel(), ...j.model });
   // text size is per project; older files without one get the default
   useApp.getState().setTextScale(+j.textScale || 1);
-  // keep the loaded underlay file, apply saved scale/placement only if it is the same file
+  // a linked DWG/DXF is re-read from disk; otherwise keep the loaded underlay file
+  if (j.underlay?.filePath) {
+    toast(`Opening linked drawing ${j.underlay.filePath}…`);
+    await loadDxfPath(j.underlay.filePath).catch((e) => toast(`Linked drawing not loaded: ${e.message}`));
+  }
+  // apply saved scale/placement only if it is the same file
   if (j.underlay) applySavedMeta(j.underlay);
 }
