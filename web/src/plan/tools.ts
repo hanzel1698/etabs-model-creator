@@ -13,7 +13,6 @@ import { useUnderlay, saveUnderlayMeta, regionFor, sheetFor, rescaleDxf, rectOf 
 import { openDialog, useFramePick, useMovePick } from '../ui/dialogState';
 import { fitAll } from './PlanView';
 import { addSection, useBath } from '../bath/sections';
-import { addZone } from '../bath/zones';
 
 const SNAP_PX = 12;
 const P = () => usePreview.getState();
@@ -39,7 +38,6 @@ const hints: Record<ToolName, string> = {
   flight: 'Click two opposite corners of the flight, then click a start and an end point to show the UP direction. Risers come from the stair’s tread and rise.',
   landing: 'Click two opposite corners. Its level is taken from the flight that ends in it.',
   span: 'Click support to support along the spanning direction (snaps to beams).',
-  bathRoom: 'Bathroom zone: click its corners; Enter or click the first point to close. WC and wash/urinal areas are made from selected slab panels (right-click).',
 };
 
 // tools that work inside a stair (the building is read-only there)
@@ -47,9 +45,9 @@ const STAIR_MODE_TOOLS: ToolName[] = ['select', 'measure', 'angle', 'area', 'fli
 const STAIR_TOOLS: ToolName[] = ['flight', 'landing', 'span'];
 
 // tools whose points snap to the underlay, so they must not run on the raw (setup) DXF
-const DRAW_TOOLS: ToolName[] = ['grid', 'column', 'beam', 'slabDraw', 'bathRoom'];
+const DRAW_TOOLS: ToolName[] = ['grid', 'column', 'beam', 'slabDraw'];
 /** Tools drawn as a polygon: click corners, close with Enter, a double-click or the first point. */
-export const isPolyTool = (t: ToolName) => t === 'slabDraw' || t === 'area' || t === 'bathRoom';
+export const isPolyTool = (t: ToolName) => t === 'slabDraw' || t === 'area';
 
 // tool-local state
 let regionRect: { a: Pt; b: Pt } | null = null;
@@ -478,8 +476,7 @@ export function onClick(pt: Pt) {
       return p.set({ measure: { pts: [...bay, bay[0]], text: '' }, panel: panelSize(bay) });
     }
     case 'slabDraw':
-    case 'area':
-    case 'bathRoom': {
+    case 'area': {
       if (p.rubber.length >= 3 && dist(pt, p.rubber[0]) < SNAP_PX / viewport.k) return finishPolygon();
       return p.set({ rubber: [...p.rubber, pt] });
     }
@@ -698,10 +695,6 @@ export function finishPolygon() {
   if (pts.length < 3) return;
   if (t === 'slabDraw') {
     for (const st of drawStories()) A().commit((m) => addSlab(m, pts, st, A().active.slab, drawDz()));
-    p.set({ rubber: [] });
-  } else if (t === 'bathRoom') {
-    if (Math.abs(polyArea(pts)) < 1e4) return toast('That zone has no area: click at least three corners that are not in a line.');
-    A().commit((m) => addZone(m, A().activeStory, 'room', pts));
     p.set({ rubber: [] });
   } else if (t === 'area') {
     let per = 0;

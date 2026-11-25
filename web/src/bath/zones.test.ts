@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyModel, type Model } from '../model/types';
-import { addArea, addZone, nameBaths, removeZone, underSunk, zoneGroups, zoneName } from './zones';
+import { assignZone, mergeZones, removeZone, underSunk, upgradeZones, zoneActions, zoneName } from './zones';
 
 const sq = (x: number, y: number, w: number, h: number) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
 
@@ -15,16 +15,27 @@ function bays(): Model {
   return m;
 }
 
+const names = (m: Model) => m.bathZones!.map((z) => [zoneName(z), z.slabIds]);
+
 describe('areas from panels', () => {
-  it('groups selected panels into one numbered area; a panel moves to the newest area, an emptied area goes', () => {
-    let m = addArea(bays(), 'Story1', 'wc', ['s1', 's2']);
-    m = addArea(m, 'Story1', 'wash', ['s3']);
-    expect(m.bathZones!.map((z) => [zoneName(z), z.slabIds])).toEqual([['WC-01', ['s1', 's2']], ['WASH-01', ['s3']]]);
-    m = addArea(m, 'Story1', 'wc', ['s2']);
-    expect(m.bathZones!.map((z) => [zoneName(z), z.slabIds])).toEqual([['WC-01', ['s1']], ['WASH-01', ['s3']], ['WC-02', ['s2']]]);
-    m = addArea(m, 'Story1', 'wash', ['s1']);
-    expect(m.bathZones!.map((z) => zoneName(z))).toEqual(['WASH-01', 'WC-02', 'WASH-02']);
-    expect(addArea(m, 'Story2', 'wc', ['s1'])).toBe(m); // panels of another story are not taken
+  it('makes each assigned panel an area of its own; merging makes them one; a panel moves to its newest area', () => {
+    let m = assignZone(bays(), 'Story1', 'wc', ['s1', 's2']);
+    m = assignZone(m, 'Story1', 'wash', ['s3']);
+    expect(names(m)).toEqual([['WC-01', ['s1']], ['WC-02', ['s2']], ['WASH-01', ['s3']]]);
+    m = mergeZones(m, 'Story1', 'wc', ['s1', 's2']);
+    expect(names(m)).toEqual([['WC-01', ['s1', 's2']], ['WASH-01', ['s3']]]);
+    expect(mergeZones(m, 'Story1', 'wc', ['s1'])).toBe(m); // one area: nothing to merge
+    m = assignZone(m, 'Story1', 'wash', ['s2']);
+    expect(names(m)).toEqual([['WC-01', ['s1']], ['WASH-01', ['s3']], ['WASH-02', ['s2']]]);
+    expect(assignZone(m, 'Story2', 'wc', ['s1'])).toBe(m); // panels of another story are not taken
+  });
+
+  it('offers merging only for a kind the selection spans twice', () => {
+    const m = assignZone(bays(), 'Story1', 'wc', ['s1', 's2']);
+    const labels = (ids: string[]) => zoneActions(m, 'Story1', ids).map((a) => a.label);
+    expect(labels(['s1', 's2'])).toContain('Merge 2 WC areas');
+    expect(labels(['s1', 's3']).some((l) => l.startsWith('Merge'))).toBe(false);
+    expect(labels(['nope'])).toEqual([]);
   });
 
   it('flags its panels sunk too little, and beams sunk too little between or across its panels but not along its outer edge', () => {
@@ -38,31 +49,42 @@ describe('areas from panels', () => {
       { id: 'deep', story: 'Story1', x1: 2000, y1: 0, x2: 2000, y2: 3000, section: 'B', sink: 300 },
       { id: 'outerSide', story: 'Story1', x1: 6000, y1: 0, x2: 6000, y2: 3000, section: 'B' },
     ];
-    const a = addArea(m, 'Story1', 'wc', ['s1', 's2']);
-    const b = addArea(a, 'Story1', 'wash', ['s3']); // a duct panel: exempt
+    const apart = assignZone(m, 'Story1', 'wc', ['s1', 's2']);
+    expect(underSunk(apart, 'Story1').has('between')).toBe(false); // two areas: the beam between them is an edge of each
+    const a = mergeZones(apart, 'Story1', 'wc', ['s1', 's2']);
+    const b = assignZone(a, 'Story1', 'wash', ['s3']); // a duct panel: exempt
     expect([...underSunk(b, 'Story1')]).toEqual([['s2', 300], ['between', 300], ['across', 300], ['sunk', 300]]);
+    expect(underSunk(b, 'Story1', new Set([b.bathZones!.at(-1)!.id])).size).toBe(0); // only the wash area
     expect(underSunk(b, 'Story2').size).toBe(0);
   });
 });
 
 describe('bathrooms', () => {
-  it('numbers bathrooms and lists each area under the smallest bathroom holding it', () => {
-    let m = bays();
-    m = addZone(m, 'Story1', 'room', sq(-100, -100, 9200, 3200));
-    m = addZone(m, 'Story1', 'room', sq(-100, -100, 6200, 3200));
-    m = addZone(m, 'Story1', 'room', sq(50000, 0, 1000, 1000));
-    m = addArea(m, 'Story1', 'wc', ['s1', 's2']);
-    m = addArea(m, 'Story1', 'wash', ['s3']);
-    const g = zoneGroups(m, 'Story1').map((x) => [x.room ? zoneName(x.room) : null, x.parts.map(zoneName)]);
-    expect(g).toEqual([['BATH-01', ['WASH-01']], ['BATH-02', ['WC-01']], ['BATH-03', []]]);
-    m = removeZone(m, m.bathZones![0].id);
-    expect(zoneName(addZone(m, 'Story2', 'room', sq(0, 0, 1, 1)).bathZones!.at(-1)!)).toBe('BATH-01');
+  it('makes the selected panels one bathroom, apart from the areas they are in', () => {
+    let m = assignZone(bays(), 'Story1', 'wc', ['s2']);
+    m = assignZone(m, 'Story1', 'room', ['s1', 's2']);
+    m = assignZone(m, 'Story1', 'room', ['s3']);
+    expect(names(m)).toEqual([['WC-01', ['s2']], ['BATH-01', ['s1', 's2']], ['BATH-02', ['s3']]]);
+    m = assignZone(m, 'Story1', 'room', ['s2']); // leaves BATH-01, stays in WC-01
+    expect(names(m)).toEqual([['WC-01', ['s2']], ['BATH-01', ['s1']], ['BATH-02', ['s3']], ['BATH-03', ['s2']]]);
+    m = mergeZones(m, 'Story1', 'room', ['s1', 's2', 's3']);
+    expect(names(m)).toEqual([['WC-01', ['s2']], ['BATH-01', ['s1', 's3', 's2']]]);
+    m = removeZone(m, m.bathZones![1].id);
+    expect(names(assignZone(m, 'Story1', 'room', ['s3']))).toEqual([['WC-01', ['s2']], ['BATH-01', ['s3']]]);
   });
 
-  it('numbers bathrooms saved without a name on load', () => {
-    const m = addZone(addZone(emptyModel(), 'Story1', 'room', sq(0, 0, 1, 1)), 'Story1', 'room', sq(0, 0, 2, 2));
-    const old = { ...m, bathZones: m.bathZones!.map((z, i) => (i === 0 ? { ...z, name: undefined } : z)) };
-    expect(nameBaths(old).bathZones!.map((z) => z.name)).toEqual(['BATH-01', 'BATH-02']);
-    expect(nameBaths(m)).toBe(m);
+  it('turns bathrooms drawn as outlines by earlier versions into the panels inside them, and numbers unnamed ones', () => {
+    const m = bays();
+    m.bathZones = [
+      { id: 'a', story: 'Story1', kind: 'room', pts: sq(-100, -100, 6200, 3200) },
+      { id: 'b', story: 'Story1', kind: 'room', pts: sq(50000, 0, 1000, 1000), name: 'BATH-07' },
+      { id: 'c', story: 'Story1', kind: 'wc', slabIds: ['s3'] },
+    ];
+    const up = upgradeZones(m);
+    expect(up.bathZones).toEqual([
+      { id: 'a', story: 'Story1', kind: 'room', slabIds: ['s1', 's2'], name: 'BATH-01' },
+      { id: 'c', story: 'Story1', kind: 'wc', slabIds: ['s3'], name: 'WC-01' },
+    ]); // 'b' holds no panel
+    expect(upgradeZones(up)).toBe(up);
   });
 });

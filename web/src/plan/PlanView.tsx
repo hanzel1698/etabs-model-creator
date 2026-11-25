@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp, usePreview, planModel, planeLevel, stairPlanModel, viewModel, visibleModel } from '../model/store';
 import { cachedStoryNodes, isNodeId, slabGrips, type PanelSize } from '../model/ops';
 import { fmt } from '../model/geom';
@@ -7,7 +7,7 @@ import { StairLayer } from './StairLayer';
 import { SectionLayer } from '../bath/SectionLayer';
 import { CatchFlags } from '../bath/CatchFlags';
 import { setDuct, useBath } from '../bath/sections';
-import { addArea, underSunk, zonesOn } from '../bath/zones';
+import { underSunk, zoneActions, zonesOn } from '../bath/zones';
 import { flightGrips, landingRect, landingSides, rectPts } from '../stair/stair';
 import { viewport } from './viewport';
 import { UnderlayLayer, StairBoxLayer, BathZoneLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
@@ -441,7 +441,7 @@ function BathItems({ item }: { item: (label: string, run: () => void) => React.R
   if (!beams.length && !slabs.length) return null;
   const ducts = slabs.filter((x) => x.duct).length;
   const sIds = slabs.map((x) => x.id);
-  const here = slabs.filter((x) => x.story === st.activeStory).map((x) => x.id); // an area is made of panels on the story in view
+  const zones = zoneActions(st.model, st.activeStory, sIds); // a zone is made of panels on the story in view
   return (
     <>
       <div className="menu-sep" role="separator" />
@@ -449,8 +449,7 @@ function BathItems({ item }: { item: (label: string, run: () => void) => React.R
       {beams.length === 1 && item('Upstand…', () => openDialog({ kind: 'bathUpstand', beamId: beams[0] }))}
       {slabs.length > 0 && item(`Slab sink… (${slabs.length})`, () => openDialog({ kind: 'bathSink', target: 'slab', ids: sIds }))}
       {slabs.length > 0 && item(ducts === slabs.length ? 'Fill duct (slab again)' : 'Mark as duct', () => st.commit((m) => setDuct(m, sIds, ducts !== slabs.length)))}
-      {here.length > 0 && item(`Make toilet WC ≥300 (${here.length} panel${here.length > 1 ? 's' : ''})`, () => st.commit((m) => addArea(m, st.activeStory, 'wc', here)))}
-      {here.length > 0 && item(`Make wash / urinal ≥150 (${here.length} panel${here.length > 1 ? 's' : ''})`, () => st.commit((m) => addArea(m, st.activeStory, 'wash', here)))}
+      {zones.map((a) => <Fragment key={a.label}>{item(a.label, () => st.commit(a.run))}</Fragment>)}
     </>
   );
 }
