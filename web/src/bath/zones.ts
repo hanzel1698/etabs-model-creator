@@ -83,15 +83,16 @@ export function zoneActions(m: Model, story: string, ids: string[]): { label: st
 const inPoly = (pts: Pt[], p: Pt) => pointInPoly(p, pts) || pts.some((a, i) => distToSeg(p, a, pts[(i + 1) % pts.length]) <= TOL);
 
 /**
- * `m` with zones saved by earlier versions brought up to date: an outline drawn as a polygon becomes the story's panels
+ * `m` with zones saved by earlier versions brought up to date: a bathroom drawn as a polygon becomes the story's panels
  * lying inside it (a zone with none goes), and an unnamed zone gets the next free number; `m` itself when none needs it.
+ * A WC or wash area drawn as a polygon (the first version) goes: it was never shown or checked, and was redone from panels.
  */
 export function upgradeZones(m: Model): Model {
   if (!(m.bathZones ?? []).some((z) => !z.slabIds || !z.name)) return m;
   let out = m;
   for (const z of m.bathZones!) {
     if (z.slabIds && z.name) continue;
-    const outline = z.pts && z.pts.length >= 3 ? z.pts : null;
+    const outline = z.kind === 'room' && z.pts && z.pts.length >= 3 ? z.pts : null;
     const slabIds = z.slabIds ?? (outline ? m.slabs.filter((s) => s.story === z.story && s.pts.every((p) => inPoly(outline, p))).map((s) => s.id) : []);
     const up: BathZone = { id: z.id, story: z.story, kind: z.kind, slabIds, name: z.name ?? nextZoneName(out, z.kind) };
     out = { ...out, bathZones: out.bathZones!.map((x) => (x.id === z.id ? up : x)) };

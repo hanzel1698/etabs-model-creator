@@ -73,12 +73,13 @@ describe('bathrooms', () => {
     expect(names(assignZone(m, 'Story1', 'room', ['s3']))).toEqual([['WC-01', ['s2']], ['BATH-01', ['s3']]]);
   });
 
-  it('turns bathrooms drawn as outlines by earlier versions into the panels inside them, and numbers unnamed ones', () => {
+  it('turns bathrooms drawn as outlines by earlier versions into the panels inside them, drops drawn areas, and numbers unnamed ones', () => {
     const m = bays();
     m.bathZones = [
       { id: 'a', story: 'Story1', kind: 'room', pts: sq(-100, -100, 6200, 3200) },
       { id: 'b', story: 'Story1', kind: 'room', pts: sq(50000, 0, 1000, 1000), name: 'BATH-07' },
       { id: 'c', story: 'Story1', kind: 'wc', slabIds: ['s3'] },
+      { id: 'd', story: 'Story1', kind: 'wash', pts: sq(-100, -100, 6200, 3200) }, // first-version area outline: never checked, goes
     ];
     const up = upgradeZones(m);
     expect(up.bathZones).toEqual([
