@@ -94,17 +94,26 @@ const near = (a: number, b: number) => Math.abs(a - b) <= 1;
  * Add the frame and area objects of an ETABS import as columns, beams and slabs. Each keeps its ETABS GUID as
  * its id and counts as pushed, so pushes update it and deleting it in the app deletes it in ETABS. Objects the
  * app already has (same id, or same place on the same story and level) are left as they are. Beams and slabs between
- * story levels (on reference planes) come in as an offset from the story they lie in, as do column tops; a column
- * must stand on a story level. Braces, walls and columns that do not are skipped and counted in `skipped`.
+ * story levels (on reference planes) come in as an offset from the story they lie in, as do column tops and
+ * bottoms (a column ETABS split where a beam frames in). Braces, walls and columns outside the stories are skipped
+ * and counted in `skipped`, named in `which`.
  * Loads come along in the patterns the model has (the ones a push with loads rewrites).
  */
 export function importElements(m: Model, r: Pick<ImportResult, 'frames' | 'areas'>) {
   const el = storyElevations(m);
-  const byBottom = (z: number) => m.stories.find((s) => near(el[s.name].bottom, z))?.name;
+  // the story a column bottom stands in: on its lower level (no offset), else between its levels on a reference plane
+  const baseAt = (z: number) => {
+    const s = m.stories.find((s) => near(el[s.name].bottom, z)) ?? m.stories.find((s) => el[s.name].bottom < z && z < el[s.name].top);
+    return s && { base: s.name, baseDz: near(el[s.name].bottom, z) ? 0 : z - el[s.name].bottom };
+  };
   const pats = new Set(m.loadPatterns.map((p) => p.name));
   const ids = new Set([...m.columns, ...m.beams, ...m.slabs].map((x) => x.id));
   const skipped: Record<string, number> = {};
-  const skip = (why: string) => (skipped[why] = (skipped[why] ?? 0) + 1);
+  const which: Record<string, string[]> = {}; // the ETABS objects behind each reason, so the user can find them
+  const skip = (why: string, what?: string) => {
+    skipped[why] = (skipped[why] ?? 0) + 1;
+    if (what) (which[why] ??= []).push(what);
+  };
   const columns: Column[] = [],
     beams: Beam[] = [],
     slabs: Slab[] = [];
@@ -122,14 +131,16 @@ export function importElements(m: Model, r: Pick<ImportResult, 'frames' | 'areas
     const loads = keep(f.loads, frameLoadIn);
     if (near(a.x, b.x) && near(a.y, b.y)) {
       const top = placeAt(m, Math.max(a.z, b.z)),
-        base = byBottom(Math.min(a.z, b.z));
-      if (!top || !base || el[base].index > el[top.story].index || Math.max(a.z, b.z) <= el[base].bottom) {
-        skip('columns not standing on a story level');
+        bot = baseAt(Math.min(a.z, b.z));
+      if (!top || !bot || el[bot.base].index > el[top.story].index || Math.max(a.z, b.z) <= Math.min(a.z, b.z) + 1) {
+        const r0 = (v: number) => Math.round(v);
+        skip('columns outside the stories', `${f.name} (x ${r0(a.x)}, y ${r0(a.y)}, z ${r0(Math.min(a.z, b.z))}–${r0(Math.max(a.z, b.z))})`);
         continue;
       }
-      const { story, dz } = top;
-      const c: Column = withDz({ id: f.guid, story, x: a.x, y: a.y, section: f.section, angle: f.angle, ...(base !== story ? { base } : {}), ...(loads ? { loads } : {}) }, dz);
-      if ([...m.columns, ...columns].some((o) => o.story === story && near(o.dz ?? 0, dz) && (o.base ?? o.story) === base && near(o.x, c.x) && near(o.y, c.y))) skip('already in the app');
+      const { story, dz } = top,
+        { base, baseDz } = bot;
+      const c: Column = withDz({ id: f.guid, story, x: a.x, y: a.y, section: f.section, angle: f.angle, ...(base !== story ? { base } : {}), ...(baseDz ? { baseDz } : {}), ...(loads ? { loads } : {}) }, dz);
+      if ([...m.columns, ...columns].some((o) => o.story === story && near(o.dz ?? 0, dz) && (o.base ?? o.story) === base && near(o.baseDz ?? 0, baseDz) && near(o.x, c.x) && near(o.y, c.y))) skip('already in the app');
       else columns.push(c);
     } else if (near(a.z, b.z)) {
       const at = placeAt(m, a.z);
@@ -141,7 +152,7 @@ export function importElements(m: Model, r: Pick<ImportResult, 'frames' | 'areas
       const same = (o: Beam) => o.story === story && near(o.dz ?? 0, dz) && ((near(o.x1, a.x) && near(o.y1, a.y) && near(o.x2, b.x) && near(o.y2, b.y)) || (near(o.x1, b.x) && near(o.y1, b.y) && near(o.x2, a.x) && near(o.y2, a.y)));
       if ([...m.beams, ...beams].some(same)) skip('already in the app');
       else beams.push(withDz({ id: f.guid, story, x1: a.x, y1: a.y, x2: b.x, y2: b.y, section: f.section, ...(loads ? { loads } : {}) }, dz));
-    } else skip('braces (the app has none)');
+    } else skip('braces (the app has none)', f.name);
   }
 
   for (const s of r.areas ?? []) {
@@ -151,7 +162,7 @@ export function importElements(m: Model, r: Pick<ImportResult, 'frames' | 'areas
     }
     const zs = s.pts.map((p) => p.z);
     if (Math.max(...zs) - Math.min(...zs) > 1) {
-      skip('walls (the app has none)');
+      skip('walls (the app has none)', s.name);
       continue;
     }
     const at = placeAt(m, zs[0]);
@@ -172,7 +183,7 @@ export function importElements(m: Model, r: Pick<ImportResult, 'frames' | 'areas
 
   const added = [...columns, ...beams, ...slabs].map((x) => x.id);
   const model: Model = { ...m, columns: [...m.columns, ...columns], beams: [...m.beams, ...beams], slabs: [...m.slabs, ...slabs], pushedIds: [...new Set([...m.pushedIds, ...added])] };
-  return { model, columns: columns.length, beams: beams.length, slabs: slabs.length, skipped };
+  return { model, columns: columns.length, beams: beams.length, slabs: slabs.length, skipped, which };
 }
 
 /** Give columns, beams and slabs the app already has (matched by ETABS GUID) the section ETABS assigns them. */

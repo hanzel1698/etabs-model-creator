@@ -477,10 +477,11 @@ function StoriesDialog() {
       const span = (c: Column): Column => {
         if (!c.base) return c;
         const left = columnStories(m, c).filter((n) => keep.has(n));
-        const { base, ...one } = c;
+        const { base, baseDz, ...one } = c;
         if (!left.length) return one;
         const top = left[left.length - 1];
-        return left.length > 1 ? { ...c, story: top, base: rename.get(left[0])! } : { ...one, story: top };
+        const bd = left[0] === base && baseDz ? { baseDz } : {}; // the bottom offset belongs to the base story
+        return left.length > 1 ? { ...one, ...bd, story: top, base: rename.get(left[0])! } : { ...one, ...(top === base ? bd : {}), story: top };
       };
       return {
         ...m,
@@ -809,7 +810,8 @@ function EtabsDialog() {
       const st = useApp.getState();
       if (!st.model.stories.some((s) => s.name === st.activeStory)) st.setActiveStory(st.model.stories[0]?.name ?? '');
       const e = el as ReturnType<typeof importElements> | null;
-      const skipped = e ? Object.entries(e.skipped).map(([why, n]) => `${n} skipped: ${why}`) : [];
+      const names = (ws?: string[]) => (ws ? ` — ${ws.slice(0, 20).join(', ')}${ws.length > 20 ? `, … ${ws.length - 20} more` : ''}` : '');
+      const skipped = e ? Object.entries(e.skipped).map(([why, n]) => `${n} skipped: ${why}${names(e.which[why])}`) : [];
       // report only the ticked categories; the bridge always reads everything
       const parts = [
         imp.stories && `${r.stories.length} stories`,

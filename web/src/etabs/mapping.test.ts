@@ -79,6 +79,16 @@ describe('importElements', () => {
     const again = importElements(r.model, imp);
     expect(again.columns + again.beams + again.slabs).toBe(0);
   });
+
+  it('brings in a column ETABS split at a reference plane, both pieces, and pushes them back where they were', () => {
+    const col = (n: number, z1: number, z2: number) => ({ name: `c${n}`, guid: g(n), section: 'C400x400', angle: 0, pts: [{ x: 0, y: 0, z: z1 }, { x: 0, y: 0, z: z2 }], loads: [] });
+    const r = importElements(emptyModel(), { frames: [col(10, 3000, 4500), col(11, 4500, 9000)], areas: [] });
+    expect(r.skipped).toEqual({});
+    expect(r.model.columns.find((c) => c.id === g(10))).toMatchObject({ story: 'Story2', dz: -1500 });
+    expect(r.model.columns.find((c) => c.id === g(11))).toMatchObject({ story: 'Story3', base: 'Story2', baseDz: 1500 });
+    expect(asImport(r.model).frames.map((f) => f.pts.map((p) => p.z))).toEqual([[3000, 4500], [4500, 9000]]);
+    expect(importElements(emptyModel(), { frames: [col(12, -500, 3000)], areas: [] }).which).toEqual({ 'columns outside the stories': ['c12 (x 0, y 0, z -500–3000)'] });
+  });
 });
 
 describe('reference planes', () => {

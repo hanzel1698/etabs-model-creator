@@ -87,6 +87,7 @@ const columnWords: Words<Column> = {
     ...field('story', a.story, b.story),
     ...field('base story', a.base ?? a.story, b.base ?? b.story),
     ...field('level offset', a.dz ?? 0, b.dz ?? 0, ' mm'),
+    ...field('bottom offset', a.baseDz ?? 0, b.baseDz ?? 0, ' mm'),
     ...field('section', a.section, b.section),
     ...(a.x !== b.x || a.y !== b.y ? [`moved ${pt(a.x, a.y)} → ${pt(b.x, b.y)}`] : []),
     ...field('angle', a.angle, b.angle, '°'),

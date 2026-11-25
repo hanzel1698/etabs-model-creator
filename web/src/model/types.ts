@@ -34,6 +34,8 @@ export interface Column {
   base?: string;
   /** top sits `dz` mm off its story's level (on a reference plane); the bottom stays on the level below. Absent = 0 */
   dz?: number;
+  /** bottom sits `baseDz` mm above the level below its base story (on a reference plane: a column ETABS split there). Absent = 0 */
+  baseDz?: number;
   x: number;
   y: number;
   section: string;
@@ -387,7 +389,7 @@ export function columnSpan(el: ReturnType<typeof storyElevations>, c: Column): {
   const top = el[c.story];
   if (!top) return null;
   const bot = c.base && el[c.base] && el[c.base].index <= top.index ? el[c.base] : top;
-  return { bottom: bot.bottom, top: top.top + (c.dz ?? 0) };
+  return { bottom: bot.bottom + (c.baseDz ?? 0), top: top.top + (c.dz ?? 0) };
 }
 
 /** The column runs up to or through the level of `x` (a beam or slab, on its story level or a reference plane). */

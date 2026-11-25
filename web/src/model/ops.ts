@@ -256,15 +256,16 @@ export function storyAtOffset(m: Model, story: string, dz: number): string | nul
  * story level. Null when it has nowhere to go: a column top at or below the base, or a joined column that would leave
  * the story levels or run out of stories.
  */
-export function lift<T extends { story: string; dz?: number; base?: string }>(m: Model, x: T, dz: number, column = false): T | null {
+export function lift<T extends { story: string; dz?: number; base?: string; baseDz?: number }>(m: Model, x: T, dz: number, column = false): T | null {
   const z = levelZ(storyElevations(m), x);
   if (z === null) return null;
   if (column && z + dz <= m.baseElevation + TOL) return null;
   const p = placeAt(m, z + dz);
   if (!p) return null;
   const out = withDz({ ...x, story: p.story }, p.dz);
+  if (!x.base && !x.baseDz) return out;
+  if (p.dz) return null; // a column off both levels moves from story level to story level only
   if (!x.base) return out;
-  if (p.dz) return null;
   const names = m.stories.map((s) => s.name);
   const b = names.indexOf(x.base) + names.indexOf(p.story) - names.indexOf(x.story);
   return b >= 0 && b < names.length ? { ...out, base: names[b] } : null;
@@ -432,6 +433,7 @@ export function patchIds(m: Model, ids: string[], patch: { section?: string; sto
     if (patch.story !== undefined) {
       n.story = patch.story;
       delete n.base;
+      delete n.baseDz;
       delete n.dz;
     }
     if (patch.section !== undefined) n.section = patch.section;
@@ -774,7 +776,7 @@ export function joinColumns(m: Model, colIds: string[]): { model: Model; joined:
   let mixed = 0,
     mixedLoads = 0;
   for (const stack of stacks) {
-    stack.sort((a, b) => lo(a) - lo(b));
+    stack.sort((a, b) => lo(a) - lo(b) || (a.baseDz ?? 0) - (b.baseDz ?? 0));
     let run: Column[] = [];
     const flush = () => {
       if (run.length > 1) {
@@ -783,7 +785,7 @@ export function joinColumns(m: Model, colIds: string[]): { model: Model; joined:
         run.forEach((c) => gone.add(c.id));
         const ml = fullLengthLoads(run);
         if (ml.mixed) mixedLoads++;
-        added.push({ id: uid(), story: top.story, base: first.base ?? first.story, x: first.x, y: first.y, section: first.section, angle: first.angle, ...(ml.loads ? { loads: ml.loads } : {}) });
+        added.push({ id: uid(), story: top.story, base: first.base ?? first.story, ...(first.baseDz ? { baseDz: first.baseDz } : {}), x: first.x, y: first.y, section: first.section, angle: first.angle, ...(ml.loads ? { loads: ml.loads } : {}) });
         if (run.some((c) => c.section !== first.section)) mixed++;
       }
       run = [];
