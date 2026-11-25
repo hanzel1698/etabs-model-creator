@@ -27,7 +27,7 @@ const hints: Record<ToolName, string> = {
   slab: 'Click inside a bay bounded by beams (or grids) to create a slab.',
   slabDraw: 'Click polygon corners; Enter or click the first point to close.',
   measure: 'Click points to measure distance (chained). Esc clears.',
-  section: 'Section: click the two ends of the cut, anywhere on the plan. It opens in the Section view with the sink catch check.',
+  section: 'Cut section: click the two ends of the cut, anywhere on the plan. It opens in the Section view with the sink catch check.',
   angle: 'Click 3 points: start, vertex, end.',
   area: 'Click polygon corners; Enter closes and shows the area.',
   panel: 'Click inside a panel bounded by beams to show Lx, Ly (c/c of beams) and whether it is one-way or two-way.',

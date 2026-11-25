@@ -50,7 +50,7 @@ export function SectionPane() {
               No bathroom sections on {activeStory}. Pick a story that has one ({[...new Set(all.map((c) => c.story))].join(', ')}) from the story list in the toolbar.
             </>
           ) : (
-            <>No bathroom sections yet. Pick the <b>Section</b> tool (X) and click the two ends of a cut on a story plan.</>
+            <>No bathroom sections yet. Pick the <b>Cut section</b> tool (X) and click the two ends of a cut on a story plan.</>
           )}
         </p>
       </div>

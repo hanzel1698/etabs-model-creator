@@ -33,7 +33,7 @@ export const MEASURE: { t: ToolName; label: string; key: string }[] = [
   { t: 'angle', label: 'Angle', key: 'A' },
   { t: 'area', label: 'Area', key: 'R' },
   { t: 'panel', label: 'Panel Size & Type', key: 'T' },
-  { t: 'section', label: 'Section', key: 'X' },
+  { t: 'section', label: 'Cut section', key: 'X' },
 ];
 
 type Entry = { label: string; kbd?: string; run?: () => void; disabled?: boolean; checked?: boolean; title?: string; sub?: Item[] };
