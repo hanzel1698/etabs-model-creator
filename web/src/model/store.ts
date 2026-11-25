@@ -28,7 +28,10 @@ export type ToolName =
   | 'stairBox'
   | 'flight'
   | 'landing'
-  | 'span';
+  | 'span'
+  | 'bathRoom'
+  | 'bathWash'
+  | 'bathWc';
 
 export interface ColAlign {
   mode: 'off' | 'x' | 'y'; // x: vertical line (column X fixed), y: horizontal line (column Y fixed)

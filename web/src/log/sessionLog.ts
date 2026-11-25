@@ -252,6 +252,9 @@ const TOOL_NAMES: Record<ToolName, string> = {
   landing: 'Draw landing',
   span: 'Draw design span',
   section: 'Section cut',
+  bathRoom: 'Bathroom zone',
+  bathWash: 'Wash/urinal zone',
+  bathWc: 'Toilet zone',
 };
 const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   bathSink: 'Bathroom sink',

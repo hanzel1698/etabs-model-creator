@@ -7,9 +7,10 @@ import { StairLayer } from './StairLayer';
 import { SectionLayer } from '../bath/SectionLayer';
 import { CatchFlags } from '../bath/CatchFlags';
 import { setDuct, useBath } from '../bath/sections';
+import { underSunk } from '../bath/zones';
 import { flightGrips, landingRect, landingSides, rectPts } from '../stair/stair';
 import { viewport } from './viewport';
-import { UnderlayLayer, StairBoxLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
+import { UnderlayLayer, StairBoxLayer, BathZoneLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
 import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
 import { onMove, onClick, onInput, setOffsetInput, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, midPicking, startMidPick, spanGrips, type Grip } from './tools';
 import { columnOutline } from './snap';
@@ -145,6 +146,9 @@ export function PlanView() {
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
   const cuts = useMemo(() => (show.bathSections ? (full.sectionLines ?? []).filter((c) => c.story === story && !c.hidden) : []), [full.sectionLines, story, show.bathSections]);
   const activeCut = useBath((s) => s.active);
+  const zones = useMemo(() => (full.bathZones ?? []).filter((z) => z.story === story), [full.bathZones, story]);
+  // View by sink level: beams / slabs in a wash or toilet zone sunk less than it needs
+  const short = useMemo(() => (colorBy === 'sink' && zones.length ? underSunk(full, story) : undefined), [colorBy, zones, full, story]);
   // inside a stair: its flights, landings and spans on the plan level in view
   const sm = useApp(stairPlanModel);
   const stair = useMemo(() => ({ flights: sm.flights, landings: sm.landings, spans: sm.spans }), [sm]);
@@ -331,13 +335,14 @@ export function PlanView() {
         <g ref={worldRef}>
           {show.underlay && <UnderlayLayer story={story} viewRot={viewRot} />}
           <g transform={setupRef ? `translate(${setupRef.x} ${setupRef.y})` : undefined}>
-            {show.slabs && <SlabLayer slabs={slabs} sel={sel} colorBy={colorBy} patterns={viewPats} />}
+            {show.slabs && <SlabLayer slabs={slabs} sel={sel} colorBy={colorBy} patterns={viewPats} short={short} />}
             <StairBoxLayer stairs={stairBoxes} viewRot={viewRot} size={bubble} />
+            {!activeStair && <BathZoneLayer zones={zones} viewRot={viewRot} size={bubble} />}
             {show.grids && <GridLayer grids={model.grids} sel={sel} viewRot={viewRot} showLabels={show.gridLabels} bubble={bubble} />}
             {show.gridDims && <GridDimLayer grids={model.grids} viewRot={viewRot} bubble={bubble} />}
             {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy="none" />}
             {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy="none" />}
-            <BeamLayer beams={beams} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} />
+            <BeamLayer beams={beams} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} short={short} />
             <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} ends={ends} />
             <StairLayer flights={stair.flights} landings={stair.landings} spans={stair.spans} sel={sel} viewRot={viewRot} ts={ts} />
             <SectionLayer cuts={cuts} active={activeCut} beams={beams} slabs={slabs} viewRot={viewRot} ts={ts} slabNames={show.sectionLabels && show.slabs && show.labelSlabs} sinkBeams={show.sinks && show.sinkBeams} sinkSlabs={show.sinks && show.sinkSlabs} />
@@ -366,7 +371,7 @@ export function PlanView() {
       )}
       {tool === 'beamOffset' && <OffsetField />}
       <Compass rot={viewRot} />
-      <ColorLegend items={legendItems} colorBy={colorBy} patterns={viewPats} />
+      <ColorLegend items={legendItems} colorBy={colorBy} patterns={viewPats} short={short?.size} />
       {show.underlay && hasRegion && (
         <div className="story-banner nosel">
           {story}

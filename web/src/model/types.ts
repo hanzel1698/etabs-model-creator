@@ -184,6 +184,17 @@ export interface SectionCut {
   hidden?: true;
 }
 
+/** Bathroom zone on one story's plan (min/max corners); app-only. Wash/urinal and toilet zones set a minimum sink on what they contain. */
+export interface BathZone {
+  id: string;
+  story: string;
+  kind: 'room' | 'wash' | 'wc';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
 // ---------- loads (values in kN, kN/m, kN/m², kN·m; absolute distances in mm) ----------
 
 export const PATTERN_TYPES = ['Dead', 'SuperDead', 'Live', 'ReduceLive', 'Rooflive', 'Snow', 'Wind', 'Quake', 'Notional', 'Other'] as const;
@@ -282,6 +293,7 @@ export interface Model {
   /** bathroom section check (app-only, not pushed to ETABS) */
   upstands?: Upstand[];
   sectionLines?: SectionCut[];
+  bathZones?: BathZone[];
 }
 
 export type ElementKind = 'column' | 'beam' | 'slab' | 'grid';

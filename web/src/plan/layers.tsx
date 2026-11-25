@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo } from 'react';
 import { useApp, sectionColor, colorKey, bySinkLevel, type ColorBy } from '../model/store';
-import { columnOn, levelTag, type Beam, type Column, type FrameLoad, type FrameSection, type Grid, type Model, type Slab, type StairRegion } from '../model/types';
+import { MIN_SINK, ZONE_LABEL } from '../bath/zones';
+import { columnOn, levelTag, type BathZone, type Beam, type Column, type FrameLoad, type FrameSection, type Grid, type Model, type Slab, type StairRegion } from '../model/types';
 import { angleDeg, fmt, polyArea } from '../model/geom';
 import { gridDimensions } from '../model/ops';
 import { describeJointLoad, shortFrameLoad } from '../model/loads';
@@ -135,6 +136,23 @@ export const StairBoxLayer = memo(function StairBoxLayer({ stairs, viewRot, size
   );
 });
 
+/** Bathroom zones as dashed boxes named at their top-left corner (wash/toilet zones with their minimum sink). */
+export const BathZoneLayer = memo(function BathZoneLayer({ zones, viewRot, size }: { zones: BathZone[]; viewRot: number; size: number }) {
+  const col = { room: '#3fa7d6', wash: '#2bb59a', wc: '#b06ad9' };
+  return (
+    <g className="bath-zones">
+      {zones.map((z) => (
+        <g key={z.id}>
+          <rect x={z.x1} y={z.y1} width={z.x2 - z.x1} height={z.y2 - z.y1} fill="none" stroke={col[z.kind]} strokeWidth={z.kind === 'room' ? 2 : 1.5} strokeDasharray={z.kind === 'room' ? undefined : '6 4'} style={NS} />
+          <text transform={textTransform(z.x1, z.y2, viewRot)} dx={size * 0.15} dy={z.kind === 'room' ? -size * 0.2 : size * 0.55} fontSize={size * 0.4} fill={col[z.kind]} fontWeight={700} className="nosel">
+            {ZONE_LABEL[z.kind]}{MIN_SINK[z.kind] ? ` ≥${MIN_SINK[z.kind]}` : ''}
+          </text>
+        </g>
+      ))}
+    </g>
+  );
+});
+
 // ---------------- slabs / beams / columns ----------------
 
 const keyColor = (k: string | null, def: string) => (k === null ? def : sectionColor(k));
@@ -144,7 +162,7 @@ const SINK_FILL = 0.35;
 const asSlabTint = (c: string) => `color-mix(in srgb, ${c} ${SINK_FILL * 100}%, var(--bg))`;
 
 /** Key of the colours in use: one swatch per section / pattern set / load value among `items`. */
-export function ColorLegend({ items, colorBy, patterns }: { items: Parameters<typeof colorKey>[0][]; colorBy: ColorBy; patterns: string[] }) {
+export function ColorLegend({ items, colorBy, patterns, short = 0 }: { items: Parameters<typeof colorKey>[0][]; colorBy: ColorBy; patterns: string[]; short?: number }) {
   const keys = useMemo(() => [...new Set(items.map((x) => colorKey(x, colorBy, patterns)).filter((k): k is string => k !== null))].sort(colorBy === 'sink' ? bySinkLevel : undefined), [items, colorBy, patterns]);
   if (colorBy === 'none') return null;
   return (
@@ -155,26 +173,34 @@ export function ColorLegend({ items, colorBy, patterns }: { items: Parameters<ty
           {k}
         </div>
       )) : <div className="muted">{colorBy === 'section' || colorBy === 'sink' ? 'Nothing shown' : colorBy === 'pattern' ? 'No loads assigned' : `No ${patterns.join(', ')} loads`}</div>}
+      {colorBy === 'sink' && short > 0 && (
+        <div title="Beams and slabs inside a wash/urinal (≥150) or toilet (≥300) zone sunk less than it needs">
+          <span className="swatch" style={{ background: 'none', outline: '2px solid var(--danger)', outlineOffset: -2 }} />
+          Below min sink ({short})
+        </div>
+      )}
     </div>
   );
 }
 
-export const SlabLayer = memo(function SlabLayer({ slabs, sel, ghost, colorBy, patterns = [] }: { slabs: Slab[]; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[] }) {
+export const SlabLayer = memo(function SlabLayer({ slabs, sel, ghost, colorBy, patterns = [], short }: { slabs: Slab[]; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[]; short?: Map<string, number> }) {
   return (
     <g className="slabs" opacity={ghost ? 0.25 : 1}>
       {slabs.map((s) => {
         const picked = sel.has(s.id);
         const k = picked ? null : colorKey(s, colorBy, patterns);
         const c = k === null ? null : sectionColor(k);
+        const low = colorBy === 'sink' && short?.has(s.id);
         return (
           <polygon
             key={s.id}
             points={s.pts.map((p) => `${p.x},${p.y}`).join(' ')}
             fill={picked ? 'var(--selFill)' : c ?? 'var(--slab)'}
             fillOpacity={c ? (colorBy === 'sink' ? SINK_FILL : 0.18) : undefined}
-            stroke={picked ? 'var(--sel)' : c ?? 'var(--slabEdge)'}
-            strokeOpacity={c ? 0.7 : undefined}
-            strokeWidth={1}
+            stroke={picked ? 'var(--sel)' : low ? 'var(--danger)' : c ?? 'var(--slabEdge)'}
+            strokeOpacity={c && !low ? 0.7 : undefined}
+            strokeWidth={low ? 3 : 1}
+            strokeDasharray={low ? '8 4' : undefined}
             style={NS}
           />
         );
@@ -191,7 +217,7 @@ function beamBand(b: Beam, w: number): string {
   return `${b.x1 + nx},${b.y1 + ny} ${b.x2 + nx},${b.y2 + ny} ${b.x2 - nx},${b.y2 - ny} ${b.x1 - nx},${b.y1 - ny}`;
 }
 
-export const BeamLayer = memo(function BeamLayer({ beams, secs, sel, ghost, colorBy, patterns = [] }: { beams: Beam[]; secs?: Map<string, FrameSection>; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[] }) {
+export const BeamLayer = memo(function BeamLayer({ beams, secs, sel, ghost, colorBy, patterns = [], short }: { beams: Beam[]; secs?: Map<string, FrameSection>; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[]; short?: Map<string, number> }) {
   // View by sink level: beams drawn at their section width (zooming like columns), tinted exactly like slabs at their level
   if (colorBy === 'sink' && !ghost)
     return (
@@ -201,8 +227,8 @@ export const BeamLayer = memo(function BeamLayer({ beams, secs, sel, ghost, colo
             key={b.id}
             points={beamBand(b, secs?.get(b.section)?.t2 || 230)}
             fill={sel.has(b.id) ? 'var(--sel)' : asSlabTint(keyColor(colorKey(b, colorBy, patterns), 'var(--beam)'))}
-            stroke={sel.has(b.id) ? 'var(--sel)' : 'var(--bg)'}
-            strokeWidth={1}
+            stroke={sel.has(b.id) ? 'var(--sel)' : short?.has(b.id) ? 'var(--danger)' : 'var(--bg)'}
+            strokeWidth={short?.has(b.id) ? 2.5 : 1}
             style={NS}
           />
         ))}

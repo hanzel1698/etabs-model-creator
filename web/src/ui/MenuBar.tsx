@@ -244,6 +244,12 @@ export function MainMenu({ onNew, onOpen, onUnderlay, onLinkedUnderlay }: { onNe
         tools.slab,
         tools.slabDraw,
         'sep',
+        {
+          label: 'Bathroom zone',
+          title: 'Box a bathroom, its wash/urinal areas (min sink 150) and toilet areas (min sink 300); View by Sink level flags beams and slabs sunk less',
+          sub: ([['bathRoom', 'Bathroom'], ['bathWash', 'Wash / urinal area (≥150 sink)'], ['bathWc', 'Toilet area (≥300 sink)']] as const).map(([t, l]) => ({ label: l, checked: tool === t, run: () => setTool(t) })),
+        },
+        'sep',
         { label: 'Stories…', run: () => openDialog({ kind: 'stories' }) },
         { label: 'Reference planes…', title: 'Horizontal planes at any elevation, pushed to ETABS as reference planes', run: () => openDialog({ kind: 'refPlanes' }) },
         { label: 'Sections…', run: () => openDialog({ kind: 'sections' }) },
