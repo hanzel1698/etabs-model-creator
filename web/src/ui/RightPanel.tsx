@@ -46,7 +46,7 @@ function ViewByFilter() {
   const off = useMemo(() => new Set(hidden), [hidden]);
   if (colorBy === 'none') return null;
   const st = useApp.getState();
-  const none = colorBy === 'section' ? '' : colorBy === 'pattern' ? 'No loads' : `No ${patterns.join(', ')} loads`;
+  const none = colorBy === 'section' ? '' : colorBy === 'sink' ? 'Columns (no sink)' : colorBy === 'pattern' ? 'No loads' : `No ${patterns.join(', ')} loads`;
   // a click shows just that pattern; Ctrl toggles it in the set (none left ticked goes back to the active pattern)
   const togglePattern = (p: string, add: boolean) =>
     st.setViewPatterns(!add ? [p] : patterns.includes(p) ? patterns.filter((x) => x !== p) : [...patterns, p]);

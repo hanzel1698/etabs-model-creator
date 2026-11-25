@@ -59,6 +59,8 @@ export interface ShowFlags {
   loads: boolean;
   /** bathroom sink / duct tags on beams and slabs */
   sinks: boolean;
+  /** flags on beam ends and slab sides nothing catches (bathroom sink check) */
+  catchFlags: boolean;
 }
 
 interface AppState {
@@ -198,7 +200,7 @@ function readNum(key: string, fallback: number) {
 }
 
 const VIEW_DEFAULTS = {
-  show: { sectionLabels: true, labelColumns: true, labelBeams: true, labelSlabs: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false, sinks: true } as ShowFlags,
+  show: { sectionLabels: true, labelColumns: true, labelBeams: true, labelSlabs: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false, sinks: true, catchFlags: true } as ShowFlags,
   hidden: [] as string[],
   viewRotation: 0,
   textScale: 1,
@@ -536,18 +538,47 @@ export const drawStories = () => {
   return [s.activeStory, ...s.alsoStories.filter((x) => x !== s.activeStory && s.model.stories.some((st) => st.name === x))];
 };
 
-export type ColorBy = 'none' | 'section' | 'pattern' | 'value';
+export type ColorBy = 'none' | 'section' | 'pattern' | 'value' | 'sink';
 export const COLOR_BY: [ColorBy, string][] = [
   ['none', 'None'],
   ['section', 'Section'],
   ['pattern', 'Assigned load patterns'],
   ['value', 'Load values'],
+  ['sink', 'Sink level (bathroom)'],
 ];
+
+// sink-level colour keys: beams and slabs only (a column has no sink)
+const FLUSH = 'Flush (0)',
+  DUCT = 'Duct (opening)';
+function sinkKey(x: { sink?: number; duct?: true; pts?: unknown; x1?: number }): string | null {
+  if (!('pts' in x) && !('x1' in x)) return null;
+  if (x.duct) return DUCT;
+  const v = x.sink ?? 0;
+  return v > 0 ? `↓${v}` : v < 0 ? `↑${-v}` : FLUSH;
+}
+/** Level (mm, down-positive) a sink key stands for; NaN for a key that is not one. */
+function sinkLevel(k: string): number {
+  if (k === FLUSH) return 0;
+  if (k === DUCT) return -Infinity;
+  return k[0] === '↓' ? +k.slice(1) : k[0] === '↑' ? -k.slice(1) : NaN;
+}
+/** Legend order for sink keys: duct, raised, flush, then deeper and deeper sinks. */
+export const bySinkLevel = (a: string, b: string) => sinkLevel(a) - sinkLevel(b);
+/** Sink keys on a ramp (grey flush, blues getting deeper with the sink, oranges for raised); anything else hashes. */
+function levelColor(k: string): string | null {
+  const v = sinkLevel(k);
+  if (Number.isNaN(v)) return null;
+  if (v === -Infinity) return 'hsl(300, 30%, 55%)';
+  if (v === 0) return 'hsl(215, 12%, 62%)';
+  const t = Math.min(Math.abs(v), 600) / 600;
+  return v > 0 ? `hsl(${205 + t * 20}, 85%, ${72 - t * 30}%)` : `hsl(${35 - t * 15}, 90%, ${68 - t * 20}%)`;
+}
 
 const r3 = (v: number) => String(Math.round(v * 1000) / 1000);
 /** What an element is coloured by under `mode` (its section, its patterns, or its loads in `patterns`), or null for the plain colour. */
-export function colorKey(x: { section: string; loads?: (FrameLoad | ShellLoad)[] }, mode: ColorBy, patterns: string[]): string | null {
+export function colorKey(x: { section: string; loads?: (FrameLoad | ShellLoad)[]; sink?: number; duct?: true }, mode: ColorBy, patterns: string[]): string | null {
   if (mode === 'section') return x.section;
+  if (mode === 'sink') return sinkKey(x);
   const ls = x.loads ?? [];
   if (mode === 'pattern') return ls.length ? [...new Set(ls.map((l) => l.pattern))].sort().join(' + ') : null;
   if (mode !== 'value') return null;
@@ -568,6 +599,8 @@ export function colorGroups(m: Model, mode: ColorBy, patterns: string[]): { key:
 }
 
 export function sectionColor(name: string) {
+  const lv = levelColor(name);
+  if (lv) return lv;
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return `hsl(${h % 360}, 70%, 62%)`;

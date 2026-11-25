@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo } from 'react';
-import { useApp, sectionColor, colorKey, type ColorBy } from '../model/store';
+import { useApp, sectionColor, colorKey, bySinkLevel, type ColorBy } from '../model/store';
 import { columnOn, levelTag, type Beam, type Column, type FrameLoad, type FrameSection, type Grid, type Model, type Slab, type StairRegion } from '../model/types';
 import { angleDeg, fmt, polyArea } from '../model/geom';
 import { gridDimensions } from '../model/ops';
@@ -141,7 +141,7 @@ const keyColor = (k: string | null, def: string) => (k === null ? def : sectionC
 
 /** Key of the colours in use: one swatch per section / pattern set / load value among `items`. */
 export function ColorLegend({ items, colorBy, patterns }: { items: Parameters<typeof colorKey>[0][]; colorBy: ColorBy; patterns: string[] }) {
-  const keys = useMemo(() => [...new Set(items.map((x) => colorKey(x, colorBy, patterns)).filter((k): k is string => k !== null))].sort(), [items, colorBy, patterns]);
+  const keys = useMemo(() => [...new Set(items.map((x) => colorKey(x, colorBy, patterns)).filter((k): k is string => k !== null))].sort(colorBy === 'sink' ? bySinkLevel : undefined), [items, colorBy, patterns]);
   if (colorBy === 'none') return null;
   return (
     <div className="color-legend nosel" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
@@ -150,7 +150,7 @@ export function ColorLegend({ items, colorBy, patterns }: { items: Parameters<ty
           <span className="swatch" style={{ background: sectionColor(k) }} />
           {k}
         </div>
-      )) : <div className="muted">{colorBy === 'section' ? 'Nothing shown' : colorBy === 'pattern' ? 'No loads assigned' : `No ${patterns.join(', ')} loads`}</div>}
+      )) : <div className="muted">{colorBy === 'section' || colorBy === 'sink' ? 'Nothing shown' : colorBy === 'pattern' ? 'No loads assigned' : `No ${patterns.join(', ')} loads`}</div>}
     </div>
   );
 }
@@ -167,7 +167,7 @@ export const SlabLayer = memo(function SlabLayer({ slabs, sel, ghost, colorBy, p
             key={s.id}
             points={s.pts.map((p) => `${p.x},${p.y}`).join(' ')}
             fill={picked ? 'var(--selFill)' : c ?? 'var(--slab)'}
-            fillOpacity={c ? 0.18 : undefined}
+            fillOpacity={c ? (colorBy === 'sink' ? 0.35 : 0.18) : undefined}
             stroke={picked ? 'var(--sel)' : c ?? 'var(--slabEdge)'}
             strokeOpacity={c ? 0.7 : undefined}
             strokeWidth={1}

@@ -5,6 +5,7 @@ import { fmt } from '../model/geom';
 import { columnOn, terminatingColumns, type Beam, type Flight, type Landing, type Pt, type Slab, type Span } from '../model/types';
 import { StairLayer } from './StairLayer';
 import { SectionLayer } from '../bath/SectionLayer';
+import { CatchFlags } from '../bath/CatchFlags';
 import { setDuct, useBath } from '../bath/sections';
 import { flightGrips, landingRect, landingSides, rectPts } from '../stair/stair';
 import { viewport } from './viewport';
@@ -345,6 +346,7 @@ export function PlanView() {
           </g>
         </g>
         <IssueLayer story={story} offset={setupRef} />
+        {show.catchFlags && !activeStair && <CatchFlags story={story} offset={setupRef} />}
         {show.nodes && <NodeLayer story={story} sel={sel} offset={setupRef} />}
         {tool === 'select' && <GripLayer beams={activeStair ? [] : [...beams, ...model.grids]} slabs={activeStair ? [] : slabs} {...stair} sel={sel} offset={setupRef} />}
         <Overlay />

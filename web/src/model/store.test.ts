@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { useApp, colorKey, colorGroups, visibleModel } from './store';
+import { useApp, colorKey, colorGroups, visibleModel, bySinkLevel } from './store';
 import { defaultStairParams, emptyModel, type FrameSection } from './types';
 import { commitStair, deleteStairIds } from '../stair/regions';
 
@@ -148,5 +148,19 @@ describe('stair mode', () => {
     deleteStairIds(['up', 'b']); // the building beam is read-only here
     expect(useApp.getState().model.stairs[0].flights.map((x) => x.id)).toEqual(['low']);
     expect(useApp.getState().model.beams).toHaveLength(1);
+  });
+});
+
+describe('colorKey by sink level', () => {
+  it('keys beams and slabs by their sink, ducts apart, columns not at all', () => {
+    const beam = { id: 'b', story: 'S', x1: 0, y1: 0, x2: 1, y2: 0, section: 'B' };
+    const slab = { id: 's', story: 'S', pts: [], section: 'S' };
+    expect(colorKey({ ...beam, sink: 300 }, 'sink', [])).toBe('↓300');
+    expect(colorKey({ ...beam, sink: -150 }, 'sink', [])).toBe('↑150');
+    expect(colorKey(beam, 'sink', [])).toBe('Flush (0)');
+    expect(colorKey({ ...slab, sink: 300, duct: true }, 'sink', [])).toBe('Duct (opening)');
+    const col = { id: 'c', story: 'S', x: 0, y: 0, section: 'C', angle: 0 };
+    expect(colorKey(col, 'sink', [])).toBeNull();
+    expect(['↓450', 'Flush (0)', '↑150', '↓150', 'Duct (opening)'].sort(bySinkLevel)).toEqual(['Duct (opening)', '↑150', 'Flush (0)', '↓150', '↓450']);
   });
 });

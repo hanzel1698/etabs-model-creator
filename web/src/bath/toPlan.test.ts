@@ -57,3 +57,17 @@ describe('toPlanModel', () => {
     expect(run.gridCrossings.map((g) => g.label).sort()).toEqual(['1', '2', '3']);
   });
 });
+
+describe('catchFindings', () => {
+  it('flags the sunk slab sides a flush 500 beam cannot reach, in EMC plan coordinates', async () => {
+    const { catchFindings } = await import('./CatchFlags');
+    const { sides } = catchFindings(bays(400), 'Story1');
+    expect(sides.length).toBeGreaterThan(0);
+    for (const { side } of sides) {
+      expect(side.mid.x).toBeGreaterThanOrEqual(4000 - 1);
+      expect(side.mid.x).toBeLessThanOrEqual(7000 + 1);
+    }
+    // all flush: nothing to flag
+    expect(catchFindings(bays(0), 'Story1').sides).toHaveLength(0);
+  });
+});

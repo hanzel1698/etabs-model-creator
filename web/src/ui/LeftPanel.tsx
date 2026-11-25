@@ -283,6 +283,7 @@ function ViewControls() {
     ['nodes', 'Nodes'],
     ['loads', 'Loads (active pattern; always on in View by load values)'],
     ['sinks', 'Sink Tags'],
+    ['catchFlags', 'Catch Markers'],
   ];
   return (
     <>
