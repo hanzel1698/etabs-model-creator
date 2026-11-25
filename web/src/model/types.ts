@@ -180,6 +180,8 @@ export interface SectionCut {
   a: Pt;
   b: Pt;
   reversed?: boolean;
+  /** unticked in the right panel's Bath sections list: not drawn on the plan nor offered in the Section view */
+  hidden?: true;
 }
 
 // ---------- loads (values in kN, kN/m, kN/m², kN·m; absolute distances in mm) ----------

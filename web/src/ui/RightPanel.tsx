@@ -14,6 +14,7 @@ import { ChecksSection } from './Checks';
 import { LoadsSection, useViewPatterns } from './LoadDialogs';
 import { LoadFilterSection } from './LoadFilterSection';
 import { StairProps } from './StairPanel';
+import { BathSectionsList } from '../bath/SectionsList';
 
 export function RightPanel() {
   return (
@@ -21,6 +22,7 @@ export function RightPanel() {
       <LoadFilterSection />
       <ViewByFilter />
       <StairProps />
+      <BathSectionsList />
       <Properties />
       <LoadsSection />
       <ChecksSection />

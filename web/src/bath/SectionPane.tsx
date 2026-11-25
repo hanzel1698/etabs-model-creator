@@ -17,7 +17,9 @@ const EXAGGERATIONS = [1, 2, 5];
 
 export function SectionPane() {
   const model = useApp((s) => s.model);
-  const cuts = model.sectionLines ?? [];
+  // only the sections ticked in the right panel's Bath sections list
+  const all = model.sectionLines ?? [];
+  const cuts = all.filter((c) => !c.hidden);
   const activeId = useBath((s) => s.active);
   const cut = cuts.find((c) => c.id === activeId) ?? cuts[cuts.length - 1] ?? null;
   const [ex, setEx] = useState(1);
@@ -36,7 +38,13 @@ export function SectionPane() {
   if (!cut || !sp || !run)
     return (
       <div className="bath-pane">
-        <p className="muted bath-empty">No bathroom sections yet. Pick <b>Bath section</b> (X) and click the two ends of a cut on a story plan.</p>
+        <p className="muted bath-empty">
+          {all.length ? (
+            <>{all.length === 1 ? 'The bathroom section is' : `All ${all.length} bathroom sections are`} hidden. Tick the ones to see in <b>Bath sections</b> in the right panel.</>
+          ) : (
+            <>No bathroom sections yet. Pick <b>Bath section</b> (X) and click the two ends of a cut on a story plan.</>
+          )}
+        </p>
       </div>
     );
 

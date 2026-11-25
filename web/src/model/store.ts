@@ -61,6 +61,8 @@ export interface ShowFlags {
   sinks: boolean;
   /** flags on beam ends and slab sides nothing catches (bathroom sink check) */
   catchFlags: boolean;
+  /** bathroom section lines (the ticked ones in the right panel's list) */
+  bathSections: boolean;
 }
 
 interface AppState {
@@ -200,7 +202,7 @@ function readNum(key: string, fallback: number) {
 }
 
 const VIEW_DEFAULTS = {
-  show: { sectionLabels: true, labelColumns: true, labelBeams: true, labelSlabs: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false, sinks: true, catchFlags: true } as ShowFlags,
+  show: { sectionLabels: true, labelColumns: true, labelBeams: true, labelSlabs: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false, sinks: true, catchFlags: true, bathSections: true } as ShowFlags,
   hidden: [] as string[],
   viewRotation: 0,
   textScale: 1,

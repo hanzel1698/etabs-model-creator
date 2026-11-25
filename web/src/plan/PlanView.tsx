@@ -143,7 +143,7 @@ export function PlanView() {
   const ends = useMemo(() => { const t = terminatingColumns(full); return new Set(cols.filter((c) => c.story === story && t.has(c.id)).map((c) => c.id)); }, [full, cols, story]);
   const beams = useMemo(() => model.beams.filter((b) => b.story === story), [model.beams, story]);
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
-  const cuts = useMemo(() => (full.sectionLines ?? []).filter((c) => c.story === story), [full.sectionLines, story]);
+  const cuts = useMemo(() => (show.bathSections ? (full.sectionLines ?? []).filter((c) => c.story === story && !c.hidden) : []), [full.sectionLines, story, show.bathSections]);
   const activeCut = useBath((s) => s.active);
   // inside a stair: its flights, landings and spans on the plan level in view
   const sm = useApp(stairPlanModel);

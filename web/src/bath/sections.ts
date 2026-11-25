@@ -23,6 +23,7 @@ export function addSection(m: Model, story: string, a: Pt, b: Pt): { m: Model; i
 }
 
 export const patchSection = (m: Model, id: string, p: Partial<SectionCut>): Model => ({ ...m, sectionLines: (m.sectionLines ?? []).map((s) => (s.id === id ? { ...s, ...p } : s)) });
+export const setSectionsHidden = (m: Model, ids: string[], hidden: boolean): Model => ({ ...m, sectionLines: (m.sectionLines ?? []).map((s) => (ids.includes(s.id) ? { ...s, hidden: hidden || undefined } : s)) });
 export const removeSection = (m: Model, id: string): Model => ({ ...m, sectionLines: (m.sectionLines ?? []).filter((s) => s.id !== id) });
 
 /** Sink in mm, down-positive; 0 clears it. */
