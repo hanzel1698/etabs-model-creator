@@ -82,7 +82,7 @@ def attach(tlb=None):
     """Attach to the running ETABS instance."""
     global _etabs, _sm
     load_typelib(tlb or ARGS.tlb_path)
-    obj = None
+    obj = helper = None
     err = None
     try:
         helper = comtypes.client.CreateObject("ETABSv1.Helper")
@@ -90,6 +90,17 @@ def attach(tlb=None):
         obj = helper.GetObject("CSI.ETABS.API.ETABSObject")
     except Exception as e:  # noqa
         err = e
+    if obj is None and helper is not None:
+        # ETABS 22.7+ registers as "CSI.ETABS.API.ETABSObject:<pid>", so look it up by process id
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq ETABS.exe", "/FO", "CSV", "/NH"],
+                             capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            if line.startswith('"ETABS.exe"'):
+                try:
+                    obj = helper.GetObjectProcess("CSI.ETABS.API.ETABSObject", int(line.split('","')[1]))
+                    break
+                except Exception as e:  # noqa
+                    err = e
     if obj is None:
         try:
             obj = comtypes.client.GetActiveObject("CSI.ETABS.API.ETABSObject")
