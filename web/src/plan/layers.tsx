@@ -138,6 +138,10 @@ export const StairBoxLayer = memo(function StairBoxLayer({ stairs, viewRot, size
 // ---------------- slabs / beams / columns ----------------
 
 const keyColor = (k: string | null, def: string) => (k === null ? def : sectionColor(k));
+/** How strongly slabs are tinted under View by sink level. */
+const SINK_FILL = 0.35;
+/** A sink colour as a slab tinted with it shows on the plan, so a beam band at that level matches the slab. */
+const asSlabTint = (c: string) => `color-mix(in srgb, ${c} ${SINK_FILL * 100}%, var(--bg))`;
 
 /** Key of the colours in use: one swatch per section / pattern set / load value among `items`. */
 export function ColorLegend({ items, colorBy, patterns }: { items: Parameters<typeof colorKey>[0][]; colorBy: ColorBy; patterns: string[] }) {
@@ -167,7 +171,7 @@ export const SlabLayer = memo(function SlabLayer({ slabs, sel, ghost, colorBy, p
             key={s.id}
             points={s.pts.map((p) => `${p.x},${p.y}`).join(' ')}
             fill={picked ? 'var(--selFill)' : c ?? 'var(--slab)'}
-            fillOpacity={c ? (colorBy === 'sink' ? 0.35 : 0.18) : undefined}
+            fillOpacity={c ? (colorBy === 'sink' ? SINK_FILL : 0.18) : undefined}
             stroke={picked ? 'var(--sel)' : c ?? 'var(--slabEdge)'}
             strokeOpacity={c ? 0.7 : undefined}
             strokeWidth={1}
@@ -179,7 +183,31 @@ export const SlabLayer = memo(function SlabLayer({ slabs, sel, ghost, colorBy, p
   );
 });
 
-export const BeamLayer = memo(function BeamLayer({ beams, sel, ghost, colorBy, patterns = [] }: { beams: Beam[]; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[] }) {
+/** Plan outline of a beam `w` mm wide about its line. */
+function beamBand(b: Beam, w: number): string {
+  const L = Math.hypot(b.x2 - b.x1, b.y2 - b.y1) || 1,
+    nx = (-(b.y2 - b.y1) / L) * (w / 2),
+    ny = ((b.x2 - b.x1) / L) * (w / 2);
+  return `${b.x1 + nx},${b.y1 + ny} ${b.x2 + nx},${b.y2 + ny} ${b.x2 - nx},${b.y2 - ny} ${b.x1 - nx},${b.y1 - ny}`;
+}
+
+export const BeamLayer = memo(function BeamLayer({ beams, secs, sel, ghost, colorBy, patterns = [] }: { beams: Beam[]; secs?: Map<string, FrameSection>; sel: Set<string>; ghost?: boolean; colorBy: ColorBy; patterns?: string[] }) {
+  // View by sink level: beams drawn at their section width (zooming like columns), tinted exactly like slabs at their level
+  if (colorBy === 'sink' && !ghost)
+    return (
+      <g className="beams">
+        {beams.map((b) => (
+          <polygon
+            key={b.id}
+            points={beamBand(b, secs?.get(b.section)?.t2 || 230)}
+            fill={sel.has(b.id) ? 'var(--sel)' : asSlabTint(keyColor(colorKey(b, colorBy, patterns), 'var(--beam)'))}
+            stroke={sel.has(b.id) ? 'var(--sel)' : 'var(--bg)'}
+            strokeWidth={1}
+            style={NS}
+          />
+        ))}
+      </g>
+    );
   return (
     <g className="beams" opacity={ghost ? 0.3 : 1}>
       {beams.map((b) => (

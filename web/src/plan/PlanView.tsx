@@ -337,7 +337,7 @@ export function PlanView() {
             {show.gridDims && <GridDimLayer grids={model.grids} viewRot={viewRot} bubble={bubble} />}
             {gBeams.length > 0 && <BeamLayer beams={gBeams} sel={empty} ghost colorBy="none" />}
             {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy="none" />}
-            <BeamLayer beams={beams} sel={sel} colorBy={colorBy} patterns={viewPats} />
+            <BeamLayer beams={beams} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} />
             <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} ends={ends} />
             <StairLayer flights={stair.flights} landings={stair.landings} spans={stair.spans} sel={sel} viewRot={viewRot} ts={ts} />
             <SectionLayer cuts={cuts} active={activeCut} beams={beams} slabs={slabs} viewRot={viewRot} ts={ts} slabNames={show.sectionLabels && show.slabs && show.labelSlabs} sinkBeams={show.sinks && show.sinkBeams} sinkSlabs={show.sinks && show.sinkSlabs} />
