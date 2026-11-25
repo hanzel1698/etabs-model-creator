@@ -75,7 +75,7 @@ export function SectionsExportDialog() {
           </label>
         </>
       ) : (
-        <div className="muted small">No bathroom sections yet. Pick Bath section (X) and click the two ends of a cut on a story plan.</div>
+        <div className="muted small">No bathroom sections yet. Pick the Section tool (X) and click the two ends of a cut on a story plan.</div>
       )}
     </Modal>
   );

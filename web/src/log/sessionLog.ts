@@ -251,7 +251,7 @@ const TOOL_NAMES: Record<ToolName, string> = {
   flight: 'Draw flight',
   landing: 'Draw landing',
   span: 'Draw design span',
-  section: 'Bathroom section cut',
+  section: 'Section cut',
 };
 const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   bathSink: 'Bathroom sink',

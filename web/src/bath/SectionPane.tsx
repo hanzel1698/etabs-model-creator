@@ -17,9 +17,11 @@ const EXAGGERATIONS = [1, 2, 5];
 
 export function SectionPane() {
   const model = useApp((s) => s.model);
-  // only the sections ticked in the right panel's Bath sections list
+  // what the plan shows: sections on the active story that are ticked in the right panel's Bath sections list
+  const activeStory = useApp((s) => s.activeStory);
   const all = model.sectionLines ?? [];
-  const cuts = all.filter((c) => !c.hidden);
+  const here = all.filter((c) => c.story === activeStory);
+  const cuts = here.filter((c) => !c.hidden);
   const activeId = useBath((s) => s.active);
   const cut = cuts.find((c) => c.id === activeId) ?? cuts[cuts.length - 1] ?? null;
   const [ex, setEx] = useState(1);
@@ -39,10 +41,16 @@ export function SectionPane() {
     return (
       <div className="bath-pane">
         <p className="muted bath-empty">
-          {all.length ? (
-            <>{all.length === 1 ? 'The bathroom section is' : `All ${all.length} bathroom sections are`} hidden. Tick the ones to see in <b>Bath sections</b> in the right panel.</>
+          {here.length ? (
+            <>
+              {here.length === 1 ? 'The bathroom section' : `All ${here.length} bathroom sections`} on {activeStory} {here.length === 1 ? 'is' : 'are'} hidden. Tick the ones to see in <b>Bath sections</b> in the right panel.
+            </>
+          ) : all.length ? (
+            <>
+              No bathroom sections on {activeStory}. Pick a story that has one ({[...new Set(all.map((c) => c.story))].join(', ')}) from the story list in the toolbar.
+            </>
           ) : (
-            <>No bathroom sections yet. Pick <b>Bath section</b> (X) and click the two ends of a cut on a story plan.</>
+            <>No bathroom sections yet. Pick the <b>Section</b> tool (X) and click the two ends of a cut on a story plan.</>
           )}
         </p>
       </div>
@@ -81,10 +89,11 @@ export function SectionPane() {
             <select value={cut.id} onChange={(e) => useBath.getState().setActive(e.target.value)}>
               {cuts.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.label} · {c.story}
+                  {c.label}
                 </option>
               ))}
             </select>
+            <span className="muted"> · {activeStory}</span>
           </label>
           <span className="seg" role="group" aria-label="Level exaggeration">
             {EXAGGERATIONS.map((x) => (
