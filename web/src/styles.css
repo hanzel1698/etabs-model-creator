@@ -1308,6 +1308,7 @@ table.sheet-matrix input {
 }
 label.sheet-orient {
   margin-top: 8px;
+  width: fit-content; /* a full-width label would open its select from anywhere on the row */
 }
 div.sheet-col-btns {
   display: flex;
