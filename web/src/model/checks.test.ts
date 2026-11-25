@@ -33,6 +33,14 @@ describe('model check', () => {
     expect(kinds(m)).toEqual(['duplicate:a,b,c', 'overlap:a,d']);
   });
 
+  it('does not take the pieces of a column split at a reference plane for copies', () => {
+    const lo = { ...col('lo', 0, 0, 'Story2'), dz: -1500 },
+      hi = { ...col('hi', 0, 0, 'Story2'), baseDz: 1500 };
+    const dups = (cs: Column[]) => kinds(model({ columns: cs })).filter((k) => k.startsWith('duplicate'));
+    expect(dups([lo, hi])).toEqual([]);
+    expect(dups([lo, hi, col('full', 0, 0, 'Story2')])).toEqual(['duplicate:full,hi,lo']);
+  });
+
   it('finds duplicate, reversed, overlapping and zero-length beams', () => {
     const m = model({ beams: [beam('1', 0, 0, 6000, 0), beam('2', 6000, 0, 0, 0), beam('3', 3000, 0, 9000, 0), beam('4', 0, 100, 6000, 100), beam('5', 50, 50, 50, 50)] });
     expect(kinds(m)).toEqual(['degenerate:5', 'duplicate:1,2', 'overlap:1,3']);

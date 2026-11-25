@@ -1,4 +1,4 @@
-import { columnOn, type Beam, type Column, type FrameSection, type Model, type Pt, type Slab } from './types';
+import { columnOn, columnSpan, storyElevations, type Beam, type Column, type FrameSection, type Model, type Pt, type Slab } from './types';
 import { cachedStoryNodes } from './ops';
 import { add, cross, dist, distToSeg, dot, fmt, len, mid, pointInPoly, polyArea, rot, segIntersect, sub } from './geom';
 
@@ -105,9 +105,18 @@ function checkColumns(m: Model, story: string, cols: Column[], out: Issue[]) {
   const secs = new Map(m.frameSections.map((s) => [s.name, s]));
   const outline = new Map(cols.map((c) => [c.id, columnOutline(c, secs.get(c.section))]));
   const byId = new Map(cols.map((c) => [c.id, c]));
+  const el = storyElevations(m);
+  const span = new Map(cols.map((c) => [c.id, columnSpan(el, c)]));
+  // pieces of a column split at a reference plane share a point but not a height
+  const stacked = (a: Column, b: Column) => {
+    const p = span.get(a.id),
+      q = span.get(b.id);
+    return !!p && !!q && Math.min(p.top, q.top) - Math.max(p.bottom, q.bottom) <= TOL;
+  };
   const same: [string, string][] = [];
   const lap: [Column, Column][] = [];
   eachPair(cols, (c) => boxOf(outline.get(c.id)!), (a, b) => {
+    if (stacked(a, b)) return;
     if (dist(a, b) <= TOL) same.push([a.id, b.id]);
     else if (convexOverlap(outline.get(a.id)!, outline.get(b.id)!)) lap.push([a, b]);
   });
