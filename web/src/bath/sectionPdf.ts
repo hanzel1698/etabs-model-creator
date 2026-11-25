@@ -107,12 +107,20 @@ export function sheetFor(model: Model, cut: SectionCut, exaggeration: number): S
   return { plan, run, checks: checkRun(plan, run), label: cut.label, story: cut.story, exaggeration };
 }
 
-interface Block {
+/** A piece of a section block, painted with its top-left corner at (x0, top). */
+interface Part {
   h: number;
   draw: (x0: number, top: number) => void;
 }
+interface Block {
+  /** head (title, drawing, verdict, table header), then one part per beam row, then the warnings */
+  parts: Part[];
+  /** title and table header again, heading the rows that run on into the next column */
+  cont: Part;
+}
+const sumH = (ps: Part[]) => ps.reduce((n, q) => n + q.h, 0);
 
-/** Lay one section out at content width w; `draw` paints it with its top-left corner at (x0, top). */
+/** Lay one section out at content width w as parts that can break between beam rows. */
 function block(doc: jsPDF, { plan, run, checks, label, story, exaggeration }: SectionSheet, w: number): Block {
   const g = sectionGeometry(plan, run, checks);
   const span = Math.max(g.maxLevel - g.minLevel, 1) * 1.25;
@@ -127,11 +135,17 @@ function block(doc: jsPDF, { plan, run, checks, label, story, exaggeration }: Se
     BUBBLES = 10,
     BELOW = 6,
     VERDICT = 6;
-  const tableH = checks.length ? 5 + checks.reduce((n, c) => n + rowsOf(c), 0) * ROW_H : 0;
-  const notesH = notes.reduce((n, l) => n + l.length * 3.2 + 1.2, 0);
-  const h = TITLE + BUBBLES + dh + BELOW + VERDICT + tableH + notesH;
+  const { total, failing } = summarise(checks);
+  const headH = TITLE + BUBBLES + dh + BELOW + 2 + VERDICT + (total ? 2.5 : 0);
+  const cols = (x0: number) => [x0, x0 + 62, x0 + 80, x0 + 98, x0 + 116, x0 + 138]; // Beam, Face, Level, Slab, Margin, Needs
+  const tableHead = (x0: number, y: number) => {
+    ['Beam', 'Face', 'Level', 'Slab', 'Margin', 'Needs'].forEach((hd, i) => text(doc, hd, cols(x0)[i], y, 2.4, { align: 'left', color: MUTED, bold: true }));
+    doc.setDrawColor('#d7dce3');
+    doc.setLineWidth(0.2);
+    doc.line(x0, y + 2, x0 + w, y + 2);
+  };
 
-  const draw = (x0: number, top: number) => {
+  const drawHead = (x0: number, top: number) => {
     const dx0 = x0 + 26,
       dx1 = x0 + w;
     const drawTop = top + TITLE + BUBBLES;
@@ -217,87 +231,110 @@ function block(doc: jsPDF, { plan, run, checks, label, story, exaggeration }: Se
       text(doc, c.label, X(c.d), bubbleY, 2.5, { bold: true });
     }
 
-    // ---------- catch-check table ----------
-    let y = drawTop + dh + BELOW + 2;
-    const { total, failing } = summarise(checks);
+    // ---------- catch-check verdict and table header ----------
+    const y = drawTop + dh + BELOW + 2;
     const uncaught = checks.reduce((n, c) => n + c.endBearing.filter((e) => !e.pass).length, 0);
     text(doc, 'CATCH CHECK', x0, y, 2.8, { bold: true, align: 'left' });
     const verdict = total === 0 ? 'No beams on this section line.' : failing === 0 ? `${total} beam${total === 1 ? '' : 's'} OK` : `${failing} of ${total} fail`;
     text(doc, verdict + (uncaught ? `  ·  ${uncaught} end${uncaught === 1 ? '' : 's'} uncaught` : ''), x0 + 30, y, 2.8, { bold: true, align: 'left', color: failing || uncaught ? RED : GREEN });
-    y += VERDICT;
+    if (total) tableHead(x0, y + VERDICT);
+  };
 
-    const cols = [x0, x0 + 62, x0 + 80, x0 + 98, x0 + 116, x0 + 138]; // Beam, Face, Level, Slab, Margin, Needs
-    if (total) {
-      ['Beam', 'Face', 'Level', 'Slab', 'Margin', 'Needs'].forEach((hd, i) => text(doc, hd, cols[i], y, 2.4, { align: 'left', color: MUTED, bold: true }));
-      y += 2;
-      doc.setDrawColor('#d7dce3');
-      doc.setLineWidth(0.2);
-      doc.line(x0, y, x0 + w, y);
-      y += 3;
-    }
-    for (const c of checks) {
-      const rows = rowsOf(c);
+  const row = (c: BeamCheck): Part => ({
+    h: rowsOf(c) * ROW_H,
+    draw: (x0, top) => {
+      const rows = rowsOf(c),
+        cl = cols(x0),
+        y = top + 2.6;
       const tp = c.sides.find((s) => s.side === c.governingTopSide);
       const sof = c.sides.find((s) => s.side === c.governingSide);
       if (!c.pass) {
         doc.setFillColor('#fdf1ef');
-        doc.rect(x0 - 1, y - 2.6, w + 2, rows * ROW_H, 'F');
+        doc.rect(x0 - 1, top, w + 2, rows * ROW_H, 'F');
       }
-      text(doc, c.label, cols[0], y, 2.5, { align: 'left', bold: true });
-      if (c.sides.length) text(doc, c.sides.map((s) => s.slabLabel).join(' | '), cols[0], y + ROW_H, 2.1, { align: 'left', color: MUTED });
+      text(doc, c.label, cl[0], y, 2.5, { align: 'left', bold: true });
+      if (c.sides.length) text(doc, c.sides.map((s) => s.slabLabel).join(' | '), cl[0], y + ROW_H, 2.1, { align: 'left', color: MUTED });
       const face = (yy: number, name: string, level: number, slab: number | undefined, margin: number | undefined, ok: boolean | undefined) => {
-        text(doc, name, cols[1], yy, 2.5, { align: 'left' });
-        text(doc, String(level), cols[2], yy, 2.5, { align: 'left' });
-        text(doc, slab === undefined ? '-' : String(slab), cols[3], yy, 2.5, { align: 'left' });
-        text(doc, margin === undefined ? '-' : `${signed(margin)} ${ok ? 'OK' : 'FAIL'}`, cols[4], yy, 2.5, { align: 'left', bold: true, color: margin === undefined ? INK : ok ? GREEN : RED });
+        text(doc, name, cl[1], yy, 2.5, { align: 'left' });
+        text(doc, String(level), cl[2], yy, 2.5, { align: 'left' });
+        text(doc, slab === undefined ? '-' : String(slab), cl[3], yy, 2.5, { align: 'left' });
+        text(doc, margin === undefined ? '-' : `${signed(margin)} ${ok ? 'OK' : 'FAIL'}`, cl[4], yy, 2.5, { align: 'left', bold: true, color: margin === undefined ? INK : ok ? GREEN : RED });
       };
       face(y, 'Top', c.topLevel, tp?.slabTop, tp?.topMargin, tp?.topPass);
       face(y + ROW_H, 'Soffit', c.soffitLevel, sof?.slabSoffit, sof?.margin, sof?.soffitPass);
       if (!c.pass) {
         const needs = [c.sides.some((s) => !s.topPass) ? `top ${c.requiredTopLevel}` : '', Math.round(c.requiredDepth) > Math.round(c.depth) ? `${Math.round(c.requiredDepth)} deep` : ''].filter(Boolean).join(', ');
-        text(doc, needs, cols[5], y, 2.5, { align: 'left', color: RED, bold: true });
+        text(doc, needs, cl[5], y, 2.5, { align: 'left', color: RED, bold: true });
       }
       const bad = c.endBearing.filter((e) => !e.pass);
       if (bad.length) {
-        text(doc, 'Ends', cols[1], y + 2 * ROW_H, 2.5, { align: 'left' });
+        text(doc, 'Ends', cl[1], y + 2 * ROW_H, 2.5, { align: 'left' });
         const note = bad.map((e) => `${e.which === 'start' ? 'first end' : 'far end'}: ${e.note}${e.supports.length ? ` (on ${e.supports.map((s) => s.label).join(' + ')})` : ''}`).join('  ·  ');
-        text(doc, note, cols[2], y + 2 * ROW_H, 2.3, { align: 'left', color: RED });
+        text(doc, note, cl[2], y + 2 * ROW_H, 2.3, { align: 'left', color: RED });
       }
-      y += rows * ROW_H;
       doc.setDrawColor('#e8ecf1');
       doc.setLineWidth(0.15);
-      doc.line(x0, y - 2.6, x0 + w, y - 2.6);
-    }
+      doc.line(x0, top + rows * ROW_H, x0 + w, top + rows * ROW_H);
+    },
+  });
 
-    // this section's warnings
-    y += 1;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(2.4 * PT);
-    doc.setTextColor('#8a5a10');
-    for (const lines of notes) {
-      doc.text(lines, x0, y + 0.8);
-      y += lines.length * 3.2 + 1.2;
-    }
+  // this section's warnings
+  const note = (lines: string[]): Part => ({
+    h: lines.length * 3.2 + 2.4,
+    draw: (x0, top) => {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(2.4 * PT);
+      doc.setTextColor('#8a5a10');
+      doc.text(lines, x0, top + 3.4);
+    },
+  });
+
+  const cont: Part = {
+    h: 12.5,
+    draw: (x0, top) => {
+      text(doc, `SECTION ${label}  ·  ${story}  (continued)`, x0, top + 2, 3.4, { bold: true, align: 'left' });
+      tableHead(x0, top + 8);
+    },
   };
-  return { h, draw };
+  return { parts: [{ h: headH, draw: drawHead }, ...checks.map(row), ...notes.map(note)], cont };
 }
 
-/** Greedy top-to-bottom fill: indices of blocks per column. */
-function pack(heights: number[], avail: number): number[][] {
-  const pages: number[][] = [];
-  let used = Infinity;
-  heights.forEach((h, i) => {
-    const need = h + (used === 0 ? 0 : GAP);
-    if (used === Infinity || used + need > avail) {
-      // shortcut: a block taller than a whole page gets its own page and runs past the frame; upgrade if sections with ~40+ beams show up
-      pages.push([i]);
-      used = h;
-    } else {
-      pages[pages.length - 1].push(i);
-      used += need;
-    }
-  });
-  return pages;
+/** One column: what to paint and where (offset from the column top); `sep` draws a divider above a new section. */
+type Column = { at: number; part: Part; sep: boolean }[];
+
+/**
+ * Greedy top-to-bottom fill. A section that fits a column is kept whole (moved to the next column if need be);
+ * one taller than a column starts a fresh column and breaks between beam rows, each run-on headed by `cont`.
+ */
+function pack(blocks: Block[], avail: number): Column[] {
+  const cols: Column[] = [];
+  let col: Column = [],
+    used = 0;
+  const next = () => {
+    if (col.length) cols.push(col);
+    col = [];
+    used = 0;
+  };
+  const put = (part: Part, sep: boolean) => {
+    col.push({ at: used, part, sep });
+    used += part.h;
+  };
+  for (const b of blocks) {
+    const h = sumH(b.parts);
+    if (col.length && (h > avail || used + GAP + h > avail)) next();
+    else if (col.length) used += GAP;
+    const sep = col.length > 0;
+    b.parts.forEach((q, i) => {
+      // only a section taller than a whole column gets here with parts that overflow
+      if (i && used + q.h > avail) {
+        next();
+        put(b.cont, false);
+      }
+      put(q, i === 0 && sep);
+    });
+  }
+  next();
+  return cols;
 }
 
 /** All sections on one A4 if they fit, else one A3, else as many A3 pages as needed (landscape). */
@@ -314,10 +351,7 @@ export async function sectionsPdf(sheets: SectionSheet[]): Promise<{ doc: jsPDF;
     const legendH = legend.length * 3.2;
     const avail = p.H - 2 * (M + PAD) - legendH - 4;
     // columns filled top to bottom, left to right; ncol columns make a page
-    const columns = pack(
-      blocks.map((b) => b.h),
-      avail,
-    );
+    const columns = pack(blocks, avail);
     const pages = Math.ceil(columns.length / ncol);
     if (pages > 1 && p !== PAPERS[PAPERS.length - 1]) continue;
     for (let n = 0; n < pages; n++) {
@@ -333,16 +367,15 @@ export async function sectionsPdf(sheets: SectionSheet[]): Promise<{ doc: jsPDF;
           doc.setLineWidth(0.2);
           doc.line(cx - COL_GAP / 2, M + PAD, cx - COL_GAP / 2, M + PAD + avail);
         }
-        let y = M + PAD;
-        idx.forEach((i, k) => {
-          if (k) {
+        for (const { at, part, sep } of idx) {
+          const y = M + PAD + at;
+          if (sep) {
             doc.setDrawColor('#c9d0d8');
             doc.setLineWidth(0.2);
             doc.line(cx, y - GAP / 2, cx + w, y - GAP / 2);
           }
-          blocks[i].draw(cx, y);
-          y += blocks[i].h + GAP;
-        });
+          part.draw(cx, y);
+        }
       });
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(2.4 * PT);
