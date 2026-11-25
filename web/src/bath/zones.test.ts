@@ -27,7 +27,7 @@ describe('areas from panels', () => {
     expect(addArea(m, 'Story2', 'wc', ['s1'])).toBe(m); // panels of another story are not taken
   });
 
-  it('flags its panels sunk too little, and unsunk beams between or across its panels but not along its outer edge', () => {
+  it('flags its panels sunk too little, and beams sunk too little between or across its panels but not along its outer edge', () => {
     const m = bays();
     m.slabs[2].duct = true;
     m.beams = [
@@ -35,11 +35,12 @@ describe('areas from panels', () => {
       { id: 'between', story: 'Story1', x1: 3000, y1: 0, x2: 3000, y2: 3000, section: 'B' },
       { id: 'across', story: 'Story1', x1: 1500, y1: 0, x2: 1500, y2: 3000, section: 'B' },
       { id: 'sunk', story: 'Story1', x1: 1000, y1: 0, x2: 1000, y2: 3000, section: 'B', sink: 100 },
+      { id: 'deep', story: 'Story1', x1: 2000, y1: 0, x2: 2000, y2: 3000, section: 'B', sink: 300 },
       { id: 'outerSide', story: 'Story1', x1: 6000, y1: 0, x2: 6000, y2: 3000, section: 'B' },
     ];
     const a = addArea(m, 'Story1', 'wc', ['s1', 's2']);
     const b = addArea(a, 'Story1', 'wash', ['s3']); // a duct panel: exempt
-    expect([...underSunk(b, 'Story1')]).toEqual([['s2', 300], ['between', 300], ['across', 300]]);
+    expect([...underSunk(b, 'Story1')]).toEqual([['s2', 300], ['between', 300], ['across', 300], ['sunk', 300]]);
     expect(underSunk(b, 'Story2').size).toBe(0);
   });
 });

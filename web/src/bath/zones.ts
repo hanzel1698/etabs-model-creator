@@ -107,7 +107,7 @@ function cutsAcross(polys: Pt[][], a: Pt, b: Pt): boolean {
 
 /**
  * Ids of beams and slabs on `story` short of a wash or toilet area's sink, with the sink they need:
- * a panel of the area sunk less than it needs, and a beam with no sink running through the area's inside;
+ * a panel of the area sunk less than it needs, and a beam sunk less than it needs running through the area's inside;
  * beams along its outer edge are its supports and stay flush. Ducts are exempt.
  */
 export function underSunk(m: Model, story: string): Map<string, number> {
@@ -122,7 +122,7 @@ export function underSunk(m: Model, story: string): Map<string, number> {
       const s = slabs.get(id);
       if (s && !s.duct && (s.sink ?? 0) < min) need(id, min);
     }
-    for (const b of m.beams) if (b.story === story && (b.sink ?? 0) <= 0 && cutsAcross(z.polys, { x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 })) need(b.id, min);
+    for (const b of m.beams) if (b.story === story && (b.sink ?? 0) < min && cutsAcross(z.polys, { x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 })) need(b.id, min);
   }
   return out;
 }
