@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo } from 'react';
 import { useApp, sectionColor, colorKey, bySinkLevel, type ColorBy } from '../model/store';
-import { MIN_SINK, ZONE_LABEL } from '../bath/zones';
+import { MIN_SINK, ZONE_LABEL, labelAt } from '../bath/zones';
 import { columnOn, levelTag, type BathZone, type Beam, type Column, type FrameLoad, type FrameSection, type Grid, type Model, type Slab, type StairRegion } from '../model/types';
 import { angleDeg, fmt, polyArea } from '../model/geom';
 import { gridDimensions } from '../model/ops';
@@ -143,8 +143,8 @@ export const BathZoneLayer = memo(function BathZoneLayer({ zones, viewRot, size 
     <g className="bath-zones">
       {zones.map((z) => (
         <g key={z.id}>
-          <rect x={z.x1} y={z.y1} width={z.x2 - z.x1} height={z.y2 - z.y1} fill="none" stroke={col[z.kind]} strokeWidth={z.kind === 'room' ? 2 : 1.5} strokeDasharray={z.kind === 'room' ? undefined : '6 4'} style={NS} />
-          <text transform={textTransform(z.x1, z.y2, viewRot)} dx={size * 0.15} dy={z.kind === 'room' ? -size * 0.2 : size * 0.55} fontSize={size * 0.4} fill={col[z.kind]} fontWeight={700} className="nosel">
+          <polygon points={z.pts.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" stroke={col[z.kind]} strokeWidth={z.kind === 'room' ? 2 : 1.5} strokeDasharray={z.kind === 'room' ? undefined : '6 4'} style={NS} />
+          <text transform={textTransform(labelAt(z).x, labelAt(z).y, viewRot)} dx={size * 0.15} dy={z.kind === 'room' ? -size * 0.2 : size * 0.55} fontSize={size * 0.4} fill={col[z.kind]} fontWeight={700} className="nosel">
             {ZONE_LABEL[z.kind]}{MIN_SINK[z.kind] ? ` ≥${MIN_SINK[z.kind]}` : ''}
           </text>
         </g>

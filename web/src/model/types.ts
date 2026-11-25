@@ -184,15 +184,12 @@ export interface SectionCut {
   hidden?: true;
 }
 
-/** Bathroom zone on one story's plan (min/max corners); app-only. Wash/urinal and toilet zones set a minimum sink on what they contain. */
+/** Bathroom zone on one story's plan (polygon); app-only. Wash/urinal and toilet zones set a minimum sink on what they contain. */
 export interface BathZone {
   id: string;
   story: string;
   kind: 'room' | 'wash' | 'wc';
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  pts: Pt[];
 }
 
 // ---------- loads (values in kN, kN/m, kN/m², kN·m; absolute distances in mm) ----------

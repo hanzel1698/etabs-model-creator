@@ -7,12 +7,12 @@ import { StairLayer } from './StairLayer';
 import { SectionLayer } from '../bath/SectionLayer';
 import { CatchFlags } from '../bath/CatchFlags';
 import { setDuct, useBath } from '../bath/sections';
-import { underSunk } from '../bath/zones';
+import { underSunk, zonesOn } from '../bath/zones';
 import { flightGrips, landingRect, landingSides, rectPts } from '../stair/stair';
 import { viewport } from './viewport';
 import { UnderlayLayer, StairBoxLayer, BathZoneLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
 import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
-import { onMove, onClick, onInput, setOffsetInput, onCancel, finishPolygon, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, midPicking, startMidPick, spanGrips, type Grip } from './tools';
+import { onMove, onClick, onInput, setOffsetInput, onCancel, finishPolygon, isPolyTool, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, midPicking, startMidPick, spanGrips, type Grip } from './tools';
 import { columnOutline } from './snap';
 import { pasteLoads, type LoadClip } from '../model/loads';
 import { useUnderlay, regionFor, underlayStory } from '../underlay/store';
@@ -146,7 +146,7 @@ export function PlanView() {
   const slabs = useMemo(() => model.slabs.filter((s) => s.story === story), [model.slabs, story]);
   const cuts = useMemo(() => (show.bathSections ? (full.sectionLines ?? []).filter((c) => c.story === story && !c.hidden) : []), [full.sectionLines, story, show.bathSections]);
   const activeCut = useBath((s) => s.active);
-  const zones = useMemo(() => (full.bathZones ?? []).filter((z) => z.story === story), [full.bathZones, story]);
+  const zones = useMemo(() => zonesOn(full, story), [full.bathZones, story]);
   // View by sink level: beams / slabs in a wash or toilet zone sunk less than it needs
   const short = useMemo(() => (colorBy === 'sink' && zones.length ? underSunk(full, story) : undefined), [colorBy, zones, full, story]);
   // inside a stair: its flights, landings and spans on the plan level in view
@@ -288,7 +288,7 @@ export function PlanView() {
 
   const endChain = () => {
     const t = useApp.getState().tool;
-    if (t === 'slabDraw' || t === 'area') finishPolygon();
+    if (isPolyTool(t)) finishPolygon();
     else onCancel();
   };
 
@@ -320,7 +320,7 @@ export function PlanView() {
 
   const dblClick = () => {
     const t = useApp.getState().tool;
-    if (t === 'slabDraw' || t === 'area') finishPolygon();
+    if (isPolyTool(t)) finishPolygon();
   };
 
   const framePick = useFramePick((s) => !!s.done);
@@ -364,7 +364,7 @@ export function PlanView() {
             <>
               {menuItem('Mid between two points', startMidPick)}
               <div className="menu-sep" role="separator" />
-              {menuItem(tool === 'slabDraw' || tool === 'area' ? 'Close polygon' : 'End / cancel', endChain)}
+              {menuItem(isPolyTool(tool) ? 'Close polygon' : 'End / cancel', endChain)}
             </>
           )}
         </div>
@@ -566,7 +566,7 @@ function Overlay() {
   const cur = pv.snap?.p ?? pv.cursor;
   if (pv.rubber.length && cur && tool !== 'region' && tool !== 'stairBox') {
     const pts = [...pv.rubber, cur].map(S);
-    const closing = (tool === 'slabDraw' || tool === 'area') && pv.rubber.length >= 2;
+    const closing = isPolyTool(tool) && pv.rubber.length >= 2;
     items.push(<polyline key="rub" points={pts.map((p) => `${p.x},${p.y}`).join(' ')} fill={closing ? 'rgba(255,200,80,.08)' : 'none'} stroke="#ffc850" strokeWidth={1.5} strokeDasharray="6 3" />);
     if (closing) items.push(<line key="close" x1={pts[pts.length - 1].x} y1={pts[pts.length - 1].y} x2={pts[0].x} y2={pts[0].y} stroke="#ffc850" strokeOpacity={0.4} strokeDasharray="3 3" />);
   }

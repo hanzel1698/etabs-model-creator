@@ -1,8 +1,8 @@
 // Right panel: which bathroom section lines are shown on the plan (and offered in the Section view).
 import { useApp } from '../model/store';
 import { setSectionsHidden, useBath } from './sections';
-import { MIN_SINK, ZONE_LABEL, removeZone, underSunk } from './zones';
-import { fmt } from '../model/geom';
+import { MIN_SINK, ZONE_LABEL, removeZone, underSunk, zonesOn } from './zones';
+import { fmt, polyArea } from '../model/geom';
 
 export function BathSectionsList() {
   const on = useApp((s) => s.show.bathSections);
@@ -38,10 +38,9 @@ export function BathSectionsList() {
 
 /** Bathroom zones on the story in view, each removable; says how many beams/slabs there are sunk less than their zone needs. */
 export function BathZonesList() {
-  const all = useApp((s) => s.model.bathZones);
   const story = useApp((s) => s.activeStory);
   const model = useApp((s) => s.model);
-  const zones = (all ?? []).filter((z) => z.story === story);
+  const zones = zonesOn(model, story);
   if (!zones.length) return null;
   const low = underSunk(model, story).size;
   return (
@@ -52,7 +51,7 @@ export function BathZonesList() {
       {zones.map((z) => (
         <div key={z.id} className="small">
           {ZONE_LABEL[z.kind]}
-          {MIN_SINK[z.kind] ? ` ≥${MIN_SINK[z.kind]}` : ''} <span className="muted">· {fmt((z.x2 - z.x1) / 1000, 2)} × {fmt((z.y2 - z.y1) / 1000, 2)} m</span>{' '}
+          {MIN_SINK[z.kind] ? ` ≥${MIN_SINK[z.kind]}` : ''} <span className="muted">· {fmt(Math.abs(polyArea(z.pts)) / 1e6, 2)} m²</span>{' '}
           <button title="Remove this zone" onClick={() => useApp.getState().commit((m) => removeZone(m, z.id))}>
             ✕
           </button>

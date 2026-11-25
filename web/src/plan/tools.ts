@@ -39,9 +39,9 @@ const hints: Record<ToolName, string> = {
   flight: 'Click two opposite corners of the flight, then click a start and an end point to show the UP direction. Risers come from the stair’s tread and rise.',
   landing: 'Click two opposite corners. Its level is taken from the flight that ends in it.',
   span: 'Click support to support along the spanning direction (snaps to beams).',
-  bathRoom: 'Bathroom zone: click two opposite corners around the bathroom.',
-  bathWash: 'Wash/urinal zone: click two opposite corners. Beams and slabs wholly inside need a sink of at least 150 mm.',
-  bathWc: 'Toilet zone: click two opposite corners. Beams and slabs wholly inside need a sink of at least 300 mm.',
+  bathRoom: 'Bathroom zone: click its corners; Enter or click the first point to close.',
+  bathWash: 'Wash/urinal zone: click its corners; Enter or click the first point to close. Beams and slabs wholly inside need a sink of at least 150 mm.',
+  bathWc: 'Toilet zone: click its corners; Enter or click the first point to close. Beams and slabs wholly inside need a sink of at least 300 mm.',
 };
 
 // tools that work inside a stair (the building is read-only there)
@@ -51,6 +51,8 @@ const STAIR_TOOLS: ToolName[] = ['flight', 'landing', 'span'];
 // tools whose points snap to the underlay, so they must not run on the raw (setup) DXF
 const DRAW_TOOLS: ToolName[] = ['grid', 'column', 'beam', 'slabDraw', 'bathRoom', 'bathWash', 'bathWc'];
 const ZONE_TOOLS: Partial<Record<ToolName, 'room' | 'wash' | 'wc'>> = { bathRoom: 'room', bathWash: 'wash', bathWc: 'wc' };
+/** Tools drawn as a polygon: click corners, close with Enter, a double-click or the first point. */
+export const isPolyTool = (t: ToolName) => t === 'slabDraw' || t === 'area' || !!ZONE_TOOLS[t];
 
 // tool-local state
 let regionRect: { a: Pt; b: Pt } | null = null;
@@ -211,7 +213,7 @@ export function doSnap(screen: Pt): Snap {
   const s = snapPoint(t === 'region' ? { ...m, grids: [], columns: [], beams: [], slabs: [] } : m, w, tol, {
     story: A().activeStory,
     from,
-    ortho: A().ortho && t !== 'region' && t !== 'stairBox' && !ZONE_TOOLS[t] && t !== 'landing' && t !== 'flight', // a box's opposite corner must not be locked level with the first
+    ortho: A().ortho && t !== 'region' && t !== 'stairBox' && t !== 'landing' && t !== 'flight', // a box's opposite corner must not be locked level with the first
     underlay: A().show.underlay,
     only: snapKindsFor(t),
   });
@@ -264,8 +266,8 @@ export function onMove(screen: Pt) {
   }
   if (s.kind !== 'none' && s.kind !== 'near' && s.kind !== 'ortho' && s.kind !== 'track') upd.track = s.p;
   const last = p.rubber[p.rubber.length - 1];
-  if (last && (t === 'beam' || t === 'grid' || t === 'slabDraw' || t === 'area' || t === 'measure' || t === 'angle' || t === 'calibrate' || t === 'section')) upd.hint = liveText(last, s.p);
-  if ((t === 'region' && !regionRect) || t === 'stairBox' || !!ZONE_TOOLS[t] || t === 'landing' || (t === 'flight' && !flightBox)) if (p.rubber.length === 1) upd.box = { a: p.rubber[0], b: s.p };
+  if (last && (t === 'beam' || t === 'grid' || isPolyTool(t) || t === 'measure' || t === 'angle' || t === 'calibrate' || t === 'section')) upd.hint = liveText(last, s.p);
+  if ((t === 'region' && !regionRect) || t === 'stairBox' || t === 'landing' || (t === 'flight' && !flightBox)) if (p.rubber.length === 1) upd.box = { a: p.rubber[0], b: s.p };
   if (last && t === 'flight') upd.hint = flightBox ? flightHint(flightBox, last, s.p) : liveText(last, s.p);
   if (last && t === 'span') upd.hint = liveText(last, s.p);
   if (t === 'column' && !A().colAlign.picking && A().colAlign.mode !== 'off' && A().colAlign.ref) {
@@ -479,7 +481,10 @@ export function onClick(pt: Pt) {
       return p.set({ measure: { pts: [...bay, bay[0]], text: '' }, panel: panelSize(bay) });
     }
     case 'slabDraw':
-    case 'area': {
+    case 'area':
+    case 'bathRoom':
+    case 'bathWash':
+    case 'bathWc': {
       if (p.rubber.length >= 3 && dist(pt, p.rubber[0]) < SNAP_PX / viewport.k) return finishPolygon();
       return p.set({ rubber: [...p.rubber, pt] });
     }
@@ -584,15 +589,6 @@ export function onClick(pt: Pt) {
       commitStair((mm) => ({ ...mm, spans: [...mm.spans, sp] }));
       A().setSelection([sp.id]);
       return p.set({ rubber: [] });
-    }
-    case 'bathRoom':
-    case 'bathWash':
-    case 'bathWc': {
-      if (!p.rubber.length) return p.set({ rubber: [pt], hint: 'Click the opposite corner of the zone.' });
-      const a = p.rubber[0];
-      resetTool();
-      if (Math.abs(pt.x - a.x) < 1 || Math.abs(pt.y - a.y) < 1) return;
-      return commit((m) => addZone(m, A().activeStory, ZONE_TOOLS[t]!, a, pt));
     }
     case 'stairBox': {
       if (!p.rubber.length) return p.set({ rubber: [pt], hint: 'Click the opposite corner of the stair box.' });
@@ -707,6 +703,10 @@ export function finishPolygon() {
   if (pts.length < 3) return;
   if (t === 'slabDraw') {
     for (const st of drawStories()) A().commit((m) => addSlab(m, pts, st, A().active.slab, drawDz()));
+    p.set({ rubber: [] });
+  } else if (ZONE_TOOLS[t]) {
+    if (Math.abs(polyArea(pts)) < 1e4) return toast('That zone has no area: click at least three corners that are not in a line.');
+    A().commit((m) => addZone(m, A().activeStory, ZONE_TOOLS[t]!, pts));
     p.set({ rubber: [] });
   } else if (t === 'area') {
     let per = 0;

@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useEffect, useMemo, useRef } from 'react';
 import { useApp, usePreview, planeLevel, stairLevelSteps, visibleModel, viewModel } from './model/store';
 import { PlanView, fitAll } from './plan/PlanView';
-import { setTool, onCancel, onInput, finishPolygon, resetTool } from './plan/tools';
+import { setTool, onCancel, onInput, finishPolygon, isPolyTool, resetTool } from './plan/tools';
 import { LeftPanel } from './ui/LeftPanel';
 import { RightPanel } from './ui/RightPanel';
 import { Dialogs } from './ui/Dialogs';
@@ -77,7 +77,7 @@ export function App() {
         return;
       }
       if (e.key === 'Enter') {
-        if (st.tool === 'slabDraw' || st.tool === 'area') finishPolygon();
+        if (isPolyTool(st.tool)) finishPolygon();
         return;
       }
       if (e.ctrlKey || e.altKey || e.metaKey) return;
