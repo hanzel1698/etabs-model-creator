@@ -263,6 +263,7 @@ const DIALOG_NAMES: Record<Dialog['kind'], string> = {
   move: 'Move',
   selectBy: 'Select by',
   planSheets: 'Export plan sheets',
+  bathSectionsPdf: 'Export bathroom sections',
   sections: 'Sections',
   stories: 'Stories',
   refPlanes: 'Reference planes',

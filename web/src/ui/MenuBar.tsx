@@ -208,6 +208,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay, onLinkedUnderlay }: { onNe
         { label: 'Underlay setup…', run: () => openDialog({ kind: 'underlay' }) },
         'sep',
         { label: 'Export plan sheets (PDF)…', title: 'Framing, column layout, line-load and shell-load plans of every story region on A2 sheets', run: () => openDialog({ kind: 'planSheets' }) },
+        { label: 'Export Bathroom Sections…', title: 'Tick the bathroom section cuts to export; all go on one A4, else A3 sheets', run: () => openDialog({ kind: 'bathSectionsPdf' }) },
       ],
     },
     {

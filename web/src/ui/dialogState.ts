@@ -14,6 +14,7 @@ export type Dialog =
   | { kind: 'underlay' }
   | { kind: 'etabs' }
   | { kind: 'planSheets' }
+  | { kind: 'bathSectionsPdf' }
   | { kind: 'rotate' }
   | { kind: 'loadPatterns' }
   | { kind: 'is875' }
