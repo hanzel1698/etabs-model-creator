@@ -300,6 +300,17 @@ function ViewControls() {
               </button>
             ))}
           </div>
+        ) : k === 'sinks' ? (
+          <div key={k} className="beam-dirs wrap">
+            <label className="small">
+              <input type="checkbox" checked={show.sinks} onChange={() => st.toggleShow('sinks')} /> {l}
+            </label>
+            {([['sinkBeams', 'Beams'], ['sinkSlabs', 'Slabs']] as const).map(([d, t]) => (
+              <button key={d} className={show[d] ? 'dir wide on' : 'dir wide'} aria-pressed={show[d]} title={`Show sink tags on ${t.toLowerCase()}`} disabled={!show.sinks} onClick={() => st.toggleShow(d)}>
+                {t}
+              </button>
+            ))}
+          </div>
         ) : k === 'beams' ? (
           <div key={k} className="beam-dirs">
             <label className="small">

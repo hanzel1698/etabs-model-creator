@@ -298,6 +298,8 @@ const SHOW_NAMES: Record<keyof ShowFlags, string> = {
   nodes: 'nodes',
   loads: 'loads',
   sinks: 'sink tags',
+  sinkBeams: 'sink tags on beams',
+  sinkSlabs: 'sink tags on slabs',
   bathSections: 'bath section lines',
   catchFlags: 'catch markers',
 };

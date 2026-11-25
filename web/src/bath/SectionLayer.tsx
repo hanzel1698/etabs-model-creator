@@ -18,7 +18,7 @@ function centroid(pts: { x: number; y: number }[]) {
 }
 
 /** Bathroom section cuts (with view arrows) and sink / duct tags on the plan, in world (mm) coordinates. */
-export function SectionLayer({ cuts, active, beams, slabs, viewRot, ts, slabNames, sinks }: { cuts: SectionCut[]; active: string | null; beams: Beam[]; slabs: Slab[]; viewRot: number; ts: number; slabNames: boolean; sinks: boolean }) {
+export function SectionLayer({ cuts, active, beams, slabs, viewRot, ts, slabNames, sinkBeams, sinkSlabs }: { cuts: SectionCut[]; active: string | null; beams: Beam[]; slabs: Slab[]; viewRot: number; ts: number; slabNames: boolean; sinkBeams: boolean; sinkSlabs: boolean }) {
   const fs = 150 * ts;
   const text = (x: number, y: number, s: string, fill: string, ang = 0, dy = 0) => (
     <text key={`${x},${y},${s}`} transform={textTransform(x, y, viewRot, readableAngle(ang, viewRot))} dy={dy} fontSize={fs} textAnchor="middle" dominantBaseline="central" fill={fill} className="halo nosel">
@@ -27,13 +27,13 @@ export function SectionLayer({ cuts, active, beams, slabs, viewRot, ts, slabName
   );
   return (
     <g className="bath-sections" pointerEvents="none">
-      {sinks && slabs.filter((s) => s.sink || s.duct).map((s) => {
+      {sinkSlabs && slabs.filter((s) => s.sink || s.duct).map((s) => {
         const c = centroid(s.pts);
         // centred on the panel; with the slab name shown, the two straddle the centre
         return text(c.x, c.y, s.duct ? 'DUCT' : `↓${fmt(s.sink!)}`, 'var(--accent)', 0, slabNames ? fs * 0.6 : 0);
       })}
       {/* beam sink below the line; the beam's section label sits above it */}
-      {sinks && beams.filter((b) => b.sink).map((b) => text((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2, `↓${fmt(b.sink!)}`, 'var(--accent)', (Math.atan2(b.y2 - b.y1, b.x2 - b.x1) * 180) / Math.PI, fs * 0.9))}
+      {sinkBeams && beams.filter((b) => b.sink).map((b) => text((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2, `↓${fmt(b.sink!)}`, 'var(--accent)', (Math.atan2(b.y2 - b.y1, b.x2 - b.x1) * 180) / Math.PI, fs * 0.9))}
       {cuts.map((c) => {
         const on = c.id === active;
         const dx = c.b.x - c.a.x,

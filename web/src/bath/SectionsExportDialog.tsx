@@ -10,7 +10,8 @@ import { sectionsPdf, sheetFor } from './sectionPdf';
 export function SectionsExportDialog() {
   const model = useApp((s) => s.model);
   const cuts = model.sectionLines ?? [];
-  const [picked, setPicked] = useState<boolean[]>(() => cuts.map(() => true));
+  // start with the sections ticked in the right panel's Bath sections list
+  const [picked, setPicked] = useState<boolean[]>(() => cuts.map((c) => !c.hidden));
   const [ex, setEx] = useState(1);
   const [busy, setBusy] = useState(false);
   const chosen = cuts.filter((_, i) => picked[i] ?? true);
