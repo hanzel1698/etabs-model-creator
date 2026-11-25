@@ -296,6 +296,7 @@ const SHOW_NAMES: Record<keyof ShowFlags, string> = {
   slabs: 'slabs',
   nodes: 'nodes',
   loads: 'loads',
+  sinks: 'sink tags',
 };
 const PANEL_NAMES = { plan: 'plan view only', '3d': '3D view only', split: 'plan and 3D side by side', elev: 'elevation view', section: 'the bathroom section' };
 

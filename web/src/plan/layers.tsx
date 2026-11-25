@@ -234,7 +234,7 @@ export const ColumnLayer = memo(function ColumnLayer({ cols, secs, sel, ghost, c
 
 // ---------------- labels ----------------
 
-export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, cols, beams, slabs }: { m: Model; story: string; viewRot: number; ts: number; cols: boolean; beams: boolean; slabs: boolean }) {
+export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, cols, beams, slabs, sinks }: { m: Model; story: string; viewRot: number; ts: number; cols: boolean; beams: boolean; slabs: boolean; sinks: boolean }) {
   const h = 160 * ts;
   const secs = useMemo(() => new Map(m.frameSections.map((s) => [s.name, s])), [m.frameSections]);
   // elements on a reference plane name it (or their offset) after the section
@@ -267,7 +267,8 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, cols
           if (s.story !== story) return null;
           const c = centroid(s.pts);
           return (
-            <text key={s.id} transform={textTransform(c.x, c.y, viewRot)} textAnchor="middle" dominantBaseline="central" fill="var(--labelSlab)">
+            // a bathroom sink tag (bath/SectionLayer) shares the centre: the pair straddles it
+            <text key={s.id} transform={textTransform(c.x, c.y, viewRot)} dy={sinks && (s.sink || s.duct) ? -h * 0.6 : 0} textAnchor="middle" dominantBaseline="central" fill="var(--labelSlab)">
               {s.section}
               {tag(s)}
             </text>

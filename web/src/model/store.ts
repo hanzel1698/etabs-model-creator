@@ -57,6 +57,8 @@ export interface ShowFlags {
   nodes: boolean;
   /** load values of the active load pattern */
   loads: boolean;
+  /** bathroom sink / duct tags on beams and slabs */
+  sinks: boolean;
 }
 
 interface AppState {
@@ -196,7 +198,7 @@ function readNum(key: string, fallback: number) {
 }
 
 const VIEW_DEFAULTS = {
-  show: { sectionLabels: true, labelColumns: true, labelBeams: true, labelSlabs: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false } as ShowFlags,
+  show: { sectionLabels: true, labelColumns: true, labelBeams: true, labelSlabs: true, grids: true, gridLabels: true, gridDims: true, ghostBelow: false, underlay: true, columns: true, beams: true, beamsX: true, beamsY: true, slabs: true, nodes: false, loads: false, sinks: true } as ShowFlags,
   hidden: [] as string[],
   viewRotation: 0,
   textScale: 1,

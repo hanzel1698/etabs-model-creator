@@ -282,6 +282,7 @@ function ViewControls() {
     ['slabs', 'Slabs'],
     ['nodes', 'Nodes'],
     ['loads', 'Loads (active pattern; always on in View by load values)'],
+    ['sinks', 'Sink Tags'],
   ];
   return (
     <>
