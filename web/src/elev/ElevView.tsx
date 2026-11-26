@@ -6,7 +6,7 @@ import { ColorLegend } from '../plan/layers';
 import { fmt } from '../model/geom';
 import { elevationAt, elevationsFromBeams, type Elevation } from './elevation';
 import { addBeams, addColumns } from '../model/ops';
-import { asStair, placeAt, storyElevations, uid, type Flight, type FlightDir, type Grid, type Landing, type StairModel } from '../model/types';
+import { asStair, placeAt, storyElevations, uid, type Flight, type FlightDir, type FrameLoad, type Grid, type Landing, type StairModel } from '../model/types';
 import { commitBeams } from '../plan/tools';
 import { autoSpans, nextNames } from '../stair/stair';
 import { commitStair } from '../stair/regions';
@@ -507,6 +507,50 @@ export function ElevView() {
                 if (!ls.length) return null;
                 // slabs carry shell loads (kN/m²), beams and columns frame loads
                 const txt = 't' in x ? ls.map((l) => Math.round(l.value * 1000) / 1000).join(' + ') + ' kN/m²' : ls.map((l) => shortFrameLoad(l as never)).join(' + ');
+                // column line loads are earth pressure from basement walls: draw them as their load diagram, i-end at the bottom
+                // only global X/Y line loads can be drawn in the view; gravity, Z and local-axis loads keep the text label
+                const dist = 'z0' in x ? (ls as unknown as FrameLoad[]).filter((l) => l.kind === 'dist' && (l.dir === 'X' || l.dir === 'Y' || l.dir === 'PX' || l.dir === 'PY')) : [];
+                if ('z0' in x && dist.length === ls.length) {
+                  const L = x.z1 - x.z0,
+                    at = (l: FrameLoad, d: number) => x.z0 + (l.rel ? d * L : d),
+                    // component of the load direction along +s; ~0 = perpendicular to the view, drawn dashed at full size
+                    along = (l: FrameLoad) => (l.dir.endsWith('X') ? e.u.x : e.u.y),
+                    flat = (l: FrameLoad) => Math.abs(along(l)) < 0.05,
+                    f = (l: FrameLoad) => (flat(l) ? 1 : along(l)),
+                    k = 40 / Math.max(...dist.map((l) => Math.max(Math.abs(l.v1 * f(l)), Math.abs(l.v2 * f(l)))), 1e-9),
+                    // the diagram sits on the side the load pushes from, as ETABS draws it, off that face of the column
+                    x0 = (l: FrameLoad) => ((l.v1 + l.v2) * f(l) < 0 ? X(x.s1) : X(x.s0)),
+                    off = (l: FrameLoad, v: number) => x0(l) - k * v * f(l),
+                    ends = new Map<string, [number, number, number]>(); // z, label x, value
+                  for (const l of dist) for (const [d, v] of [[l.d1, l.v1], [l.d2, l.v2]]) ends.set(`${Math.round(at(l, d))}|${Math.round(off(l, v))}`, [at(l, d), off(l, v), v]);
+                  return (
+                    <g key={x.id} stroke="var(--load)" strokeWidth={1}>
+                      {dist.map((l, j) => {
+                        const za = at(l, l.d1),
+                          zb = at(l, l.d2),
+                          b = x0(l),
+                          n = Math.max(2, Math.round((view.k * Math.abs(zb - za)) / 25));
+                        return (
+                          <g key={j} strokeDasharray={flat(l) ? '4 3' : undefined}>
+                            <polygon points={`${b},${Y(za)} ${off(l, l.v1)},${Y(za)} ${off(l, l.v2)},${Y(zb)} ${b},${Y(zb)}`} fill="var(--load)" fillOpacity={0.12} />
+                            {Array.from({ length: n + 1 }, (_, i) => {
+                              const t = i / n,
+                                xa = off(l, l.v1 + (l.v2 - l.v1) * t),
+                                y = Y(za + (zb - za) * t),
+                                h = Math.sign(b - xa) * 5;
+                              return Math.abs(b - xa) < 6 ? null : <path key={i} d={`M${xa} ${y}H${b}M${b - h} ${y - 3}L${b} ${y}L${b - h} ${y + 3}`} fill="none" strokeDasharray="none" />;
+                            })}
+                          </g>
+                        );
+                      })}
+                      {[...ends.values()].map(([z, lx, v], j) => (
+                        <text key={j} x={lx + (lx > X(x.s0) ? 3 : -3)} y={Y(z)} dy={4} textAnchor={lx > X(x.s0) ? 'start' : 'end'} stroke="none" className="halo">
+                          {Math.round(v * 100) / 100}
+                        </text>
+                      ))}
+                    </g>
+                  );
+                }
                 if ('z0' in x)
                   return (
                     <text key={x.id} transform={`translate(${X(x.s0) - 4} ${Y((x.z0 + x.z1) / 2)}) rotate(-90)`} textAnchor="middle" className="halo">

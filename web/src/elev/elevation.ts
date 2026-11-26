@@ -25,6 +25,7 @@ export interface Elevation {
   cuts: ElevCut[];
   slabs: ElevSlab[];
   stair: ElevStair[];
+  u: Pt; // plan direction of +s, to project global X/Y loads onto the view
 }
 
 /** Everything within `tol` mm of the grid line, seen square-on to it. */
@@ -156,7 +157,7 @@ export function elevationAt(m: Model, g: Grid, tol: number): Elevation {
     stair.push({ id: l.id, kind: 'landing', name: l.name, pts: [[a, l.z - l.t], [c, l.z - l.t], [c, l.z], [a, l.z]], keys: [[a, l.z], [c, l.z]], near: band(corners) });
   }
 
-  return { levels, refPlanes, grids, columns, beams, cuts, slabs, stair };
+  return { levels, refPlanes, grids, columns, beams, cuts, slabs, stair, u };
 }
 
 /** Stretches of the line at offset `at` that lie inside the polygon, as [s0, s1] stations. */
