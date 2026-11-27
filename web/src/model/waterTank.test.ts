@@ -27,4 +27,14 @@ describe('rccTankLoad', () => {
     expect(r.total).toBeCloseTo(165.204, 3);
     expect(r.unit).toBeCloseTo(10.198, 3);
   });
+
+  it('one 200 mm partition along X splits 3.2 × 4.1 m inside into two compartments', () => {
+    const r = rccTankLoad(10000, 200, 3600, 4500, 3.6 * 4.5, undefined, { n: 1, along: 'X', freeboard: 300 });
+    expect(r.partArea).toBeCloseTo(0.64); // 3.2 m long × 0.2 m
+    expect(r.innerArea).toBeCloseTo(12.48);
+    expect(r.h).toBe(0.9); // 10 / 12.48 = 0.801 → 0.9
+    expect(r.water).toBeCloseTo(112.32);
+    expect(r.partWalls).toBeCloseTo(0.64 * 1.2 * 25);
+    expect(r.total).toBeCloseTo(112.32 + 19.2);
+  });
 });

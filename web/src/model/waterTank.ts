@@ -23,17 +23,33 @@ export function hdpeTankLoad(capacity: number, n: number, padT: number, panelAre
 /** RCC tank whose walls stand on the panel edges: water fills the inside (panel less the wall
  *  thickness all round) to the depth that holds the volume, rounded up to 100 mm.
  *  bw × bh is the panel (or panels') extent in mm, panelArea in m². */
-export function rccTankLoad(volumeL: number, wallT: number, bw: number, bh: number, panelArea: number, roof?: TankRoof) {
+export function rccTankLoad(volumeL: number, wallT: number, bw: number, bh: number, panelArea: number, roof?: TankRoof, parts?: TankPartitions) {
   const iw = Math.max(0, bw - 2 * wallT), ih = Math.max(0, bh - 2 * wallT);
-  const innerArea = (iw / 1000) * (ih / 1000);
+  // partition walls (same thickness) span the inside and take their footprint out of the water
+  const n = parts ? Math.max(0, Math.round(parts.n)) : 0;
+  const partLen = parts?.along === 'Y' ? ih : iw; // mm, each wall
+  const across = parts?.along === 'Y' ? iw : ih; // the inside dimension the walls divide
+  const partArea = Math.min(n * wallT, across) / 1000 * (partLen / 1000);
+  const innerArea = Math.max(0, (iw / 1000) * (ih / 1000) - partArea);
   const hNeed = innerArea > 0 ? volumeL / 1000 / innerArea : 0; // m
   const h = Math.ceil(hNeed * 10 - 1e-9) / 10;
   const water = innerArea * h * G; // 1 m³ of water = 1000 kg
+  // partitions stand on the slab, so their own weight goes into the shell load: water depth + freeboard tall
+  const partH = n ? h + (parts!.freeboard / 1000) : 0; // m
+  const partWalls = partArea * partH * 25;
   // roof slab over the whole panel extent, beams at their full b × d
   const roofSlab = roof ? (bw / 1000) * (bh / 1000) * (roof.t / 1000) * 25 : 0;
   const beams = roof ? roof.beams.reduce((s, b) => s + (b.b / 1000) * (b.d / 1000) * b.len * 25, 0) : 0;
-  const total = water + roofSlab + beams;
-  return { iw, ih, innerArea, hNeed, h, water, roofSlab, beams, total, unit: panelArea > 0 ? total / panelArea : 0 };
+  const total = water + partWalls + roofSlab + beams;
+  return { iw, ih, n, partLen, partArea, partH, partWalls, innerArea, hNeed, h, water, roofSlab, beams, total, unit: panelArea > 0 ? total / panelArea : 0 };
+}
+
+/** Intermediate walls splitting the tank into n + 1 compartments; `along` is the axis the walls run on,
+ *  freeboard (mm) is the wall height above the water. */
+export interface TankPartitions {
+  n: number;
+  along: 'X' | 'Y';
+  freeboard: number;
 }
 
 /** Tank roof: slab thickness (mm) and the beams carrying it (b, d in mm, length in m). */
