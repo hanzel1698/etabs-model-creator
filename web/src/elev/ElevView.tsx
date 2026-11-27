@@ -172,8 +172,11 @@ export function ElevView() {
   };
   const byId = useMemo(() => new Map([...model.columns, ...model.beams, ...model.slabs].map((x) => [x.id, x])), [model]);
   const shown = useMemo(() => (e ? [...e.columns, ...e.beams, ...e.cuts].flatMap((x) => byId.get(x.id) ?? []) : []), [e, byId]);
+  const checkedIds = useApp((s) => (s.checking ? s.model.checked : undefined));
+  const checked = useMemo(() => new Set(checkedIds), [checkedIds]);
   const fill = (id: string, def: string) => {
     if (sel.has(id)) return 'var(--sel)';
+    if (checked.has(id)) return 'var(--checked)';
     const k = colorKey(byId.get(id) ?? { section: '' }, colorBy, patterns);
     return k === null ? def : sectionColor(k);
   };
@@ -425,7 +428,7 @@ export function ElevView() {
             // centrelines as in the 3D wireframe; members sit on their level, cut beams show as points
             <g strokeWidth={2.5} style={{ cursor: 'pointer' }}>
               {e.slabs.map((s, i) => (
-                <line key={s.id + i} x1={X(s.s0)} x2={X(s.s1)} y1={Y(s.z)} y2={Y(s.z)} stroke={sel.has(s.id) ? 'var(--sel)' : 'var(--slabEdge)'} strokeWidth={7} strokeOpacity={0.45} onPointerUp={(ev) => pick(s.id, ev)} />
+                <line key={s.id + i} x1={X(s.s0)} x2={X(s.s1)} y1={Y(s.z)} y2={Y(s.z)} stroke={sel.has(s.id) ? 'var(--sel)' : checked.has(s.id) ? 'var(--checked)' : 'var(--slabEdge)'} strokeWidth={7} strokeOpacity={0.45} onPointerUp={(ev) => pick(s.id, ev)} />
               ))}
               {e.beams.map((b) => (
                 <line key={b.id} x1={X(b.s0)} x2={X(b.s1)} y1={Y(b.z)} y2={Y(b.z)} stroke={fill(b.id, 'var(--beam)')} onPointerUp={(ev) => pick(b.id, ev)} />
@@ -440,7 +443,7 @@ export function ElevView() {
           ) : (
             <>
             {e.slabs.map((s, i) => (
-              <rect key={s.id + i} x={X(s.s0)} y={Y(s.z)} width={view.k * (s.s1 - s.s0)} height={Math.max(view.k * s.t, 1.5)} fill={sel.has(s.id) ? 'var(--sel)' : 'var(--slabEdge)'} onPointerUp={(ev) => pick(s.id, ev)} style={{ cursor: 'pointer' }} />
+              <rect key={s.id + i} x={X(s.s0)} y={Y(s.z)} width={view.k * (s.s1 - s.s0)} height={Math.max(view.k * s.t, 1.5)} fill={sel.has(s.id) ? 'var(--sel)' : checked.has(s.id) ? 'var(--checked)' : 'var(--slabEdge)'} onPointerUp={(ev) => pick(s.id, ev)} style={{ cursor: 'pointer' }} />
             ))}
             {e.beams.map((b) => (
               <rect key={b.id} x={X(b.s0)} y={Y(b.z)} width={view.k * (b.s1 - b.s0)} height={view.k * b.depth} fill={fill(b.id, 'var(--beam)')} fillOpacity={0.75} stroke="var(--colEdge)" onPointerUp={(ev) => pick(b.id, ev)} style={{ cursor: 'pointer' }} />

@@ -10,7 +10,7 @@ import { setDuct, useBath } from '../bath/sections';
 import { underSunk, zoneActions, zonesOn } from '../bath/zones';
 import { flightGrips, landingRect, landingSides, rectPts } from '../stair/stair';
 import { viewport } from './viewport';
-import { UnderlayLayer, StairBoxLayer, BathZoneLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend } from './layers';
+import { UnderlayLayer, StairBoxLayer, BathZoneLayer, GridLayer, GridDimLayer, SlabLayer, BeamLayer, ColumnLayer, LabelLayer, LoadLayer, ColorLegend, CheckedLayer } from './layers';
 import { activePattern, useViewPatterns } from '../ui/LoadDialogs';
 import { onMove, onClick, onInput, setOffsetInput, onCancel, finishPolygon, isPolyTool, picking, finishFramePick, hitTest, boxSelect, fillIntersections, doSnap, gripAt, gripMove, gripDrop, gripCancel, midPicking, startMidPick, spanGrips, type Grip } from './tools';
 import { columnOutline } from './snap';
@@ -133,6 +133,8 @@ export function PlanView() {
   }, [viewRot]);
 
   const sel = useMemo(() => new Set(selection), [selection]);
+  const checkedIds = useApp((s) => (s.checking ? s.model.checked : undefined));
+  const checked = useMemo(() => checkedIds && new Set(checkedIds), [checkedIds]);
   const secs = useMemo(() => new Map(model.frameSections.map((s) => [s.name, s])), [model.frameSections]);
   const below = useMemo(() => {
     const i = model.stories.findIndex((s) => s.name === story);
@@ -344,6 +346,7 @@ export function PlanView() {
             {gCols.length > 0 && <ColumnLayer cols={gCols} secs={secs} sel={empty} ghost colorBy="none" />}
             <BeamLayer beams={beams} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} short={short} />
             <ColumnLayer cols={cols} secs={secs} sel={sel} colorBy={colorBy} patterns={viewPats} ends={ends} />
+            {checked && <CheckedLayer cols={cols} beams={beams} slabs={show.slabs ? slabs : []} secs={secs} checked={checked} viewRot={viewRot} ts={ts} />}
             {(show.bathZones || colorBy === 'zone') && !activeStair && <BathZoneLayer zones={zones} viewRot={viewRot} size={bubble} />}
             <StairLayer flights={stair.flights} landings={stair.landings} spans={stair.spans} sel={sel} viewRot={viewRot} ts={ts} />
             <SectionLayer cuts={cuts} active={activeCut} beams={beams} slabs={slabs} viewRot={viewRot} ts={ts} slabNames={show.sectionLabels && show.slabs && show.labelSlabs} sinkBeams={show.sinks && show.sinkBeams} sinkSlabs={show.sinks && show.sinkSlabs} />

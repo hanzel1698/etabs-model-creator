@@ -35,6 +35,7 @@ export function App() {
   const tool = useApp((s) => s.tool);
   const panel = useApp((s) => s.panel);
   const toast = useApp((s) => s.toast);
+  const checking = useApp((s) => s.checking);
   const ortho = useApp((s) => s.ortho);
   const stairName = useApp((s) => s.model.stairs.find((r) => r.id === s.activeStair)?.name);
   // entering or leaving a stair frames its box (or the building) in the plan
@@ -96,6 +97,7 @@ export function App() {
       if (k === 'H' && st.selection.length) return st.hideIds(st.selection);
       if (k === 'I' && st.selection.length) return st.showOnlyIds(st.selection);
       if (k === 'U') return st.showAll();
+      if (k === 'K' && !st.activeStair) return st.toggleChecking();
     };
     window.addEventListener('keydown', kd);
     return () => window.removeEventListener('keydown', kd);
@@ -182,6 +184,12 @@ export function App() {
           <div className="stair-bar">
             Stair design: <b>{stairName}</b> <span className="muted">· building read-only</span>
             <button onClick={() => useApp.getState().exitStair()}>Back to model</button>
+          </div>
+        )}
+        {checking && (
+          <div className="stair-bar">
+            Checking mode: <span className="muted">click or box columns, beams and slabs to tick them off (again to untick)</span>
+            <button onClick={() => useApp.getState().toggleChecking()}>Done</button>
           </div>
         )}
         {toast && <div className="toast">{toast}</div>}

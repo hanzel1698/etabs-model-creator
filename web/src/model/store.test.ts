@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { useApp, colorKey, colorGroups, visibleModel, bySinkLevel } from './store';
+import { useApp, checkProgress, colorKey, colorGroups, visibleModel, bySinkLevel } from './store';
 import { defaultStairParams, emptyModel, type FrameSection } from './types';
 import { commitStair, deleteStairIds } from '../stair/regions';
 
@@ -162,5 +162,51 @@ describe('colorKey by sink level', () => {
     const col = { id: 'c', story: 'S', x: 0, y: 0, section: 'C', angle: 0 };
     expect(colorKey(col, 'sink', [])).toBeNull();
     expect(['↓450', 'Flush (0)', '↑150', '↓150', 'Duct (opening)'].sort(bySinkLevel)).toEqual(['Duct (opening)', '↑150', 'Flush (0)', '↓150', '↓450']);
+  });
+});
+
+describe('checking mode', () => {
+  it('ticks elements off instead of selecting them, a box marks all, undo brings back the last mark', () => {
+    const m = { ...emptyModel(), columns: [{ id: 'c1' }, { id: 'c2' }] as never, beams: [{ id: 'b1' }] as never };
+    useApp.getState().setModel(m);
+    useApp.setState({ checking: false });
+    useApp.getState().toggleChecking();
+    const st = () => useApp.getState();
+    st().setSelection(['c1']);
+    expect(st().model.checked).toEqual(['c1']);
+    expect(st().selection).toEqual([]);
+    st().setSelection(['c1', 'c2', 'b1', 'g1']); // g1: not a column/beam/slab, ignored
+    expect(st().model.checked).toEqual(['c1', 'c2', 'b1']);
+    st().setSelection(['c1']);
+    expect(st().model.checked).toEqual(['c2', 'b1']);
+    st().undo();
+    expect(st().model.checked).toEqual(['c1', 'c2', 'b1']);
+    st().toggleChecking();
+    st().setSelection(['c1']);
+    expect(st().selection).toEqual(['c1']);
+    expect(st().model.checked).toEqual(['c1', 'c2', 'b1']);
+  });
+});
+
+describe('checked elements', () => {
+  it('lose their check when edited or deleted, but not when only their loads change', () => {
+    const c = (id: string, section = 'C1') => ({ id, story: 'S1', x: 0, y: 0, section, angle: 0 });
+    useApp.getState().setModel({ ...emptyModel(), columns: [c('c1'), c('c2'), c('c3')], checked: ['c1', 'c2', 'c3'] });
+    const st = () => useApp.getState();
+    st().commit((m) => ({ ...m, columns: m.columns.map((x) => (x.id === 'c1' ? { ...x, loads: [] } : x)) }));
+    expect(st().model.checked).toEqual(['c1', 'c2', 'c3']);
+    st().commit((m) => ({ ...m, columns: m.columns.map((x) => (x.id === 'c2' ? { ...x, section: 'C2' } : x)).filter((x) => x.id !== 'c3') }));
+    expect(st().model.checked).toEqual(['c1']);
+  });
+});
+
+describe('checkProgress', () => {
+  it('counts ticked vs all on a story and in the model, ignoring ids of deleted elements', () => {
+    const c = (id: string, story: string) => ({ id, story, x: 0, y: 0, section: 'C1', angle: 0 });
+    const m = { ...emptyModel(), columns: [c('a', 'Story1'), c('b', 'Story2')], checked: ['a', 'gone'] };
+    expect(checkProgress(m, 'Story1').columns).toEqual([1, 1]);
+    expect(checkProgress(m, 'Story2').columns).toEqual([0, 1]);
+    expect(checkProgress(m).columns).toEqual([1, 2]);
+    expect(checkProgress(m).beams).toEqual([0, 0]);
   });
 });

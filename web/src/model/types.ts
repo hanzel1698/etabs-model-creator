@@ -298,6 +298,8 @@ export interface Model {
   upstands?: Upstand[];
   sectionLines?: SectionCut[];
   bathZones?: BathZone[];
+  /** ids of columns, beams and slabs ticked off in Checking mode (drawing check tracker; app-only, not pushed to ETABS) */
+  checked?: string[];
 }
 
 export type ElementKind = 'column' | 'beam' | 'slab' | 'grid';

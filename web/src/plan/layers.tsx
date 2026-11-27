@@ -440,6 +440,39 @@ export const LoadLayer = memo(function LoadLayer({ m, story, patterns, viewRot, 
   );
 });
 
+/** Checking mode: a tint and a ✓ on every ticked-off column, beam and slab (drawn only while the mode is on) */
+export const CheckedLayer = memo(function CheckedLayer({ cols, beams, slabs, secs, checked, viewRot, ts }: { cols: Column[]; beams: Beam[]; slabs: Slab[]; secs: Map<string, FrameSection>; checked: Set<string>; viewRot: number; ts: number }) {
+  const h = 260 * ts;
+  const tick = (id: string, x: number, y: number, dy = 0) => (
+    <text key={id + 't'} transform={textTransform(x, y, viewRot)} dy={dy} fontSize={h} textAnchor="middle" dominantBaseline="central" fill="var(--checked)" stroke="var(--bg)" strokeWidth={h * 0.08} paintOrder="stroke" fontWeight={700}>
+      ✓
+    </text>
+  );
+  const cs = cols.filter((c) => checked.has(c.id)),
+    bs = beams.filter((b) => checked.has(b.id)),
+    ss = slabs.filter((s) => checked.has(s.id));
+  return (
+    <g className="checked nosel" pointerEvents="none">
+      {ss.map((s) => <polygon key={s.id} points={s.pts.map((p) => `${p.x},${p.y}`).join(' ')} fill="var(--checked)" fillOpacity={0.18} />)}
+      {bs.map((b) => <line key={b.id} x1={b.x1} y1={b.y1} x2={b.x2} y2={b.y2} stroke="var(--checked)" strokeWidth={5} strokeOpacity={0.8} style={NS} />)}
+      {cs.map((c) => {
+        const sec = secs.get(c.section);
+        return sec?.shape === 'Circle' ? (
+          <circle key={c.id} cx={c.x} cy={c.y} r={sec.t3 / 2} fill="var(--checked)" />
+        ) : (
+          <polygon key={c.id} points={columnOutline(c, sec).map((p) => `${p.x},${p.y}`).join(' ')} fill="var(--checked)" />
+        );
+      })}
+      {ss.map((s) => {
+        const c = centroid(s.pts);
+        return tick(s.id, c.x, c.y, h * 0.9); // below the slab's name label
+      })}
+      {bs.map((b) => tick(b.id, (b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2))}
+      {cs.map((c) => tick(c.id, c.x, c.y))}
+    </g>
+  );
+});
+
 function centroid(pts: { x: number; y: number }[]) {
   const A = polyArea(pts);
   if (Math.abs(A) < 1e-6) return pts[0];

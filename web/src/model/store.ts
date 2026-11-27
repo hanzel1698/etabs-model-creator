@@ -132,7 +132,11 @@ interface AppState {
   resetView: () => void;
 
   selection: string[];
+  /** in Checking mode this ticks columns/beams/slabs off in `model.checked` instead of selecting them */
   setSelection: (ids: string[]) => void;
+  /** Checking mode: clicks mark elements checked instead of selecting them (view only, not saved) */
+  checking: boolean;
+  toggleChecking: () => void;
   /** set by Select-by: the selection survives story/plane/view switches until Esc or another selection */
   keepSel: boolean;
   prevKeep: boolean;
@@ -186,6 +190,38 @@ interface AppState {
 
 const HISTORY = 200;
 
+/** a checked column/beam/slab that was edited (anything but its loads) or deleted is no longer checked */
+export function dropEditedChecks(prev: Model, next: Model): Model {
+  if (!next.checked?.length || (next.columns === prev.columns && next.beams === prev.beams && next.slabs === prev.slabs)) return next;
+  const els = (m: Model) => new Map<string, object>([...m.columns, ...m.beams, ...m.slabs].map((e) => [e.id, e]));
+  const [a, b] = [els(prev), els(next)];
+  const drawn = (e: object) => JSON.stringify({ ...e, loads: undefined });
+  const keep = next.checked.filter((id) => {
+    const x = a.get(id), y = b.get(id);
+    return !!y && (x === y || !x || drawn(x) === drawn(y));
+  });
+  return keep.length === next.checked.length ? next : { ...next, checked: keep };
+}
+
+/** [ticked, total] columns, beams and slabs, on `story` (columns: those standing on it) or the whole model; deleted ids don't count */
+export function checkProgress(m: Model, story?: string) {
+  const done = new Set(m.checked);
+  const count = (xs: { id: string }[]) => [xs.filter((x) => done.has(x.id)).length, xs.length] as const;
+  const on = (x: { story: string }) => !story || x.story === story;
+  return {
+    columns: count(m.columns.filter((c) => !story || columnOn(m, c, story))),
+    beams: count(m.beams.filter(on)),
+    slabs: count(m.slabs.filter(on)),
+  };
+}
+
+/** all of `ids` already checked → uncheck them; otherwise check them all (a click toggles one, a box marks a group) */
+export function toggleChecked(checked: string[], ids: string[]): string[] {
+  const had = new Set(checked);
+  if (ids.every((id) => had.has(id))) return checked.filter((id) => !ids.includes(id));
+  return [...checked, ...ids.filter((id) => !had.has(id))];
+}
+
 type Active = AppState['active'];
 
 /**
@@ -226,7 +262,7 @@ export const useApp = create<AppState>((set, get) => ({
   dirty: 0,
   commit: (fn, opts) => {
     const prev = get().model;
-    const next = fn(prev);
+    const next = dropEditedChecks(prev, fn(prev));
     if (next === prev) return;
     if (get().activeStair && !opts?.main && (Object.keys(next) as (keyof Model)[]).some((k) => k !== 'stairs' && next[k] !== prev[k]))
       return toast('The building model is read-only inside a stair. Use “Back to model” to edit it.');
@@ -265,7 +301,8 @@ export const useApp = create<AppState>((set, get) => ({
   refPlanesInPlan: false,
   toggleRefPlanesInPlan: () => set((s) => ({ refPlanesInPlan: !s.refPlanesInPlan, activePlane: null, ...(s.keepSel ? {} : { selection: [] }) })),
   tool: 'select',
-  setTool: (t) => set({ tool: t }),
+  // picking a drawing tool leaves Checking mode, so clicks draw again
+  setTool: (t) => set(t === 'select' ? { tool: t } : { tool: t, checking: false }),
   active: { column: 'C400x400', beam: 'B300x500', slab: 'S150' },
   setActive: (k, name) => set((s) => ({ active: { ...s.active, [k]: name } })),
   columnAngle: 0,
@@ -321,12 +358,23 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   selection: [],
-  setSelection: (ids) => set((s) => ({ selection: noGrids(s, ids), keepSel: false })),
+  setSelection: (ids) => {
+    const s = get();
+    if (!s.checking) return set({ selection: noGrids(s, ids), keepSel: false });
+    const m = s.model;
+    const els = new Set([...m.columns, ...m.beams, ...m.slabs].map((e) => e.id));
+    const pick = ids.filter((id) => els.has(id));
+    if (!pick.length) return;
+    s.commit((m) => ({ ...m, checked: toggleChecked(m.checked ?? [], pick) }));
+  },
+  checking: false,
+  toggleChecking: () => set((s) => ({ checking: !s.checking, selection: [], keepSel: false, tool: 'select' })),
   keepSel: false,
   prevKeep: false,
   prevSelection: [],
   restoreSelection: () =>
     set((s) => {
+      if (s.checking) return {};
       // leave out what has been hidden since, like toggleShow/hideIds do
       const off = new Set([...s.hidden, ...switchedOff(s.model, s.show)]);
       const ids = noGrids(s, s.prevSelection.filter((id) => !off.has(id)));
@@ -381,7 +429,7 @@ export const useApp = create<AppState>((set, get) => ({
     const lv = rg && rangeLevels(s.model, rg);
     const names = stairContext(s.model, r).stories.map((x) => x.name);
     const story = lv ? lv.story : names.includes(s.activeStory) ? s.activeStory : names[names.length - 1] ?? s.activeStory;
-    set({ activeStair: id, activeRange: rg?.id ?? null, selection: [], hidden: [], activePlane: null, tool: 'select', activeStory: story });
+    set({ activeStair: id, activeRange: rg?.id ?? null, selection: [], hidden: [], activePlane: null, tool: 'select', checking: false, activeStory: story });
   },
   exitStair: () => set({ activeStair: null, activeRange: null, selection: [], tool: 'select' }),
   activeRange: null,

@@ -174,6 +174,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay, onLinkedUnderlay }: { onNe
   const panel = useApp((s) => s.panel);
   const ortho = useApp((s) => s.ortho);
   const gridLock = useApp((s) => s.gridLock);
+  const checking = useApp((s) => s.checking);
   const sel = useApp((s) => s.selection);
   const prevSel = useApp((s) => s.prevSelection.length);
   const hidden = useApp((s) => s.hidden.length);
@@ -268,6 +269,8 @@ export function MainMenu({ onNew, onOpen, onUnderlay, onLinkedUnderlay }: { onNe
         view('elev', 'Elevation'),
         'sep',
         { label: 'View by', title: 'Colour columns, beams and slabs in the plan and elevation by…', sub: COLOR_BY.map(([k, l]) => ({ label: l, checked: colorBy === k, run: () => st().setColorBy(k) })) },
+        'sep',
+        { label: 'Checking mode', kbd: 'K', checked: checking, disabled: inStair, title: 'Click columns, beams and slabs to tick them off while you check the drawings', run: () => st().toggleChecking() },
         'sep',
         { label: 'Fit all', kbd: 'F', run: () => fitAll() },
         { label: 'Reset views', title: 'Show switches, hidden elements, rotation, text and bubble size and View by back to their defaults, then fit all', run: () => (st().resetView(), fitAll()) },

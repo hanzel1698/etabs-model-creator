@@ -1,4 +1,4 @@
-import { toast, useApp, colorGroups, sectionColor, visibleModel, COLOR_BY } from '../model/store';
+import { toast, useApp, checkProgress, colorGroups, sectionColor, visibleModel, COLOR_BY } from '../model/store';
 import { cachedStoryNodes, deleteIds, joinBeams, joinColumns, mergeSlabs, patchIds, setBeamEnd, type PlanNode } from '../model/ops';
 import { columnOn, levelTag, type Beam } from '../model/types';
 import { logAutoSizes } from '../log/sessionLog';
@@ -17,9 +17,52 @@ import { elevationAt } from '../elev/elevation';
 import { StairProps } from './StairPanel';
 import { BathSectionsList, BathZoneProps } from '../bath/SectionsList';
 
+/** Checking mode: how much of this story and of the model has been ticked off, and a reset for a revised drawing set */
+function CheckingSection() {
+  const checking = useApp((s) => s.checking);
+  const model = useApp((s) => s.model);
+  const story = useApp((s) => s.activeStory);
+  const here = useMemo(() => checking && checkProgress(model, story), [checking, model, story]);
+  const all = useMemo(() => checking && checkProgress(model), [checking, model]);
+  if (!here || !all) return null;
+  const row = (label: string, k: keyof typeof all) => (
+    <tr key={k}>
+      <td>{label}</td>
+      <td>{here[k][0]} / {here[k][1]}</td>
+      <td>{all[k][0]} / {all[k][1]}</td>
+    </tr>
+  );
+  const any = all.columns[0] + all.beams[0] + all.slabs[0] > 0;
+  return (
+    <div className="section">
+      <h4>Checking</h4>
+      <table className="small" style={{ width: '100%' }}>
+        <thead>
+          <tr className="muted">
+            <td />
+            <td>{story}</td>
+            <td>All stories</td>
+          </tr>
+        </thead>
+        <tbody>
+          {row('Columns', 'columns')}
+          {row('Beams', 'beams')}
+          {row('Slabs', 'slabs')}
+        </tbody>
+      </table>
+      <div className="chips" style={{ marginTop: 8 }}>
+        <button className="danger" disabled={!any} title="Untick every element, e.g. for a revised drawing set (Ctrl+Z brings them back)" onClick={() => confirm('Untick every checked column, beam and slab on all stories?') && useApp.getState().commit((m) => ({ ...m, checked: [] }))}>
+          Clear checks…
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function RightPanel() {
   return (
     <div className="side right">
+      <CheckingSection />
       <LoadFilterSection />
       <ViewByFilter />
       <StairProps />

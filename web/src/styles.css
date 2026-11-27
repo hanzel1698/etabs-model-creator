@@ -23,6 +23,8 @@
   --slabEdge: rgba(72, 202, 228, 0.55);
   --sel: #39ff9a;
   --selFill: rgba(57, 255, 154, 0.18);
+  /* Checking mode: elements ticked off against the drawings */
+  --checked: #2fb6ff;
   --flight: rgba(122, 162, 247, 0.22);
   --flightEdge: #7aa2f7;
   --landing: rgba(124, 198, 133, 0.22);
