@@ -95,7 +95,7 @@ function ViewByFilter() {
         <button
           disabled={groups.every(({ ids }) => ids.every((id) => off.has(id)))}
           onClick={() => st.hideIds(groups.flatMap((g) => g.ids))}
-          title={story === null ? 'Hide every column, beam and slab' : `Hide every column, beam and slab on ${story}`}
+          title={elev ? 'Hide every column, beam and slab in this elevation' : story === null ? 'Hide every column, beam and slab' : `Hide every column, beam and slab on ${story}`}
         >
           None
         </button>

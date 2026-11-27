@@ -139,7 +139,8 @@ export function PlanView() {
     return i > 0 ? model.stories[i - 1].name : null;
   }, [model.stories, story]);
 
-  const cols = useMemo(() => model.columns.filter((c) => columnOn(model, c, story)), [model, story]);
+  // column wall (dist) loads act along the height: left out of plan colouring and its legend
+  const cols = useMemo(() => model.columns.filter((c) => columnOn(model, c, story)).map((c) => (c.loads?.some((l) => l.kind === 'dist') ? { ...c, loads: c.loads.filter((l) => l.kind !== 'dist') } : c)), [model, story]);
   // red only on the floor the column stops at, not on the lower stories a joined column passes through
   const ends = useMemo(() => { const t = terminatingColumns(full); return new Set(cols.filter((c) => c.story === story && t.has(c.id)).map((c) => c.id)); }, [full, cols, story]);
   const beams = useMemo(() => model.beams.filter((b) => b.story === story), [model.beams, story]);

@@ -99,7 +99,7 @@ function orientLabels(group: THREE.Group | null, camera: THREE.PerspectiveCamera
     if (!o.userData.label) continue;
     // hide labels of members cut away by the section planes
     const at = o.userData.at as THREE.Vector3;
-    o.visible = clip.every((p) => p.distanceToPoint(at) >= -1e-6);
+    o.visible = o.userData.noClip || clip.every((p) => p.distanceToPoint(at) >= -1e-6);
     if (!o.visible) continue;
     _n.subVectors(camera.position, at);
     if (!o.userData.axis) _u.copy(_r), _n.copy(_fw).negate();
@@ -117,6 +117,29 @@ function orientLabels(group: THREE.Group | null, camera: THREE.PerspectiveCamera
     o.scale.set(h * o.userData.aspect, h, 1);
     o.position.copy(at).addScaledVector(_v, o.userData.shift * h);
   }
+}
+
+// grid lines on the ground at the base level, faint and dashed, named past their bubble ends; never cut, never picked
+const gridMat = new THREE.LineDashedMaterial({ color: 0x8a96a6, dashSize: 0.6, gapSize: 0.3, transparent: true, opacity: 0.85, depthWrite: false });
+function buildGrids(m: Model): THREE.Object3D[] {
+  const y = m.baseElevation * S;
+  return m.grids.flatMap((g) => {
+    const a = new THREE.Vector3(g.x1 * S, y, -g.y1 * S),
+      b = new THREE.Vector3(g.x2 * S, y, -g.y2 * S);
+    const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), gridMat);
+    ln.computeLineDistances();
+    ln.raycast = () => {};
+    const out: THREE.Object3D[] = [ln];
+    const d = b.clone().sub(a).normalize();
+    for (const [p, s] of [[a, -1], [b, 1]] as const) {
+      if (g.bubble !== 'both' && (s < 0) !== (g.bubble === 'start')) continue;
+      const t = label(g.label, '#8899aa', p.clone().addScaledVector(d, s), null, false);
+      t.userData.noClip = true;
+      (t.material as THREE.MeshBasicMaterial).depthTest = true; // members in front hide the tag instead of it covering them
+      out.push(t);
+    }
+    return out;
+  });
 }
 
 // wireframe draws every member as its centreline (slabs as their outline) instead of solids
@@ -155,7 +178,8 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     line([new THREE.Vector3(x, e.bottom * S, z), new THREE.Vector3(x, e.top * S, z)], sel.has(c.id) ? selMat : mat('c' + c.section, sectionColor(c.section)), c.id);
     const mid = new THREE.Vector3(x, (e.bottom + e.top) * 0.5 * S, z);
     if (labels.has('column')) g.add(label(c.section, sectionColor(c.section), mid, new THREE.Vector3(0, 1, 0), false));
-    const cl = frameLoads(c.loads);
+    // column line loads (basement wall earth pressure) are labelled at their diagram ends (buildLoadPlots)
+    const cl = frameLoads(c.loads).filter((l) => l.kind !== 'dist');
     if (cl.length) loadTag(frameTag(cl), 'column', mid, new THREE.Vector3(0, 1, 0));
   }
   for (const b of m.beams) {
@@ -210,7 +234,7 @@ function buildWire(m: Model, sel: Set<string>, onlyStory: string | null, clip: T
     if (z === null || !lf.joint(j) || !vis(j.story)) continue;
     g.add(label(named(j.pattern, `↓ ${describeJointLoad(j.f)}`), LOAD_COLOR, new THREE.Vector3(j.x * S, z * S, -j.y * S), null, false));
   }
-  if (loads) g.add(...buildLoadPlots(m, lf, vis, colVis, clip, (l, at, ax) => g.add(label(named(l.pattern, shortFrameLoad(l)), LOAD_COLOR, at, ax, false))));
+  if (loads) g.add(...buildLoadPlots(m, lf, vis, colVis, clip, (l, at, ax) => g.add(label(named(l.pattern, shortFrameLoad(l)), LOAD_COLOR, at, ax, false)), (l, v, at) => g.add(label(named(l.pattern, String(Math.round(v * 100) / 100)), LOAD_COLOR, at, null, false))));
   const ghost = (key: string, color: string) => {
     if (!fills.has(key)) fills.set(key, new THREE.MeshBasicMaterial({ color: new THREE.Color(color), transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: clip }));
     return fills.get(key)!;
@@ -289,8 +313,9 @@ function frameAxes(a: THREE.Vector3, b: THREE.Vector3, angle: number | null): TH
 // load's plot filled between the member and its arrow tails, so where it acts and how it varies reads at a
 // glance. Each kind (frame distributed, frame point, slab, joint force, joint moment) is scaled on its own,
 // its largest value drawn `H` long. Moments are arrows with a double head (right-hand rule).
-/** `beamTag`: called with each beam load and the top middle of its diagram, to label it there. */
-function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolean, colVis: (c: Column) => boolean, clip: THREE.Plane[], beamTag?: (l: FrameLoad, at: THREE.Vector3, axis: THREE.Vector3) => void): THREE.Object3D[] {
+/** `beamTag`: called with each beam load and the top middle of its diagram, to label it there.
+ *  `colTag`: called with each value at the ends of a column's line load diagrams (once per point), to label it there. */
+function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolean, colVis: (c: Column) => boolean, clip: THREE.Plane[], beamTag?: (l: FrameLoad, at: THREE.Vector3, axis: THREE.Vector3) => void, colTag?: (l: FrameLoad, v: number, at: THREE.Vector3) => void): THREE.Object3D[] {
   const el = storyElevations(m);
   const P = (x: number, y: number, z: number) => new THREE.Vector3(x * S, z * S, -y * S);
   const frames: { a: THREE.Vector3; b: THREE.Vector3; ax: THREE.Vector3[]; ls: FrameLoad[]; beam?: boolean }[] = [];
@@ -361,6 +386,7 @@ function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolea
 
   for (const { a, b, ax, ls, beam } of frames) {
     const tag = (l: FrameLoad, at: THREE.Vector3) => beam && beamTag?.(l, at, b.clone().sub(a));
+    const ends = new Set<string>(); // a column's segments meet at shared ends: label each point once
     const Lm = a.distanceTo(b); // m
     const at = (t: number) => a.clone().lerp(b, t);
     const frac = (l: FrameLoad, d: number) => THREE.MathUtils.clamp(l.rel ? d : (d * S) / (Lm || 1), 0, 1);
@@ -386,6 +412,11 @@ function buildLoadPlots(m: Model, lf: LoadFilter, vis: (story: string) => boolea
       tri(p1, q2, q1);
       seg(q1, q2);
       tag(l, q1.clone().lerp(q2, 0.5));
+      if (!beam)
+        for (const [q, v] of [[q1, l.v1], [q2, l.v2]] as const) {
+          const k = [q.x, q.y, q.z].map((c) => c.toFixed(3)).join('|');
+          if (!ends.has(k)) ends.add(k), colTag?.(l, v, q);
+        }
       const n = Math.min(16, Math.max(2, Math.ceil(((t2 - t1) * Lm) / (H * 0.9)) + 1));
       for (let i = 0; i < n; i++) {
         const t = t1 + ((t2 - t1) * i) / (n - 1);
@@ -567,7 +598,7 @@ function buildCaps(g: THREE.Group, clip: THREE.Plane[]): THREE.Group {
   const caps = new THREE.Group();
   const byMat = new Map<THREE.MeshLambertMaterial, THREE.BufferGeometry[]>();
   for (const o of g.children) {
-    if (!(o instanceof THREE.Mesh)) continue;
+    if (!(o instanceof THREE.Mesh) || o.userData.label) continue; // grid name tags are no solids
     o.updateMatrix();
     const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
     for (const k of Object.keys(geo.attributes)) if (k !== 'position') geo.deleteAttribute(k);
@@ -664,6 +695,7 @@ export default function View3D() {
   const lf = useMemo(() => makeLoadFilter(loadFilter, pattern), [loadFilter, pattern]);
   const [onlyStory, setOnlyStory] = useState(false);
   const [wire, setWire] = useState(false);
+  const [showGrids, setShowGrids] = useState(true);
   const tool = useApp((s) => s.tool);
   const drawTool = tool === 'column' || tool === 'beam';
   // grid crossings at every story level and reference plane: the only points a click in 3D can mean
@@ -897,6 +929,7 @@ export default function View3D() {
     }
     const story = onlyStory ? activeStory : null;
     c.group = wire ? buildWire(model, new Set(selection), story, c.clip, labels, lf) : build(model, new Set(selection), story, c.clip);
+    if (showGrids) c.group.add(...buildGrids(model));
     c.scene.add(c.group);
     if (!wire) {
       c.caps = buildCaps(c.group, c.clip);
@@ -908,7 +941,7 @@ export default function View3D() {
       fitted.current = true;
     }
     c.render();
-  }, [model, selection, onlyStory, activeStory, wire, labels, lf]);
+  }, [model, selection, onlyStory, activeStory, wire, labels, lf, showGrids]);
 
   useEffect(() => {
     const c = ctx.current;
@@ -973,6 +1006,9 @@ export default function View3D() {
         </button>
         <button className={wire ? 'on' : ''} title="Show members as centrelines and slabs as translucent planes" onClick={() => setWire(!wire)}>
           Wireframe
+        </button>
+        <button className={showGrids ? 'on' : ''} title="Show grid lines and names at the base level" onClick={() => setShowGrids(!showGrids)}>
+          Grids
         </button>
         {drawTool && (
           <span className="muted">
