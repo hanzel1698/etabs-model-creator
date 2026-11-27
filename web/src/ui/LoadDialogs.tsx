@@ -611,7 +611,11 @@ function RccTank({ slabs, onUse }: { slabs: Slab[]; onUse: (v: number) => void }
   const m = (mm: number) => fmt(mm / 1000, 2);
   return (
     <>
-      <Num label={partsOn ? 'Volume (all compartments)' : 'Volume'} value={volume} onChange={setVolume} unit="L" step={500} />
+      <div className="row">
+        <span style={{ width: 'auto', whiteSpace: 'nowrap' }}>{partsOn ? 'Volume (all compartments)' : 'Volume'}</span>
+        <input type="number" value={volume} step={500} onChange={(e) => setVolume(+e.target.value || 0)} />
+        <span className="small muted" style={{ width: 'auto' }}>L</span>
+      </div>
       <div className="row">
         <span>Panels</span>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
