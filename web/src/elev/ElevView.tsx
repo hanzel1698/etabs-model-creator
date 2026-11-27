@@ -94,7 +94,8 @@ export function ElevView() {
   const pattern = useApp(activePattern);
   // as in the plan: View by load values labels its pattern chips, else the active pattern
   const loadPats = colorBy === 'value' ? patterns : [pattern];
-  const [tol, setTol] = useState(300);
+  const tol = useApp((s) => s.elevTol),
+    setTol = useApp((s) => s.setElevTol);
   const [names, setNames] = useState(true);
   const [wire, setWire] = useState(true);
   const [ffDims, setFfDims] = useState(true); // floor-to-floor height dimensions beside the levels

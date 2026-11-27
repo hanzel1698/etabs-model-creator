@@ -409,7 +409,8 @@ export const LoadLayer = memo(function LoadLayer({ m, story, patterns, viewRot, 
         );
       })}
       {m.columns.map((c) => {
-        const ls = mine(c.loads);
+        // column line loads are basement wall pressure, drawn in elevation and 3D; not useful in plan
+        const ls = mine(c.loads).filter((l) => l.kind !== 'dist');
         if (!ls.length || !columnOn(m, c, story)) return null;
         return (
           <text key={c.id} transform={textTransform(c.x, c.y, viewRot)} dx={-h * 0.6} dy={h * 1.4} textAnchor="end">

@@ -13,6 +13,7 @@ import { autoSizeBeams, noFitNote } from '../model/autoBeam';
 import { ChecksSection } from './Checks';
 import { LoadsSection, useViewPatterns } from './LoadDialogs';
 import { LoadFilterSection } from './LoadFilterSection';
+import { elevationAt } from '../elev/elevation';
 import { StairProps } from './StairPanel';
 import { BathSectionsList, BathZoneProps } from '../bath/SectionsList';
 
@@ -40,11 +41,23 @@ function ViewByFilter() {
   const allPatterns = useApp((s) => s.model.loadPatterns);
   const hidden = useApp((s) => s.hidden);
   // the plan shows one story, so its list (and Only) covers just that story; split, 3D and elevation cover all
+  // plan also leaves out column wall loads (distributed), as the plan load layer does
+  // the elevation lists only what it shows of the selected grid
   const story = useApp((s) => (s.panel === 'plan' ? s.activeStory : null));
-  const scoped = useMemo(
-    () => (story === null ? model : { ...model, columns: model.columns.filter((c) => columnOn(model, c, story)), beams: model.beams.filter((b) => b.story === story), slabs: model.slabs.filter((x) => x.story === story) }),
-    [model, story],
-  );
+  const elev = useApp((s) => s.panel === 'elev');
+  const gridId = useApp((s) => s.elevGrid);
+  const tol = useApp((s) => s.elevTol);
+  const scoped = useMemo(() => {
+    if (elev) {
+      // same pick as ElevView: a custom elevation, else the grid, else the first grid
+      const g = (model.elevations ?? []).find((x) => x.id === gridId) ?? model.grids.find((x) => x.id === gridId) ?? model.grids[0];
+      if (!g) return model;
+      const e = elevationAt(model, g, tol);
+      const on = new Set([...e.columns, ...e.beams, ...e.slabs].map((x) => x.id));
+      return { ...model, columns: model.columns.filter((c) => on.has(c.id)), beams: model.beams.filter((b) => on.has(b.id)), slabs: model.slabs.filter((x) => on.has(x.id)) };
+    }
+    return story === null ? model : { ...model, columns: model.columns.filter((c) => columnOn(model, c, story)).map((c) => (c.loads ? { ...c, loads: c.loads.filter((l) => l.kind !== 'dist') } : c)), beams: model.beams.filter((b) => b.story === story), slabs: model.slabs.filter((x) => x.story === story) };
+  }, [model, story, elev, gridId, tol]);
   const groups = useMemo(() => colorGroups(scoped, colorBy, patterns), [scoped, colorBy, patterns]);
   const off = useMemo(() => new Set(hidden), [hidden]);
   if (colorBy === 'none' || colorBy === 'zone') return null;

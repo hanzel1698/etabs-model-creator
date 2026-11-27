@@ -148,6 +148,9 @@ interface AppState {
   /** id of the grid the elevation view looks at */
   elevGrid: string;
   setElevGrid: (id: string) => void;
+  /** how far off the grid line (mm) the elevation still shows elements */
+  elevTol: number;
+  setElevTol: (v: number) => void;
 
   /** extra stories that drawing also applies to (besides the active one) */
   alsoStories: string[];
@@ -336,6 +339,8 @@ export const useApp = create<AppState>((set, get) => ({
   setPanel: (p) => set({ panel: p }),
   elevGrid: '',
   setElevGrid: (id) => set({ elevGrid: id }),
+  elevTol: 300,
+  setElevTol: (v) => set({ elevTol: v }),
 
   alsoStories: [],
   setAlsoStories: (s) => set({ alsoStories: s }),
