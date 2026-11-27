@@ -76,7 +76,8 @@ function ViewByFilter() {
     st.setSelection(add ? [...new Set([...useApp.getState().selection, ...pick])] : pick);
   };
   const only = (ids: string[]) => {
-    if (story === null) return st.showOnlyIds(ids);
+    // plan and elevation hide only the rest of their own list (one story / this elevation); 3D and split hide everything else
+    if (story === null && !elev) return st.showOnlyIds(ids);
     const keep = new Set(ids);
     st.unhideIds(ids);
     st.hideIds(groups.flatMap((g) => g.ids).filter((id) => !keep.has(id)));
@@ -122,7 +123,7 @@ function ViewByFilter() {
             <button title={`Select these ${elev ? 'in this elevation' : 'on the active story'} (Ctrl: add to the selection)`} onClick={(e) => select(ids, key ?? none, e.ctrlKey)}>
               Select
             </button>
-            <button title={story === null ? 'Show only these' : `Show only these on ${story}`} onClick={() => only(ids)}>
+            <button title={elev ? 'Show only these in this elevation' : story === null ? 'Show only these' : `Show only these on ${story}`} onClick={() => only(ids)}>
               Only
             </button>
           </div>
