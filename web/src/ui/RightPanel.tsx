@@ -66,13 +66,13 @@ function ViewByFilter() {
   // a click shows just that pattern; Ctrl toggles it in the set (none left ticked goes back to the active pattern)
   const togglePattern = (p: string, add: boolean) =>
     st.setViewPatterns(!add ? [p] : patterns.includes(p) ? patterns.filter((x) => x !== p) : [...patterns, p]);
-  // like a window pick: only what is shown on the active story; Ctrl adds to the selection
+  // like a window pick: only what is shown on the active story (in elevation: the whole elevation, which `ids` already is); Ctrl adds to the selection
   const select = (ids: string[], name: string, add: boolean) => {
     const v = visibleModel(st);
     const at = st.activeStory;
-    const on = new Set([...v.columns.filter((c) => columnOn(v, c, at)), ...v.beams.filter((b) => b.story === at), ...v.slabs.filter((x) => x.story === at)].map((x) => x.id));
+    const on = new Set([...v.columns.filter((c) => elev || columnOn(v, c, at)), ...v.beams.filter((b) => elev || b.story === at), ...v.slabs.filter((x) => elev || x.story === at)].map((x) => x.id));
     const pick = ids.filter((id) => on.has(id));
-    if (!pick.length) return toast(`Nothing shown on ${at} is ${name}.`);
+    if (!pick.length) return toast(`Nothing shown ${elev ? 'in this elevation' : `on ${at}`} is ${name}.`);
     st.setSelection(add ? [...new Set([...useApp.getState().selection, ...pick])] : pick);
   };
   const only = (ids: string[]) => {
@@ -119,7 +119,7 @@ function ViewByFilter() {
               <span className="vb-name">{key ?? none}</span>
             </label>
             <span className="vb-count">{ids.length}</span>
-            <button title="Select these on the active story (Ctrl: add to the selection)" onClick={(e) => select(ids, key ?? none, e.ctrlKey)}>
+            <button title={`Select these ${elev ? 'in this elevation' : 'on the active story'} (Ctrl: add to the selection)`} onClick={(e) => select(ids, key ?? none, e.ctrlKey)}>
               Select
             </button>
             <button title={story === null ? 'Show only these' : `Show only these on ${story}`} onClick={() => only(ids)}>
