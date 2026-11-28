@@ -5,8 +5,11 @@ import { log } from '../log/sessionLog';
 import { applySavedMeta, loadDxfPath, metaOf, useUnderlay } from '../underlay/store';
 
 const KEY = 'emc-model';
+const AT_KEY = 'emc-model-at'; // when the autosave was last written
+let autosavedAt = 0;
 
 export async function restoreModel() {
+  autosavedAt = ((await idbGet(AT_KEY).catch(() => 0)) as number) || 0;
   const m = (await idbGet(KEY)) as Model | undefined;
   if (m && Array.isArray(m.stories)) useApp.getState().setModel({ ...emptyModel(), ...m });
   const s = (await idbGet(SAVE_KEY).catch(() => undefined)) as { target: FileSystemFileHandle | null; fileName: string; folder: FileSystemDirectoryHandle | null } | undefined;
@@ -18,8 +21,36 @@ export function startAutosave() {
   useApp.subscribe((s, prev) => {
     if (s.dirty === prev.dirty) return;
     clearTimeout(t);
-    t = window.setTimeout(() => idbSet(KEY, useApp.getState().model), 600);
+    t = window.setTimeout(() => (idbSet(KEY, useApp.getState().model), idbSet(AT_KEY, Date.now())), 600);
   });
+}
+
+/**
+ * Startup: reopen the file Save writes to, unless the autosaved model has edits newer than that file.
+ * Chrome may need the user's OK to read it again; that has to come from a click, so it waits for the first one.
+ */
+export async function reopenSaved() {
+  const h = target;
+  if (!h) return;
+  const p = h as unknown as { queryPermission(o: object): Promise<string>; requestPermission(o: object): Promise<string> };
+  const open = async () => {
+    const f = await h.getFile();
+    if (autosavedAt && f.lastModified <= autosavedAt) return; // autosave is as new or newer: keep it
+    await loadProject(f);
+    log('file', `Reopened ${f.name}`);
+    toast(`Reopened ${f.name}`);
+  };
+  try {
+    if ((await p.queryPermission({ mode: 'readwrite' })) === 'granted') return await open();
+    toast(`Click anywhere to reopen ${h.name}`);
+    window.addEventListener(
+      'pointerdown',
+      () => p.requestPermission({ mode: 'readwrite' }).then((r) => (r === 'granted' ? open() : undefined)).catch((e) => toast(`Could not reopen ${h.name}: ${e.message}`)),
+      { once: true, capture: true },
+    );
+  } catch (e) {
+    toast(`Could not reopen ${h.name}: ${(e as Error).message}`); // moved or deleted: keep the autosave
+  }
 }
 
 // file chosen by Save As; Save writes back to it (Chrome/Edge only, others always download).
@@ -145,6 +176,10 @@ export async function openProject(file: File) {
   target = null;
   fileName = file.name;
   remember();
+  await loadProject(file);
+}
+
+async function loadProject(file: File) {
   const j = JSON.parse(await file.text());
   if (!j.model) throw new Error('Not an ETABS Model Creator project');
   useApp.getState().setModel({ ...emptyModel(), ...j.model });

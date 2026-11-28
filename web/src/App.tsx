@@ -8,7 +8,7 @@ import { Dialogs } from './ui/Dialogs';
 import { openDialog } from './ui/dialogState';
 import { deleteIds } from './model/ops';
 import { deleteStairIds } from './stair/regions';
-import { restoreModel, startAutosave, downloadProject, saveProjectAs, forgetSaveTarget, openProject } from './model/persist';
+import { restoreModel, startAutosave, downloadProject, saveProjectAs, forgetSaveTarget, openProject, reopenSaved } from './model/persist';
 import { loadDxfFile, loadDxfPath, loadPdfFile, restoreUnderlay } from './underlay/store';
 import { bridge } from './etabs/bridgeClient';
 import { columnOn, emptyModel } from './model/types';
@@ -51,6 +51,7 @@ export function App() {
       await restoreUnderlay();
       startAutosave();
       requestAnimationFrame(() => fitAll());
+      reopenSaved().then(() => requestAnimationFrame(() => fitAll()));
     })();
     return unwatch;
   }, []);
