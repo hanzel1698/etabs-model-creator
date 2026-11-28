@@ -12,6 +12,7 @@ import { designModel } from '../model/store';
 import { autoSpans } from '../stair/stair';
 import { commitStair } from '../stair/regions';
 import { downloadCsv, reportRange } from './StairPanel';
+import { exportView } from '../export/viewPng';
 
 export const TOOLS: { t: ToolName; label: string; key: string }[] = [
   { t: 'select', label: 'Select', key: 'V' },
@@ -211,6 +212,7 @@ export function MainMenu({ onNew, onOpen, onUnderlay, onLinkedUnderlay }: { onNe
         { label: 'Load linked DWG/DXF…', run: onLinkedUnderlay, title: 'Pick the drawing through the bridge; its path is saved in the project and the drawing is re-read (DWG converted) whenever the project is opened' },
         { label: 'Underlay setup…', run: () => openDialog({ kind: 'underlay' }) },
         'sep',
+        ...(['pdf', 'png'] as const).map((f) => ({ label: `Export current view (${f.toUpperCase()})`, title: 'What the view area shows now, on white paper' + (f === 'pdf' ? ' (A3 page)' : ''), run: () => exportView(panel === 'plan' || panel === 'section' ? `${panel} ${active}` : panel, f).catch((e) => st().setToast(e.message)) })),
         { label: 'Export plan sheets (PDF)…', title: 'Framing, column layout, line-load and shell-load plans of every story region on A2 sheets', run: () => openDialog({ kind: 'planSheets' }) },
         { label: 'Export Bathroom Sections…', title: 'Tick the bathroom section cuts to export; all go on one A4, else A3 sheets', run: () => openDialog({ kind: 'bathSectionsPdf' }) },
       ],

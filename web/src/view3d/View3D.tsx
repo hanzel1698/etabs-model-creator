@@ -755,7 +755,7 @@ export default function View3D() {
 
   useEffect(() => {
     const el = host.current!;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true }); // stencil: section caps
+    const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true, preserveDrawingBuffer: true }); // keep the frame for Export current view; // stencil: section caps
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x15181d);
     renderer.localClippingEnabled = true;
