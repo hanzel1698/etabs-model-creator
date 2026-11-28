@@ -348,7 +348,7 @@ export const LabelLayer = memo(function LabelLayer({ m, story, viewRot, ts, cols
 
 /**
  * Values of the given patterns' loads on a story, in the load colour: under each beam (kN/m; P = point load in kN,
- * with a band over the loaded length when a distributed load covers only part of the beam), beside columns, at slab centroids (kN/m²) and at loaded joints (↓ with components).
+ * with a band over the loaded length when a distributed load covers only part of the beam), beside columns, at slab centroids (kN/m², unit not drawn) and at loaded joints (↓ with components).
  */
 export const LoadLayer = memo(function LoadLayer({ m, story, patterns, viewRot, ts }: { m: Model; story: string; patterns: string[]; viewRot: number; ts: number }) {
   const h = 150 * ts;
@@ -425,7 +425,7 @@ export const LoadLayer = memo(function LoadLayer({ m, story, patterns, viewRot, 
         const txt = ls.map((l) => Math.round(l.value * 1000) / 1000).join(' + ');
         return (
           <text key={s.id} transform={textTransform(c.x, c.y, viewRot)} dy={h * 1.3} textAnchor="middle" dominantBaseline="central">
-            {txt} kN/m²
+            {txt}
           </text>
         );
       })}

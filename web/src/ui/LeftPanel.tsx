@@ -366,8 +366,8 @@ function ViewControls() {
         <input type="number" value={rot} step={15} onChange={(e) => st.setViewRotation(+e.target.value || 0)} />
       </div>
       <div className="chips">
-        <button onClick={() => st.setViewRotation(rot - 90)}>⟲ 90</button>
-        <button onClick={() => st.setViewRotation(rot + 90)}>⟳ 90</button>
+        <button title="Rotate 90° anticlockwise" onClick={() => st.setViewRotation(rot + 90)}><RotIcon ccw /> 90</button>
+        <button title="Rotate 90° clockwise" onClick={() => st.setViewRotation(rot - 90)}><RotIcon /> 90</button>
         <button
           title="Align the view to the selected grid/beam"
           onClick={() => {
@@ -386,4 +386,15 @@ function ViewControls() {
       </div>
     </>
   );
+}
+
+// Circular arrow with a clear arrowhead (Feather rotate-cw/ccw, MIT); mirrored for anticlockwise.
+function RotIcon({ ccw }: { ccw?: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+      style={{ verticalAlign: '-2px', transform: ccw ? 'scaleX(-1)' : undefined }} aria-hidden>
+      <polyline points="23 4 23 10 17 10" />
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+    </svg>
+  )
 }
